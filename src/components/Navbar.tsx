@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
   Radio,
@@ -17,30 +18,45 @@ import {
   User as UserIcon,
   ChevronDown,
   Building2,
+  TrendingUp,
 } from 'lucide-react';
 
-export type ActiveTab = 'radar' | 'analyst' | 'pans' | 'allotment' | 'portfolio';
+export type ActiveTab = 'radar' | 'analyst' | 'pans' | 'allotment' | 'portfolio' | 'live-market';
 
 interface NavbarProps {
-  activeTab: ActiveTab;
-  setActiveTab: (tab: ActiveTab) => void;
-  activeIpoCount: number;
-  isRefreshing: boolean;
-  onRefresh: () => void;
+  activeTab?: ActiveTab;
+  setActiveTab?: (tab: ActiveTab) => void;
+  activeIpoCount?: number;
+  isRefreshing?: boolean;
+  onRefresh?: () => void;
   lastUpdatedTime?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
-  activeIpoCount,
-  isRefreshing,
-  onRefresh,
+  activeIpoCount = 0,
+  isRefreshing = false,
+  onRefresh = () => {},
   lastUpdatedTime,
 }) => {
+  const pathname = usePathname();
+  const router = useRouter();
   const { user, isAuthenticated, signOut, loginWithDemo } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleTabClick = (tab: ActiveTab) => {
+    if (tab === 'live-market') {
+      router.push('/live-market');
+      return;
+    }
+    if (pathname !== '/') {
+      router.push(`/?tab=${tab}`);
+    } else if (setActiveTab) {
+      setActiveTab(tab);
+    }
+  };
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -230,11 +246,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Module Navigation Tabs */}
-          <nav className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/80 border border-white/10">
+          <nav className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/80 border border-white/10 overflow-x-auto no-scrollbar">
             <button
-              onClick={() => setActiveTab('radar')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                activeTab === 'radar'
+              onClick={() => handleTabClick('radar')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'radar' && pathname !== '/live-market'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
@@ -244,7 +260,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {activeIpoCount > 0 && (
                 <span
                   className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    activeTab === 'radar' ? 'bg-black/20 text-black' : 'bg-cyan-500/20 text-cyan-300'
+                    activeTab === 'radar' && pathname !== '/live-market' ? 'bg-black/20 text-black' : 'bg-cyan-500/20 text-cyan-300'
                   }`}
                 >
                   {activeIpoCount}
@@ -252,10 +268,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
+            {/* LIVE MARKET TAB */}
             <button
-              onClick={() => setActiveTab('analyst')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                activeTab === 'analyst'
+              onClick={() => handleTabClick('live-market')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'live-market' || pathname === '/live-market'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-md shadow-emerald-500/25'
+                  : 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-emerald-500/30'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 live-pulse" />
+              <span>Live Market</span>
+              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
+                LIVE
+              </span>
+            </button>
+
+            <button
+              onClick={() => handleTabClick('analyst')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'analyst' && pathname !== '/live-market'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
@@ -265,9 +297,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('pans')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                activeTab === 'pans'
+              onClick={() => handleTabClick('pans')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'pans' && pathname !== '/live-market'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
@@ -277,9 +309,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('allotment')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                activeTab === 'allotment'
+              onClick={() => handleTabClick('allotment')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'allotment' && pathname !== '/live-market'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
@@ -289,9 +321,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('portfolio')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                activeTab === 'portfolio'
+              onClick={() => handleTabClick('portfolio')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'portfolio' && pathname !== '/live-market'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}

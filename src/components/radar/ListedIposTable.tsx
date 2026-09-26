@@ -31,7 +31,12 @@ export const ListedIposTable: React.FC<ListedIposTableProps> = ({ onAnalyzeAi })
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'gain' | 'today' | 'recent' | 'price'>('gain');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
-  const [selectedChartSymbol, setSelectedChartSymbol] = useState<{ symbol: string; companyName: string } | null>(null);
+  const [selectedChartSymbol, setSelectedChartSymbol] = useState<{
+    symbol: string;
+    companyName: string;
+    issuePrice?: number | string;
+    listingPrice?: number | string;
+  } | null>(null);
 
   const fetchListed = async () => {
     setIsRefreshing(true);
@@ -330,7 +335,12 @@ export const ListedIposTable: React.FC<ListedIposTableProps> = ({ onAnalyzeAi })
                       <td className="py-4 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
                           <button
-                            onClick={() => setSelectedChartSymbol({ symbol: item.symbol, companyName: item.companyName })}
+                            onClick={() => setSelectedChartSymbol({
+                              symbol: item.symbol,
+                              companyName: item.companyName,
+                              issuePrice: item.issuePrice,
+                              listingPrice: item.listingPrice,
+                            })}
                             title="Open Real-Time Interactive Chart (TradingView & Native)"
                             className="px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-black font-semibold text-xs border border-cyan-500/30 transition cursor-pointer flex items-center gap-1.5 shadow-sm"
                           >
@@ -449,7 +459,12 @@ export const ListedIposTable: React.FC<ListedIposTableProps> = ({ onAnalyzeAi })
                 {/* Card Footer Actions */}
                 <div className="flex items-center justify-between pt-2 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
                   <button
-                    onClick={() => setSelectedChartSymbol({ symbol: item.symbol, companyName: item.companyName })}
+                    onClick={() => setSelectedChartSymbol({
+                      symbol: item.symbol,
+                      companyName: item.companyName,
+                      issuePrice: item.issuePrice,
+                      listingPrice: item.listingPrice,
+                    })}
                     className="flex-1 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-black font-bold text-xs border border-cyan-500/30 transition flex items-center justify-center gap-1.5 shadow-sm"
                   >
                     <BarChart2 className="w-3.5 h-3.5" />
@@ -476,6 +491,8 @@ export const ListedIposTable: React.FC<ListedIposTableProps> = ({ onAnalyzeAi })
         <LiveIpoChartModal
           symbol={selectedChartSymbol.symbol}
           companyName={selectedChartSymbol.companyName}
+          issuePrice={selectedChartSymbol.issuePrice}
+          listingPrice={selectedChartSymbol.listingPrice}
           isOpen={!!selectedChartSymbol}
           onClose={() => setSelectedChartSymbol(null)}
         />

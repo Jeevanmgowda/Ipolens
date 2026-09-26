@@ -20,6 +20,8 @@ export interface LiveIpoSummary {
   gmpPercent?: number;  // Estimated gain %
   registrarName?: string;
   registrarUrl?: string;
+  isListed?: boolean;
+  listingPrice?: string;
 }
 
 export interface BidCategoryDetail {
@@ -62,4 +64,6 @@ export interface LiveIpoDetail {
   registrarName: string;
   registrarUrl: string;
   registrarSlug: 'linkintime' | 'kfintech' | 'bigshare' | 'other';
+  isListed?: boolean;
+  listingPrice?: number | string;
 }

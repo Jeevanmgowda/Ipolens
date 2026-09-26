@@ -17,6 +17,21 @@ export default function Home() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
+  // Sync tab and symbol from URL parameters if navigated from /live-market
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab') as ActiveTab | null;
+      if (tab && ['radar', 'analyst', 'pans', 'allotment', 'portfolio'].includes(tab)) {
+        setActiveTab(tab);
+      }
+      const sym = params.get('symbol');
+      if (sym) {
+        setSelectedIpoForAi({ symbol: sym, companyName: sym });
+      }
+    }
+  }, []);
+
   // Multi-PAN Bidding Modal State
   const [isMultiApplyOpen, setIsMultiApplyOpen] = useState<boolean>(false);
   const [selectedIpoForApply, setSelectedIpoForApply] = useState<{

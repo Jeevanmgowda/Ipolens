@@ -74,3 +74,104 @@ export type PortfolioHoldingInsert = typeof portfolioHoldingsTable.$inferInsert;
 
 export type ExchangeSnapshotSelect = typeof exchangeSnapshotsTable.$inferSelect;
 export type ExchangeSnapshotInsert = typeof exchangeSnapshotsTable.$inferInsert;
+
+// 5. Master IPOs Directory Table
+export const iposTable = pgTable('ipos', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  companyName: varchar('company_name', { length: 256 }).notNull(),
+  symbol: varchar('symbol', { length: 32 }).notNull().unique(),
+  status: varchar('status', { length: 32 }).notNull(), // 'Upcoming' | 'Open' | 'Closed' | 'Listed'
+  series: varchar('series', { length: 16 }).default('EQ'), // 'EQ' | 'SME'
+  priceLow: numeric('price_low', { precision: 12, scale: 2 }),
+  priceHigh: numeric('price_high', { precision: 12, scale: 2 }),
+  lotSize: integer('lot_size'),
+  issueSize: varchar('issue_size', { length: 64 }),
+  openDate: varchar('open_date', { length: 64 }),
+  closeDate: varchar('close_date', { length: 64 }),
+  allotmentDate: varchar('allotment_date', { length: 64 }),
+  listingDate: varchar('listing_date', { length: 64 }),
+  registrar: varchar('registrar', { length: 128 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// 6. IPO Subscription Telemetry Table
+export const ipoSubscriptionsTable = pgTable('ipo_subscription', {
+  id: serial('id').primaryKey(),
+  ipoId: varchar('ipo_id', { length: 64 }).notNull(),
+  symbol: varchar('symbol', { length: 32 }).notNull(),
+  retail: numeric('retail', { precision: 8, scale: 2 }).notNull().default('0.00'),
+  nii: numeric('nii', { precision: 8, scale: 2 }).notNull().default('0.00'),
+  qib: numeric('qib', { precision: 8, scale: 2 }).notNull().default('0.00'),
+  employee: numeric('employee', { precision: 8, scale: 2 }).default('0.00'),
+  total: numeric('total', { precision: 8, scale: 2 }).notNull().default('0.00'),
+  recordedAt: timestamp('recorded_at').notNull().defaultNow(),
+});
+
+// 7. IPO Grey Market Premium (GMP) History Table
+export const ipoGmpHistoryTable = pgTable('ipo_gmp_history', {
+  id: serial('id').primaryKey(),
+  ipoId: varchar('ipo_id', { length: 64 }).notNull(),
+  symbol: varchar('symbol', { length: 32 }).notNull(),
+  gmp: numeric('gmp', { precision: 10, scale: 2 }).notNull(),
+  gmpPercent: numeric('gmp_percent', { precision: 8, scale: 2 }),
+  source: varchar('source', { length: 64 }).default('Market Feed'),
+  recordedAt: timestamp('recorded_at').notNull().defaultNow(),
+});
+
+// 8. Live Market Quotes Table
+export const marketQuotesTable = pgTable('market_quotes', {
+  id: serial('id').primaryKey(),
+  symbol: varchar('symbol', { length: 32 }).notNull().unique(),
+  ltp: numeric('ltp', { precision: 12, scale: 2 }).notNull(),
+  open: numeric('open', { precision: 12, scale: 2 }).notNull(),
+  high: numeric('high', { precision: 12, scale: 2 }).notNull(),
+  low: numeric('low', { precision: 12, scale: 2 }).notNull(),
+  previousClose: numeric('previous_close', { precision: 12, scale: 2 }).notNull(),
+  volume: integer('volume').notNull().default(0),
+  change: numeric('change', { precision: 12, scale: 2 }).notNull().default('0.00'),
+  changePercent: numeric('change_percent', { precision: 8, scale: 2 }).notNull().default('0.00'),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+});
+
+// 9. Market OHLC Candle History Table
+export const marketOhlcTable = pgTable('market_ohlc', {
+  id: serial('id').primaryKey(),
+  symbol: varchar('symbol', { length: 32 }).notNull(),
+  timeframe: varchar('timeframe', { length: 16 }).notNull(), // '1m' | '5m' | '15m' | '30m' | '1H' | '1D' | '1W' | '1M'
+  timestamp: timestamp('timestamp').notNull(),
+  open: numeric('open', { precision: 12, scale: 2 }).notNull(),
+  high: numeric('high', { precision: 12, scale: 2 }).notNull(),
+  low: numeric('low', { precision: 12, scale: 2 }).notNull(),
+  close: numeric('close', { precision: 12, scale: 2 }).notNull(),
+  volume: integer('volume').notNull().default(0),
+});
+
+// 10. User Market Watchlist Table
+export const marketWatchlistTable = pgTable('market_watchlist', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  userId: varchar('user_id', { length: 64 }).notNull().default('default_user'),
+  symbol: varchar('symbol', { length: 32 }).notNull(),
+  companyName: varchar('company_name', { length: 256 }).notNull(),
+  addedAt: timestamp('added_at').notNull().defaultNow(),
+});
+
+// New Type inference exports
+export type IpoMasterSelect = typeof iposTable.$inferSelect;
+export type IpoMasterInsert = typeof iposTable.$inferInsert;
+
+export type IpoSubscriptionSelect = typeof ipoSubscriptionsTable.$inferSelect;
+export type IpoSubscriptionInsert = typeof ipoSubscriptionsTable.$inferInsert;
+
+export type IpoGmpHistorySelect = typeof ipoGmpHistoryTable.$inferSelect;
+export type IpoGmpHistoryInsert = typeof ipoGmpHistoryTable.$inferInsert;
+
+export type MarketQuoteSelect = typeof marketQuotesTable.$inferSelect;
+export type MarketQuoteInsert = typeof marketQuotesTable.$inferInsert;
+
+export type MarketOhlcSelect = typeof marketOhlcTable.$inferSelect;
+export type MarketOhlcInsert = typeof marketOhlcTable.$inferInsert;
+
+export type MarketWatchlistSelect = typeof marketWatchlistTable.$inferSelect;
+export type MarketWatchlistInsert = typeof marketWatchlistTable.$inferInsert;
+

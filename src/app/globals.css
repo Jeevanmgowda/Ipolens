@@ -85,3 +85,25 @@ body {
 .live-pulse {
   animation: pulse-live 2s infinite ease-in-out;
 }
+
+/* TradingView Chart Container Enforcement */
+.tradingview-widget-container {
+  position: relative !important;
+  width: 100% !important;
+  min-height: 520px !important;
+}
+
+.tradingview-widget-container__widget {
+  width: 100% !important;
+  min-height: 520px !important;
+  height: 520px !important;
+}
+
+.tradingview-widget-container iframe {
+  width: 100% !important;
+  min-height: 520px !important;
+  height: 520px !important;
+  border: none !important;
+  border-radius: 0.75rem !important;
+}
+
