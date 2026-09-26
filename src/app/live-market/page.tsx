@@ -187,7 +187,7 @@ export default function LiveMarketPage() {
     <div className="min-h-screen flex flex-col bg-[#060913] text-slate-100 selection:bg-emerald-500/30 selection:text-white">
       {/* Global Navigation Bar */}
       <Navbar
-        activeTab="live-market"
+        activeTab="radar"
         activeIpoCount={overviewData?.overview.openCount || ipos.filter((i) => i.status === 'Open').length}
         isRefreshing={isRefreshing}
         onRefresh={() => fetchMarketData(false)}

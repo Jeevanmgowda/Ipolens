@@ -21,7 +21,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 
-export type ActiveTab = 'radar' | 'analyst' | 'pans' | 'allotment' | 'portfolio' | 'live-market';
+export type ActiveTab = 'radar' | 'analyst' | 'pans' | 'allotment' | 'portfolio';
 
 interface NavbarProps {
   activeTab?: ActiveTab;
@@ -47,10 +47,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleTabClick = (tab: ActiveTab) => {
-    if (tab === 'live-market') {
-      router.push('/live-market');
-      return;
-    }
     if (pathname !== '/') {
       router.push(`/?tab=${tab}`);
     } else if (setActiveTab) {
@@ -249,18 +245,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           <nav className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/80 border border-white/10 overflow-x-auto no-scrollbar">
             <button
               onClick={() => handleTabClick('radar')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'radar' && pathname !== '/live-market'
-                  ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'radar'
+                  ? 'bg-gradient-to-r from-cyan-500 to-teal-400 text-black shadow-md shadow-cyan-500/25 font-bold'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
             >
               <Activity className="w-4 h-4" />
               <span>Live IPO Radar</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 live-pulse ml-0.5" />
               {activeIpoCount > 0 && (
                 <span
                   className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    activeTab === 'radar' && pathname !== '/live-market' ? 'bg-black/20 text-black' : 'bg-cyan-500/20 text-cyan-300'
+                    activeTab === 'radar' ? 'bg-black/20 text-black' : 'bg-cyan-500/20 text-cyan-300'
                   }`}
                 >
                   {activeIpoCount}
@@ -268,26 +265,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* LIVE MARKET TAB */}
-            <button
-              onClick={() => handleTabClick('live-market')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'live-market' || pathname === '/live-market'
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-md shadow-emerald-500/25'
-                  : 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-emerald-500/30'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 live-pulse" />
-              <span>Live Market</span>
-              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
-                LIVE
-              </span>
-            </button>
-
             <button
               onClick={() => handleTabClick('analyst')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'analyst' && pathname !== '/live-market'
+                activeTab === 'analyst'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
@@ -299,7 +280,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => handleTabClick('pans')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'pans' && pathname !== '/live-market'
+                activeTab === 'pans'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
@@ -311,7 +292,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => handleTabClick('allotment')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'allotment' && pathname !== '/live-market'
+                activeTab === 'allotment'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
@@ -323,7 +304,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => handleTabClick('portfolio')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'portfolio' && pathname !== '/live-market'
+                activeTab === 'portfolio'
                   ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
               }`}
