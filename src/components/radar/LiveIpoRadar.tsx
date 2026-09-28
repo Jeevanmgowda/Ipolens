@@ -134,16 +134,68 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
     }
   }, [onIposLoaded, overviewData]);
 
-  // Initial load & periodic background refresh
+  // Initial load & periodic background refresh (every 20s for active telemetry)
   useEffect(() => {
     fetchMarketData();
 
-    // Auto-sync market telemetry every 60 seconds
+    // Auto-sync market telemetry every 20 seconds
     const interval = setInterval(() => {
       fetchMarketData(true);
-    }, 60000);
+    }, 20000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Real-time live SSE stream listener for listed ticks and subscription updates
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/market/stream');
+      eventSource.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed.type === 'TICK' && parsed.symbol && parsed.ltp) {
+            setIpos((prev) =>
+              prev.map((item) => {
+                if (item.symbol.toUpperCase() === parsed.symbol.toUpperCase()) {
+                  return {
+                    ...item,
+                    currentPrice: parsed.ltp,
+                    dayChange: parsed.change,
+                    dayChangePercent: parsed.changePercent,
+                    volume: parsed.volume,
+                  };
+                }
+                return item;
+              })
+            );
+          } else if (parsed.type === 'SUBSCRIPTION_UPDATE' && parsed.symbol) {
+            setIpos((prev) =>
+              prev.map((item) => {
+                if (item.symbol.toUpperCase() === parsed.symbol.toUpperCase()) {
+                  return {
+                    ...item,
+                    currentSubscription: parsed.currentSubscription,
+                    qibSubscription: parsed.qib,
+                    niiSubscription: parsed.nii,
+                    retailSubscription: parsed.retail,
+                  };
+                }
+                return item;
+              })
+            );
+          }
+        } catch {
+          // ignore keepalive pings
+        }
+      };
+    } catch (err) {
+      console.warn('Live SSE stream connection warning:', err);
+    }
+
+    return () => {
+      if (eventSource) eventSource.close();
+    };
   }, []);
 
   // Watchlist Toggle

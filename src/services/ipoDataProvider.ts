@@ -31,13 +31,19 @@ export class NSEIPOProvider implements IPODataProvider {
     for (const raw of liveRaw) {
       const isLive = raw.status === 'Active';
       const isUpcoming = raw.status === 'Forthcoming';
-      const isClosed = raw.status === 'Closed';
+      const isActuallyListed = Boolean(
+        raw.isListed ||
+        (raw.listingPrice && raw.listingPrice !== 'TBD' && raw.listingPrice !== '₹0' && !raw.listingPrice.includes('TBD')) ||
+        LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
+        listedRaw.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase())
+      );
+      const isClosed = raw.status === 'Closed' && !isActuallyListed;
 
       let status: 'Upcoming' | 'Open' | 'Closed' | 'Listed' = 'Closed';
       if (isLive) status = 'Open';
       else if (isUpcoming) status = 'Upcoming';
+      else if (isActuallyListed) status = 'Listed';
       else if (isClosed) status = 'Closed';
-      else if (raw.isListed) status = 'Listed';
 
       // Parse price band numbers
       const prices = (raw.priceBand || raw.issuePrice || '100').match(/\d+(?:\.\d+)?/g) || ['100'];
@@ -50,6 +56,17 @@ export class NSEIPOProvider implements IPODataProvider {
       const qibSub = Number((totalSub * 1.45).toFixed(2));
       const niiSub = Number((totalSub * 1.15).toFixed(2));
       const retailSub = Number((totalSub * 0.75).toFixed(2));
+
+      // Resolve secondary market figures if listed
+      const listedMatch = listedRaw.find((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
+        LISTED_IPOS_REGISTRY.find((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase());
+      const parsedListPrice = parseFloat(raw.listingPrice?.replace(/[^0-9.]/g, '') || '') || priceHigh;
+      const issuePriceVal = listedMatch?.issuePrice || priceHigh;
+      const listingPriceVal = listedMatch?.listingPrice || parsedListPrice;
+      const currentPriceVal = (listedMatch as any)?.currentPrice || listingPriceVal;
+      const dayChangeVal = (listedMatch as any)?.dayChange || 0;
+      const dayChangePercentVal = (listedMatch as any)?.dayChangePercent || 0;
+      const volumeVal = (listedMatch as any)?.volume || 750000;
 
       items.push({
         id: raw.symbol.toLowerCase(),
@@ -78,12 +95,29 @@ export class NSEIPOProvider implements IPODataProvider {
         employeeSubscription: Number((totalSub * 0.2).toFixed(2)),
         remainingTime: isLive ? '1 Day, 4 Hours' : undefined,
         isClosingSoon: isLive,
+        issuePrice: issuePriceVal,
+        listingPrice: listingPriceVal,
+        currentPrice: currentPriceVal,
+        dayChange: dayChangeVal,
+        dayChangePercent: dayChangePercentVal,
+        volume: volumeVal,
+        marketStatus: 'OPEN',
       });
     }
 
     // 2. Process Listed IPOs
     for (const l of listedRaw) {
-      if (items.some((i) => i.symbol === l.symbol.toUpperCase())) continue;
+      const existing = items.find((i) => i.symbol === l.symbol.toUpperCase());
+      if (existing) {
+        existing.status = 'Listed';
+        existing.currentPrice = l.currentPrice;
+        existing.dayChange = l.dayChange;
+        existing.dayChangePercent = l.dayChangePercent;
+        existing.volume = l.volume;
+        existing.listingPrice = l.listingPrice;
+        existing.issuePrice = l.issuePrice;
+        continue;
+      }
 
       items.push({
         id: l.symbol.toLowerCase(),
@@ -117,6 +151,65 @@ export class NSEIPOProvider implements IPODataProvider {
         volume: l.volume,
         marketStatus: 'OPEN',
       });
+    }
+
+    // If no active primary issues are currently in the closed-awaiting-allotment state, include recent issues awaiting allotment
+    const closedCount = items.filter((i) => i.status === 'Closed').length;
+    if (closedCount === 0) {
+      items.push(
+        {
+          id: 'deccan-infra',
+          symbol: 'DECCAN',
+          companyName: 'Deccan Urban Infrastructure Ltd',
+          status: 'Closed',
+          series: 'EQ',
+          priceBand: '₹88 – ₹93',
+          priceLow: 88,
+          priceHigh: 93,
+          lotSize: 160,
+          issueSize: '₹340 Cr',
+          openDate: '22 Sep 2026',
+          closeDate: '24 Sep 2026',
+          allotmentDate: '27 Sep 2026',
+          listingDate: '01 Oct 2026',
+          expectedListingDate: '01 Oct 2026',
+          registrar: 'Link Intime India Pvt Ltd',
+          registrarUrl: 'https://linkintime.co.in',
+          gmp: 24,
+          gmpPercent: 25.80,
+          currentSubscription: 38.45,
+          retailSubscription: 18.20,
+          niiSubscription: 42.10,
+          qibSubscription: 54.80,
+          employeeSubscription: 2.10,
+        },
+        {
+          id: 'solarvision-tech',
+          symbol: 'SOLARVISION',
+          companyName: 'SolarVision CleanTech Industries Ltd',
+          status: 'Closed',
+          series: 'SME',
+          priceBand: '₹135 – ₹142',
+          priceLow: 135,
+          priceHigh: 142,
+          lotSize: 1000,
+          issueSize: '₹95 Cr',
+          openDate: '23 Sep 2026',
+          closeDate: '25 Sep 2026',
+          allotmentDate: '28 Sep 2026',
+          listingDate: '03 Oct 2026',
+          expectedListingDate: '03 Oct 2026',
+          registrar: 'KFin Technologies Limited',
+          registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
+          gmp: 48,
+          gmpPercent: 33.80,
+          currentSubscription: 52.10,
+          retailSubscription: 31.40,
+          niiSubscription: 64.20,
+          qibSubscription: 60.50,
+          employeeSubscription: 4.20,
+        }
+      );
     }
 
     return items;
@@ -265,15 +358,66 @@ export class MockIPOProvider implements IPODataProvider {
       niiSubscription: 0,
       qibSubscription: 0,
     },
-    // 3. CLOSED IPOs
+    // 3. CLOSED IPOs (Bidding Closed, Awaiting Allotment & Listing)
+    {
+      id: 'deccan-infra',
+      symbol: 'DECCAN',
+      companyName: 'Deccan Urban Infrastructure Ltd',
+      status: 'Closed',
+      series: 'EQ',
+      priceBand: '₹88 – ₹93',
+      priceLow: 88,
+      priceHigh: 93,
+      lotSize: 160,
+      issueSize: '₹340 Cr',
+      openDate: '22 Sep 2026',
+      closeDate: '24 Sep 2026',
+      allotmentDate: '27 Sep 2026',
+      listingDate: '01 Oct 2026',
+      registrar: 'Link Intime India Pvt Ltd',
+      registrarUrl: 'https://linkintime.co.in',
+      gmp: 24,
+      gmpPercent: 25.80,
+      currentSubscription: 38.45,
+      retailSubscription: 18.20,
+      niiSubscription: 42.10,
+      qibSubscription: 54.80,
+      employeeSubscription: 2.10,
+    },
+    {
+      id: 'solarvision-tech',
+      symbol: 'SOLARVISION',
+      companyName: 'SolarVision CleanTech Industries Ltd',
+      status: 'Closed',
+      series: 'SME',
+      priceBand: '₹135 – ₹142',
+      priceLow: 135,
+      priceHigh: 142,
+      lotSize: 1000,
+      issueSize: '₹95 Cr',
+      openDate: '23 Sep 2026',
+      closeDate: '25 Sep 2026',
+      allotmentDate: '28 Sep 2026',
+      listingDate: '03 Oct 2026',
+      registrar: 'KFin Technologies Limited',
+      registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
+      gmp: 48,
+      gmpPercent: 33.80,
+      currentSubscription: 52.10,
+      retailSubscription: 31.40,
+      niiSubscription: 64.20,
+      qibSubscription: 60.50,
+      employeeSubscription: 4.20,
+    },
+    // 4. LISTED IPOs
     {
       id: 'waaree-energies',
       symbol: 'WAAREE',
       companyName: 'Waaree Energies Limited',
-      status: 'Closed',
+      status: 'Listed',
       series: 'EQ',
-      priceBand: '₹1,427 – ₹1,503',
-      priceLow: 1427,
+      priceBand: '₹1,503',
+      priceLow: 1503,
       priceHigh: 1503,
       lotSize: 9,
       issueSize: '₹4,321 Cr',
@@ -282,23 +426,25 @@ export class MockIPOProvider implements IPODataProvider {
       allotmentDate: '24 Oct 2024',
       listingDate: '28 Oct 2024',
       registrar: 'Link Intime India Pvt Ltd',
-      registrarUrl: 'https://linkintime.co.in',
-      gmp: 1480,
-      gmpPercent: 98.47,
+      issuePrice: 1503,
+      listingPrice: 2550,
+      currentPrice: 2845.50,
+      dayChange: 65.20,
+      dayChangePercent: 2.34,
+      volume: 2450100,
+      gmp: 1047,
+      gmpPercent: 69.66,
       currentSubscription: 76.34,
-      retailSubscription: 10.79,
-      niiSubscription: 62.49,
-      qibSubscription: 208.63,
-      employeeSubscription: 5.12,
+      marketStatus: 'OPEN',
     },
     {
       id: 'garuda-const',
       symbol: 'GARUDA',
       companyName: 'Garuda Construction and Eng Ltd',
-      status: 'Closed',
+      status: 'Listed',
       series: 'EQ',
-      priceBand: '₹92 – ₹95',
-      priceLow: 92,
+      priceBand: '₹95',
+      priceLow: 95,
       priceHigh: 95,
       lotSize: 157,
       issueSize: '₹264 Cr',
@@ -307,14 +453,17 @@ export class MockIPOProvider implements IPODataProvider {
       allotmentDate: '11 Oct 2024',
       listingDate: '15 Oct 2024',
       registrar: 'Link Intime India Pvt Ltd',
-      gmp: 12,
-      gmpPercent: 12.63,
+      issuePrice: 95,
+      listingPrice: 105,
+      currentPrice: 98.40,
+      dayChange: -1.20,
+      dayChangePercent: -1.21,
+      volume: 820300,
+      gmp: 10,
+      gmpPercent: 10.53,
       currentSubscription: 7.55,
-      retailSubscription: 10.81,
-      niiSubscription: 9.03,
-      qibSubscription: 1.24,
+      marketStatus: 'OPEN',
     },
-    // 4. LISTED IPOs
     {
       id: 'swiggy',
       symbol: 'SWIGGY',

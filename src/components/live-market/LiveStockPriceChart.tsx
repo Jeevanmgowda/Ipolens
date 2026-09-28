@@ -98,24 +98,55 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
         try {
           const parsed = JSON.parse(event.data);
           if (parsed.symbol && parsed.symbol.toUpperCase() === cleanSymbol && parsed.ltp) {
+            const tickLtp = Number(parsed.ltp);
+
             setQuote((prev) => {
-              const prevClose = prev?.previousClose || parsed.ltp;
-              const newChange = Number((parsed.ltp - prevClose).toFixed(2));
+              const prevClose = prev?.previousClose || tickLtp;
+              const newChange = Number((tickLtp - prevClose).toFixed(2));
               const newChangePercent = Number(((newChange / prevClose) * 100).toFixed(2));
               return {
                 symbol: cleanSymbol,
-                ltp: parsed.ltp,
-                open: prev?.open || parsed.ltp,
-                high: Math.max(prev?.high || parsed.ltp, parsed.ltp),
-                low: Math.min(prev?.low || parsed.ltp, parsed.ltp),
+                ltp: tickLtp,
+                open: prev?.open || tickLtp,
+                high: Math.max(prev?.high || tickLtp, tickLtp),
+                low: Math.min(prev?.low || tickLtp, tickLtp),
                 previousClose: prevClose,
-                volume: (prev?.volume || 0) + Math.floor(Math.random() * 500),
+                volume: (prev?.volume || 0) + Math.floor(Math.random() * 50 + 5),
                 change: newChange,
                 changePercent: newChangePercent,
                 timestamp: new Date().toISOString(),
                 isMock: prev?.isMock ?? false,
               };
             });
+
+            // Live Real-Time Chart Candlestick/Line Animation
+            setCandles((prevCandles) => {
+              if (!prevCandles || prevCandles.length === 0) {
+                return [
+                  {
+                    time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                    timestamp: Date.now(),
+                    open: tickLtp,
+                    high: tickLtp,
+                    low: tickLtp,
+                    close: tickLtp,
+                    volume: 100,
+                  },
+                ];
+              }
+
+              const last = prevCandles[prevCandles.length - 1];
+              const updatedLast: MarketOhlcCandle = {
+                ...last,
+                close: tickLtp,
+                high: Math.max(last.high, tickLtp),
+                low: Math.min(last.low, tickLtp),
+                volume: (last.volume || 0) + 15,
+              };
+
+              return [...prevCandles.slice(0, -1), updatedLast];
+            });
+
             setLastTickTime(new Date().toLocaleTimeString('en-IN'));
           }
         } catch {
