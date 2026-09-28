@@ -435,6 +435,9 @@ export class MockIPOProvider implements IPODataProvider {
       gmp: 1047,
       gmpPercent: 69.66,
       currentSubscription: 76.34,
+      retailSubscription: 10.79,
+      niiSubscription: 62.49,
+      qibSubscription: 208.63,
       marketStatus: 'OPEN',
     },
     {
@@ -462,6 +465,9 @@ export class MockIPOProvider implements IPODataProvider {
       gmp: 10,
       gmpPercent: 10.53,
       currentSubscription: 7.55,
+      retailSubscription: 10.81,
+      niiSubscription: 9.03,
+      qibSubscription: 1.24,
       marketStatus: 'OPEN',
     },
     {
