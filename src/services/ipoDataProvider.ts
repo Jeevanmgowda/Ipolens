@@ -36,6 +36,7 @@ export class NSEIPOProvider implements IPODataProvider {
       let status: 'Upcoming' | 'Open' | 'Closed' | 'Listed' = 'Closed';
       if (isLive) status = 'Open';
       else if (isUpcoming) status = 'Upcoming';
+      else if (isClosed) status = 'Closed';
       else if (raw.isListed) status = 'Listed';
 
       // Parse price band numbers

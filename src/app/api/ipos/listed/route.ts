@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchLiveListedIpos } from '@/services/listedIpoService';
+import { IpoService } from '@/services/ipoService';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const q = searchParams.get('q');
     const series = searchParams.get('series');
 
-    let items = await fetchLiveListedIpos();
+    let items = await IpoService.getListedIpos();
 
     if (series && series !== 'all') {
       items = items.filter((item) => item.series.toUpperCase() === series.toUpperCase());
