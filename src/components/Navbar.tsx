@@ -66,7 +66,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 glass-panel border-b border-white/10 bg-[#070b14]/90">
+    <header className="sticky top-0 z-50 glass-panel border-b border-white/10 bg-[#070b14] shadow-xl backdrop-blur-md">
       {/* Top Bar: Market Pulse & Live Feed Indicator */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 border-b border-white/5 py-2 text-xs">

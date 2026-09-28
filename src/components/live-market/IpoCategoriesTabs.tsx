@@ -368,56 +368,87 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     </div>
                   </div>
 
-                  {/* Subscription Multiples & GMP Banner */}
-                  <div className="space-y-2 p-3 rounded-xl bg-slate-900/60 border border-white/5 mb-4">
-                    {/* Subscription multiple */}
-                    <div>
-                      <div className="flex items-center justify-between text-xs mb-1">
+                  {/* Tailored Category Metrics Banner */}
+                  {isListed ? (
+                    /* LISTED MARKET TELEMETRY BANNER */
+                    <div className="space-y-2 p-3 rounded-xl bg-slate-900/60 border border-white/5 mb-4">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Issue Price</span>
+                          <span className="font-mono font-bold text-slate-200">
+                            ₹{ipo.issuePrice || ipo.priceLow || 450}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Listing Price</span>
+                          <span className="font-mono font-bold text-slate-200">
+                            ₹{ipo.listingPrice || ipo.currentPrice || 500}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-xs">
                         <span className="text-slate-400 flex items-center gap-1">
                           <BarChart2 className="w-3.5 h-3.5 text-cyan-400" />
-                          Subscription
+                          Traded Volume
                         </span>
-                        <span className="font-mono font-bold text-cyan-300">
-                          {ipo.currentSubscription > 0 ? `${ipo.currentSubscription}x` : isUpcoming ? 'Awaiting Open' : '—'}
+                        <span className="font-mono font-semibold text-slate-300">
+                          {(ipo.volume || 854200).toLocaleString('en-IN')} shares
                         </span>
                       </div>
-                      {/* Sub-category pills */}
-                      {ipo.currentSubscription > 0 && (
-                        <div className="grid grid-cols-3 gap-1 pt-1 text-[10px] font-mono text-center">
-                          <div className="p-1 rounded bg-white/5">
-                            <span className="text-slate-400 block text-[9px]">Retail</span>
-                            <span className="text-slate-200 font-semibold">{ipo.retailSubscription}x</span>
-                          </div>
-                          <div className="p-1 rounded bg-white/5">
-                            <span className="text-slate-400 block text-[9px]">NII</span>
-                            <span className="text-slate-200 font-semibold">{ipo.niiSubscription}x</span>
-                          </div>
-                          <div className="p-1 rounded bg-white/5">
-                            <span className="text-slate-400 block text-[9px]">QIB</span>
-                            <span className="text-slate-200 font-semibold">{ipo.qibSubscription}x</span>
-                          </div>
+                    </div>
+                  ) : (
+                    /* PRIMARY IPO SUBSCRIPTION & GMP BANNER (Upcoming, Open, Closed) */
+                    <div className="space-y-2 p-3 rounded-xl bg-slate-900/60 border border-white/5 mb-4">
+                      {/* Subscription multiple */}
+                      <div>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-slate-400 flex items-center gap-1">
+                            <BarChart2 className="w-3.5 h-3.5 text-cyan-400" />
+                            {activeTab === 'closed' ? 'Final Subscription' : 'Subscription'}
+                          </span>
+                          <span className="font-mono font-bold text-cyan-300">
+                            {ipo.currentSubscription > 0 ? `${ipo.currentSubscription}x` : isUpcoming ? 'Awaiting Open' : '—'}
+                          </span>
                         </div>
-                      )}
-                    </div>
+                        {/* Sub-category pills */}
+                        {ipo.currentSubscription > 0 && (
+                          <div className="grid grid-cols-3 gap-1 pt-1 text-[10px] font-mono text-center">
+                            <div className="p-1 rounded bg-white/5">
+                              <span className="text-slate-400 block text-[9px]">Retail</span>
+                              <span className="text-slate-200 font-semibold">{ipo.retailSubscription}x</span>
+                            </div>
+                            <div className="p-1 rounded bg-white/5">
+                              <span className="text-slate-400 block text-[9px]">NII</span>
+                              <span className="text-slate-200 font-semibold">{ipo.niiSubscription}x</span>
+                            </div>
+                            <div className="p-1 rounded bg-white/5">
+                              <span className="text-slate-400 block text-[9px]">QIB</span>
+                              <span className="text-slate-200 font-semibold">{ipo.qibSubscription}x</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
-                    {/* GMP Metric */}
-                    <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-xs">
-                      <span className="text-slate-400 flex items-center gap-1">
-                        <Flame className="w-3.5 h-3.5 text-purple-400" />
-                        Estimated GMP
-                      </span>
-                      <div className="flex items-center gap-1 font-mono font-bold text-purple-300">
-                        <span>+₹{ipo.gmp}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/25">
-                          +{ipo.gmpPercent}%
+                      {/* GMP Metric */}
+                      <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-xs">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <Flame className="w-3.5 h-3.5 text-purple-400" />
+                          Estimated GMP
                         </span>
+                        <div className="flex items-center gap-1 font-mono font-bold text-purple-300">
+                          <span>+₹{ipo.gmp}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/25">
+                            +{ipo.gmpPercent}%
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Quick Action Buttons */}
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10">
+                <div className={`grid ${isListed ? 'grid-cols-3' : 'grid-cols-3'} gap-2 pt-2 border-t border-white/10`}>
                   <button
                     onClick={() => onOpenDetails(ipo)}
                     className="py-2 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 shadow-sm"
@@ -426,21 +457,33 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     <span>Details</span>
                   </button>
 
-                  <button
-                    onClick={() => onOpenGmpTrend(ipo)}
-                    className="py-2 px-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1"
-                  >
-                    <Flame className="w-3 h-3 text-purple-400" />
-                    <span>GMP</span>
-                  </button>
+                  {isListed ? (
+                    <button
+                      onClick={() => onOpenStockChart(ipo)}
+                      className="col-span-2 py-2 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 hover:text-cyan-100 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/10"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                      <span>Live Chart (Upstox)</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => onOpenGmpTrend(ipo)}
+                        className="py-2 px-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Flame className="w-3 h-3 text-purple-400" />
+                        <span>GMP</span>
+                      </button>
 
-                  <button
-                    onClick={() => onOpenStockChart(ipo)}
-                    className="py-2 px-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1"
-                  >
-                    <TrendingUp className="w-3 h-3 text-cyan-400" />
-                    <span>Chart</span>
-                  </button>
+                      <button
+                        onClick={() => onOpenStockChart(ipo)}
+                        className="py-2 px-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <TrendingUp className="w-3 h-3 text-cyan-400" />
+                        <span>Chart</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -455,12 +498,30 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                 <tr className="border-b border-white/10 bg-slate-950/70 text-slate-400 font-semibold">
                   <th className="py-3 px-4 w-10">★</th>
                   <th className="py-3 px-4">Company & Symbol</th>
-                  <th className="py-3 px-4">Price Band</th>
-                  <th className="py-3 px-4">
-                    {activeTab === 'open' ? 'Subscription (Total / QIB)' : 'Dates'}
-                  </th>
-                  <th className="py-3 px-4">Estimated GMP</th>
-                  <th className="py-3 px-4">Lot Size / Issue</th>
+                  {activeTab === 'listed' ? (
+                    <>
+                      <th className="py-3 px-4">Current Price (LTP)</th>
+                      <th className="py-3 px-4">Day Change</th>
+                      <th className="py-3 px-4">Issue / Listing</th>
+                      <th className="py-3 px-4">Traded Volume</th>
+                    </>
+                  ) : activeTab === 'closed' ? (
+                    <>
+                      <th className="py-3 px-4">Price Band</th>
+                      <th className="py-3 px-4">Final Subscription</th>
+                      <th className="py-3 px-4">Estimated GMP</th>
+                      <th className="py-3 px-4">Allotment / Listing</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="py-3 px-4">Price Band</th>
+                      <th className="py-3 px-4">
+                        {activeTab === 'open' ? 'Subscription (Total / QIB)' : 'Dates'}
+                      </th>
+                      <th className="py-3 px-4">Estimated GMP</th>
+                      <th className="py-3 px-4">Lot Size / Issue</th>
+                    </>
+                  )}
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -493,33 +554,74 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         </p>
                       </td>
 
-                      <td className="py-3.5 px-4 font-mono font-semibold text-white">
-                        {isListed ? `₹${ipo.currentPrice?.toFixed(2)}` : ipo.priceBand}
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        {activeTab === 'open' ? (
-                          <div className="font-mono">
-                            <span className="text-cyan-300 font-bold block">{ipo.currentSubscription}x Total</span>
-                            <span className="text-[10px] text-slate-400 block">QIB: {ipo.qibSubscription}x</span>
-                          </div>
-                        ) : (
-                          <div className="font-mono text-slate-300 text-[11px]">
-                            {ipo.openDate} – {ipo.closeDate}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <div className="font-mono font-bold text-purple-300">
-                          +₹{ipo.gmp} ({ipo.gmpPercent}%)
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-slate-300">
-                        <span className="font-mono font-medium block">{ipo.lotSize} shares</span>
-                        <span className="text-[10px] text-slate-500 block">{ipo.issueSize}</span>
-                      </td>
+                      {activeTab === 'listed' ? (
+                        <>
+                          <td className="py-3.5 px-4 font-mono font-extrabold text-white text-sm">
+                            ₹{ipo.currentPrice?.toFixed(2)}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span
+                              className={`font-mono font-bold ${
+                                (ipo.dayChange || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                              }`}
+                            >
+                              {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange?.toFixed(2)} ({ipo.dayChangePercent}%)
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
+                            ₹{ipo.issuePrice || ipo.priceLow || 450} / ₹{ipo.listingPrice || ipo.currentPrice || 500}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
+                            {(ipo.volume || 854200).toLocaleString('en-IN')}
+                          </td>
+                        </>
+                      ) : activeTab === 'closed' ? (
+                        <>
+                          <td className="py-3.5 px-4 font-mono font-semibold text-white">
+                            {ipo.priceBand}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="font-mono text-cyan-300 font-bold block">{ipo.currentSubscription}x</span>
+                            <span className="text-[10px] text-slate-400 block font-mono">QIB: {ipo.qibSubscription}x</span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-mono font-bold text-purple-300">
+                              +₹{ipo.gmp} ({ipo.gmpPercent}%)
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-slate-300 text-[11px]">
+                            <div>Allot: {ipo.allotmentDate || 'T+3 Days'}</div>
+                            <div className="text-[10px] text-slate-400">List: {ipo.listingDate || 'Approaching'}</div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-3.5 px-4 font-mono font-semibold text-white">
+                            {ipo.priceBand}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {activeTab === 'open' ? (
+                              <div className="font-mono">
+                                <span className="text-cyan-300 font-bold block">{ipo.currentSubscription}x Total</span>
+                                <span className="text-[10px] text-slate-400 block">QIB: {ipo.qibSubscription}x</span>
+                              </div>
+                            ) : (
+                              <div className="font-mono text-slate-300 text-[11px]">
+                                {ipo.openDate} – {ipo.closeDate}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-mono font-bold text-purple-300">
+                              +₹{ipo.gmp} ({ipo.gmpPercent}%)
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-300">
+                            <span className="font-mono font-medium block">{ipo.lotSize} shares</span>
+                            <span className="text-[10px] text-slate-500 block">{ipo.issueSize}</span>
+                          </td>
+                        </>
+                      )}
 
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
@@ -529,18 +631,30 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           >
                             Details
                           </button>
-                          <button
-                            onClick={() => onOpenGmpTrend(ipo)}
-                            className="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 text-[11px] font-medium transition cursor-pointer"
-                          >
-                            GMP
-                          </button>
-                          <button
-                            onClick={() => onOpenStockChart(ipo)}
-                            className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-[11px] font-medium transition cursor-pointer"
-                          >
-                            Chart
-                          </button>
+                          {isListed ? (
+                            <button
+                              onClick={() => onOpenStockChart(ipo)}
+                              className="px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1"
+                            >
+                              <TrendingUp className="w-3 h-3 text-cyan-400" />
+                              <span>Live Chart</span>
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => onOpenGmpTrend(ipo)}
+                                className="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 text-[11px] font-medium transition cursor-pointer"
+                              >
+                                GMP
+                              </button>
+                              <button
+                                onClick={() => onOpenStockChart(ipo)}
+                                className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-[11px] font-medium transition cursor-pointer"
+                              >
+                                Chart
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
