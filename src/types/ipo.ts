@@ -1,5 +1,39 @@
-export type IpoStatus = 'Active' | 'Forthcoming' | 'Closed' | 'Listed';
+export type IpoStatus = 'upcoming' | 'open' | 'closed' | 'listed' | 'Active' | 'Forthcoming' | 'Closed' | 'Listed';
+export type IssueType = 'regular' | 'sme';
 export type IpoSeries = 'EQ' | 'SME';
+
+export interface UnifiedIPO {
+  id: string;
+  symbol: string;
+  companyName: string;
+  issueType: IssueType;
+  status: 'upcoming' | 'open' | 'closed' | 'listed';
+  priceBandMin: number;
+  priceBandMax: number;
+  lotSize: number;
+  openDate: string;
+  closeDate: string;
+  listingDate?: string;
+  issueSizeInCrores?: number;
+  subscriptionTotal?: number;
+  subscriptionRetail?: number;
+  subscriptionHni?: number;
+  subscriptionQib?: number;
+  registrar?: string;
+  instrumentKey?: string; // e.g. NSE_EQ|INE... for listed stocks
+  // Hybrid GMP Layer
+  gmp: number;
+  expectedListingGainPct: number; // Formula: (gmp / priceBandMax) * 100
+}
+
+export interface CandleData {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
 
 export interface LiveIpoSummary {
   symbol: string;

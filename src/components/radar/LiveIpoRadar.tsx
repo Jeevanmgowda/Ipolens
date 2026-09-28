@@ -13,6 +13,7 @@ import { IpoCategoriesTabs } from '@/components/live-market/IpoCategoriesTabs';
 import { IpoDetailModal } from './IpoDetailModal';
 import { LiveGmpTrendChart } from '@/components/live-market/LiveGmpTrendChart';
 import { LiveStockPriceChart } from '@/components/live-market/LiveStockPriceChart';
+import { NseLiveChart } from '@/components/nse-live-chart';
 import {
   X,
   TrendingUp,
@@ -341,7 +342,8 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
             </div>
 
             <div className="p-5 overflow-y-auto flex-1">
-              <LiveStockPriceChart
+              <NseLiveChart
+                instrumentKey={selectedIpoForStockChart.symbol}
                 symbol={selectedIpoForStockChart.symbol}
                 companyName={selectedIpoForStockChart.companyName}
                 initialPrice={selectedIpoForStockChart.currentPrice || selectedIpoForStockChart.listingPrice || 450}

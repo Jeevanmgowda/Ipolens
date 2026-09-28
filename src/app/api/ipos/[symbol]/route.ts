@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchLiveIpoDetail } from '@/services/nseIpoService';
 import { IpoService } from '@/services/ipoService';
 import { LiveIpoDetail } from '@/types/ipo';
+import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,16 @@ export async function GET(
 
     if (!symbol) {
       return NextResponse.json({ success: false, error: 'Symbol parameter is required' }, { status: 400 });
+    }
+
+    // 1. Check Unified IPO pipeline first (Upstox + Hybrid GMP)
+    const unifiedIpo = await IpoAggregatorService.getUnifiedIpoById(symbol);
+    if (unifiedIpo) {
+      return NextResponse.json({
+        success: true,
+        data: unifiedIpo,
+        source: 'Upstox API v2 / IPOLENS Hybrid Aggregator',
+      });
     }
 
     let detail = await fetchLiveIpoDetail(symbol);
