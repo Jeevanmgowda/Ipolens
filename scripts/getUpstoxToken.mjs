@@ -13,18 +13,19 @@ import readline from 'readline';
 
 const envPath = path.resolve(process.cwd(), '.env.local');
 
-let clientId = process.env.UPSTOX_CLIENT_ID || '';
-let clientSecret = process.env.UPSTOX_CLIENT_SECRET || '';
+let clientId = process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '';
+let clientSecret = process.env.UPSTOX_CLIENT_SECRET || process.env.UPSTOX_API_SECRET || '';
+let redirectUri = process.env.UPSTOX_REDIRECT_URI || 'http://localhost:3000/api/auth/callback/upstox';
 
 if (fs.existsSync(envPath)) {
   const content = fs.readFileSync(envPath, 'utf8');
-  const idMatch = content.match(/UPSTOX_CLIENT_ID=([^\r\n]+)/);
-  const secMatch = content.match(/UPSTOX_CLIENT_SECRET=([^\r\n]+)/);
+  const idMatch = content.match(/UPSTOX_(?:CLIENT_ID|API_KEY)=([^\r\n]+)/);
+  const secMatch = content.match(/UPSTOX_(?:CLIENT_SECRET|API_SECRET)=([^\r\n]+)/);
+  const uriMatch = content.match(/UPSTOX_REDIRECT_URI=([^\r\n]+)/);
   if (idMatch && idMatch[1] && !idMatch[1].startsWith('your_')) clientId = idMatch[1].trim();
   if (secMatch && secMatch[1] && !secMatch[1].startsWith('your_')) clientSecret = secMatch[1].trim();
+  if (uriMatch && uriMatch[1] && !uriMatch[1].startsWith('your_')) redirectUri = uriMatch[1].trim();
 }
-
-const redirectUri = 'http://localhost:3000/api/auth/callback/upstox';
 
 console.log('\n======================================================');
 console.log('       IPOLENS — Upstox V3 API Token Generator        ');

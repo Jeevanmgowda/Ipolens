@@ -40,9 +40,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const clientId = process.env.UPSTOX_CLIENT_ID || '';
-  const clientSecret = process.env.UPSTOX_CLIENT_SECRET || '';
-  const redirectUri = `${url.origin}/api/auth/callback/upstox`;
+  const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
+  const clientSecret = (process.env.UPSTOX_CLIENT_SECRET || process.env.UPSTOX_API_SECRET || '').trim();
+  const redirectUri = (process.env.UPSTOX_REDIRECT_URI || `${url.origin}/api/auth/callback/upstox`).trim();
 
   try {
     const tokenRes = await fetch('https://api.upstox.com/v2/login/authorization/token', {

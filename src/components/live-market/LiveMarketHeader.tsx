@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Radio,
   RefreshCw,
@@ -36,6 +36,14 @@ export const LiveMarketHeader: React.FC<LiveMarketHeaderProps> = ({
 }) => {
   const [showAlertsDropdown, setShowAlertsDropdown] = useState<boolean>(false);
   const [alertList, setAlertList] = useState<MarketAlertItem[]>(alerts);
+  const [upstoxStatus, setUpstoxStatus] = useState<{ configured: boolean; valid: boolean; user?: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/upstox/status')
+      .then((r) => r.json())
+      .then((d) => setUpstoxStatus(d))
+      .catch(() => setUpstoxStatus(null));
+  }, [lastUpdated]);
 
   const unreadCount = alertList.filter((a) => !a.read).length;
 
@@ -102,6 +110,29 @@ export const LiveMarketHeader: React.FC<LiveMarketHeaderProps> = ({
             <span>Last updated:</span>
             <span className="text-slate-200 font-bold">{lastUpdated || 'Just now'}</span>
           </div>
+
+          {/* Upstox Live Session Link / Status */}
+          <a
+            href="/api/auth/upstox"
+            title={
+              upstoxStatus?.valid
+                ? `Upstox API Active (${upstoxStatus.user || 'Trader'}). Click to re-authenticate or switch account.`
+                : 'Connect or refresh daily Upstox Developer token'
+            }
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+              upstoxStatus?.valid
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25 hover:bg-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/25 hover:bg-amber-500/20'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                upstoxStatus?.valid ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+              }`}
+            />
+            <span>{upstoxStatus?.valid ? 'Upstox Live' : 'Connect Upstox'}</span>
+            <ExternalLink className="w-3 h-3 opacity-60" />
+          </a>
 
           {/* Sync Refresh Button */}
           <button

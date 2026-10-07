@@ -11,7 +11,8 @@ export const familyPansTable = pgTable('family_pans', {
   userId: varchar('user_id', { length: 64 }).notNull().default('default_user'),
   name: varchar('name', { length: 128 }).notNull(),
   relationship: varchar('relationship', { length: 32 }).notNull(), // 'Self' | 'Spouse' | 'Parent' | 'Child' | 'HUF' | 'Other'
-  pan: varchar('pan', { length: 16 }).notNull(),                   // Masked/Secure PAN
+  pan: varchar('pan', { length: 16 }).notNull(),                   // Masked/Secure PAN (e.g. ABCDE****F)
+  panEncrypted: text('pan_encrypted'),                            // AES-256-GCM Encrypted PAN string
   broker: varchar('broker', { length: 64 }).notNull(),             // 'Zerodha' | 'Groww' | 'AngelOne' | 'Upstox'
   dematId: varchar('demat_id', { length: 64 }),                    // DP Client ID
   bankUpi: varchar('bank_upi', { length: 64 }),                    // UPI ID for ASBA mandate
@@ -156,6 +157,43 @@ export const marketWatchlistTable = pgTable('market_watchlist', {
   addedAt: timestamp('added_at').notNull().defaultNow(),
 });
 
+// 11. Registered Users Table (Enterprise Authentication & DPDP Compliance)
+export const usersTable = pgTable('users', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  name: varchar('name', { length: 128 }).notNull(),
+  email: varchar('email', { length: 256 }).notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  salt: varchar('salt', { length: 64 }).notNull(),
+  role: varchar('role', { length: 32 }).notNull().default('retail'), // 'retail' | 'hni' | 'institutional' | 'admin'
+  investorCategory: varchar('investor_category', { length: 32 }).notNull().default('Retail'), // 'Retail' | 'sNII' | 'bNII' | 'Institutional'
+  primaryPan: varchar('primary_pan', { length: 32 }),
+  avatarUrl: text('avatar_url'),
+  termsAccepted: boolean('terms_accepted').default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// 12. User Sessions Table (HttpOnly Session Security)
+export const sessionsTable = pgTable('user_sessions', {
+  id: varchar('id', { length: 128 }).primaryKey(), // Session token
+  userId: varchar('user_id', { length: 64 }).notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// 13. In-App & Multi-Channel Notifications Table
+export const notificationsTable = pgTable('notifications', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  userId: varchar('user_id', { length: 64 }).notNull(),
+  type: varchar('type', { length: 32 }).notNull(), // 'GMP_JUMP' | 'SUBSCRIPTION_MILESTONE' | 'ALLOTMENT_OUT' | 'LOCKIN_EXPIRY' | 'SYSTEM'
+  title: varchar('title', { length: 256 }).notNull(),
+  message: text('message').notNull(),
+  symbol: varchar('symbol', { length: 32 }),
+  read: boolean('read').notNull().default(false),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // New Type inference exports
 export type IpoMasterSelect = typeof iposTable.$inferSelect;
 export type IpoMasterInsert = typeof iposTable.$inferInsert;
@@ -174,4 +212,13 @@ export type MarketOhlcInsert = typeof marketOhlcTable.$inferInsert;
 
 export type MarketWatchlistSelect = typeof marketWatchlistTable.$inferSelect;
 export type MarketWatchlistInsert = typeof marketWatchlistTable.$inferInsert;
+
+export type UserSelect = typeof usersTable.$inferSelect;
+export type UserInsert = typeof usersTable.$inferInsert;
+
+export type SessionSelect = typeof sessionsTable.$inferSelect;
+export type SessionInsert = typeof sessionsTable.$inferInsert;
+
+export type NotificationSelect = typeof notificationsTable.$inferSelect;
+export type NotificationInsert = typeof notificationsTable.$inferInsert;
 

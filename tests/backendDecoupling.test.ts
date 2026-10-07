@@ -80,6 +80,7 @@ describe('Decoupled Backend Architecture', () => {
 
       await redis.subscribe('test-channel');
       await redis.publish('test-channel', JSON.stringify({ token: '1594', ltp: 722.5 }));
+      await new Promise((r) => setTimeout(r, 400));
 
       expect(receivedMessage).toContain('722.5');
     });

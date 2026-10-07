@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { HoldingItem, PortfolioSummary } from '@/types/portfolio';
 import { CsvUploadModal } from './CsvUploadModal';
+import { TaxImpactWidget } from './TaxImpactWidget';
 import {
   PieChart,
   UploadCloud,
@@ -15,6 +16,7 @@ import {
   ShieldCheck,
   RefreshCw,
   Award,
+  Calculator,
 } from 'lucide-react';
 
 export const PortfolioDashboard: React.FC = () => {
@@ -23,6 +25,7 @@ export const PortfolioDashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [filterIpoOnly, setFilterIpoOnly] = useState<boolean>(false);
+  const [showTaxWidget, setShowTaxWidget] = useState<boolean>(true);
 
   const fetchPortfolio = async () => {
     try {
@@ -87,6 +90,18 @@ export const PortfolioDashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTaxWidget(!showTaxWidget)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition ${
+              showTaxWidget
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
+            }`}
+          >
+            <Calculator className="w-4 h-4 text-emerald-400" />
+            <span>{showTaxWidget ? 'Tax Widget Active' : 'Tax Impact Calculator'}</span>
+          </button>
+
           {holdings.length > 0 && (
             <button
               onClick={handleClearAll}
@@ -166,6 +181,14 @@ export const PortfolioDashboard: React.FC = () => {
             <div className="text-[11px] text-slate-500 font-mono mt-1">Active market movement</div>
           </div>
         </div>
+      )}
+
+      {/* Post-Listing Capital Gains Tax Impact Widget (Section 111A / 112A) */}
+      {showTaxWidget && (
+        <TaxImpactWidget
+          initialGain={summary?.totalUnrealizedPnl && summary.totalUnrealizedPnl > 0 ? summary.totalUnrealizedPnl : 38500}
+          initialInvested={summary?.totalInvested || 15000}
+        />
       )}
 
       {/* Filter / Toggle Bar */}

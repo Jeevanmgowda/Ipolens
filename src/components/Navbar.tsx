@@ -19,9 +19,13 @@ import {
   ChevronDown,
   Building2,
   TrendingUp,
+  Bell,
+  Star,
+  Lock,
 } from 'lucide-react';
+import { NotificationDrawer } from '@/components/notifications/NotificationDrawer';
 
-export type ActiveTab = 'radar' | 'analyst' | 'pans' | 'allotment' | 'portfolio';
+export type ActiveTab = 'radar' | 'analyst' | 'pans' | 'allotment' | 'portfolio' | 'watchlist' | 'lockin';
 
 interface NavbarProps {
   activeTab?: ActiveTab;
@@ -44,6 +48,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const router = useRouter();
   const { user, isAuthenticated, signOut, loginWithDemo } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(3);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleTabClick = (tab: ActiveTab) => {
@@ -106,6 +112,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
               <span className="hidden md:inline">{isRefreshing ? 'Syncing...' : 'Sync NSE'}</span>
+            </button>
+
+            {/* Notification Center Trigger */}
+            <button
+              onClick={() => setIsNotifOpen(true)}
+              title="Notifications & Alerts"
+              className="relative p-1.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition cursor-pointer"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              {unreadNotifCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-cyan-400 text-black text-[9px] font-bold flex items-center justify-center animate-pulse">
+                  {unreadNotifCount}
+                </span>
+              )}
             </button>
 
             <div className="h-3.5 w-px bg-white/10" />
@@ -312,9 +332,40 @@ export const Navbar: React.FC<NavbarProps> = ({
               <PieChart className="w-4 h-4" />
               <span>Demat Portfolio</span>
             </button>
+
+            <button
+              onClick={() => handleTabClick('watchlist')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'watchlist'
+                  ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
+              }`}
+            >
+              <Star className="w-4 h-4" />
+              <span>Watchlist</span>
+            </button>
+
+            <button
+              onClick={() => handleTabClick('lockin')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'lockin'
+                  ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/25'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
+              }`}
+            >
+              <Lock className="w-4 h-4" />
+              <span>Anchor Lock-In</span>
+            </button>
           </nav>
         </div>
       </div>
+
+      {/* Global Notification Drawer */}
+      <NotificationDrawer
+        isOpen={isNotifOpen}
+        onClose={() => setIsNotifOpen(false)}
+        onCountChange={setUnreadNotifCount}
+      />
     </header>
   );
 };

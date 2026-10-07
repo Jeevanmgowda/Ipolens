@@ -59,7 +59,7 @@ describe('PostgreSQL Database Persistence Layer with Drizzle ORM', () => {
       const found = pans.find((p) => p.id === testPan.id);
       expect(found).toBeDefined();
       expect(found?.name).toBe('Database Test User');
-      expect(found?.pan).toBe('DBTST1234F');
+      expect(found?.pan).toBe('DBTST****F');
 
       // Delete
       const deleted = await DbRepositoryService.deletePan(testPan.id);

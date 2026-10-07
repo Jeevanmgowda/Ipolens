@@ -100,4 +100,22 @@ export interface LiveIpoDetail {
   registrarSlug: 'linkintime' | 'kfintech' | 'bigshare' | 'other';
   isListed?: boolean;
   listingPrice?: number | string;
+  gmpEstimate?: number;
+  expectedListingGainPct?: number;
+  objectsOfIssue?: string[];
+  leadManagers?: string[];
+  anchorDetails?: {
+    anchorPortionCr?: number;
+    anchorCount?: number;
+    keyAnchors?: string[];
+    bidPrice?: number;
+  };
+  financialSummary?: {
+    fy: string;
+    revenueCr: number;
+    ebitdaCr: number;
+    patCr: number;
+    eps: number;
+    nav: number;
+  }[];
 }

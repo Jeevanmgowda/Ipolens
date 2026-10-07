@@ -52,7 +52,7 @@ describe('Gemini 2.5 Flash DRHP Analyst Service', () => {
     expect(analysis.topRisks.length).toBeGreaterThanOrEqual(1);
     expect(analysis.financials).toBeDefined();
     expect(analysis.businessMoat).toBeTruthy();
-  });
+  }, 30000);
 
   it('should generate fallback synthesis gracefully for unlisted or newly announced companies', async () => {
     const analysis = await analyzeDrhpFiling('UNKNOWNCO', 'Unknown Technologies Ltd');

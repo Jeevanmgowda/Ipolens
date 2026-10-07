@@ -9,6 +9,8 @@ import { ApplicationTracker } from '@/components/pans/ApplicationTracker';
 import { MultiPanBiddingModal } from '@/components/pans/MultiPanBiddingModal';
 import { AllotmentChecker } from '@/components/allotment/AllotmentChecker';
 import { PortfolioDashboard } from '@/components/portfolio/PortfolioDashboard';
+import { WatchlistView } from '@/components/watchlist/WatchlistView';
+import { AnchorLockInTracker } from '@/components/radar/AnchorLockInTracker';
 import { Shield, Sparkles, Layers, Activity } from 'lucide-react';
 
 export default function Home() {
@@ -22,7 +24,7 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab') as ActiveTab | null;
-      if (tab && ['radar', 'analyst', 'pans', 'allotment', 'portfolio'].includes(tab)) {
+      if (tab && ['radar', 'analyst', 'pans', 'allotment', 'portfolio', 'watchlist', 'lockin'].includes(tab)) {
         setActiveTab(tab);
       }
       const sym = params.get('symbol');
@@ -130,6 +132,20 @@ export default function Home() {
         {activeTab === 'portfolio' && (
           <div className="space-y-6">
             <PortfolioDashboard />
+          </div>
+        )}
+
+        {/* Module 6: Watchlist & Custom Alerts */}
+        {activeTab === 'watchlist' && (
+          <div className="space-y-6">
+            <WatchlistView />
+          </div>
+        )}
+
+        {/* Module 7: Anchor Investor Lock-In Expiry Tracker */}
+        {activeTab === 'lockin' && (
+          <div className="space-y-6">
+            <AnchorLockInTracker />
           </div>
         )}
       </main>

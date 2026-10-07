@@ -72,6 +72,13 @@ export interface GmpHistoryPoint {
   estimatedListingPrice?: number;
 }
 
+export interface GmpSourceBreakdown {
+  sourceName: string;
+  gmp: number;
+  lastUpdated: string;
+  reliability: 'HIGH' | 'MEDIUM' | 'UNOFFICIAL';
+}
+
 export interface GmpTrendResponse {
   symbol: string;
   companyName: string;
@@ -83,6 +90,10 @@ export interface GmpTrendResponse {
   points: GmpHistoryPoint[];
   history: GmpHistoryPoint[]; // alias to points
   disclaimer: string;
+  sources?: GmpSourceBreakdown[];
+  consensusConfidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+  sourceSpreadPct?: number;
+  freshnessLabel?: string;
 }
 
 export interface MarketQuoteData {

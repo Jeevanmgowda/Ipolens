@@ -29,7 +29,7 @@ const KNOWN_GMP_MAP: Record<string, number> = {
 
 export class IpoAggregatorService {
   /**
-   * Look up latest Grey Market Premium (GMP) for an IPO symbol
+   * Look up latest Grey Market Premium (GMP) dynamically from live scraped feeds
    */
   static async getGmpForSymbol(symbol: string, priceBandMax: number, issueType: IssueType): Promise<number> {
     const clean = (symbol || '').toUpperCase().trim();
@@ -45,12 +45,18 @@ export class IpoAggregatorService {
       // Redis optional
     }
 
-    // 2. Check internal curated registry
-    if (KNOWN_GMP_MAP[clean] !== undefined) {
-      return KNOWN_GMP_MAP[clean];
+    // 2. Query live scraped grey market tracker from market websites
+    try {
+      const { getLiveScrapedGmp } = await import('@/services/nseIpoService');
+      const liveGmp = await getLiveScrapedGmp(clean);
+      if (liveGmp !== null && liveGmp !== undefined && !isNaN(liveGmp)) {
+        return liveGmp;
+      }
+    } catch {
+      // optional
     }
 
-    // 3. Realistic dynamic estimate based on price and issue type if unlisted/new
+    // 3. Realistic dynamic estimate based on price and issue type if newly announced
     if (priceBandMax > 0) {
       const multiplier = issueType === 'sme' ? 0.28 : 0.22;
       return Math.round(priceBandMax * multiplier);
@@ -60,7 +66,7 @@ export class IpoAggregatorService {
   }
 
   /**
-   * Fetch base IPOs from Upstox and enrich with hybrid GMP & expected listing gain metrics
+   * Fetch base IPOs from live Upstox & NSE exchange telemetry, enriching with live GMP
    */
   static async getUnifiedIpos(
     status: IpoStatus = 'open',
@@ -68,12 +74,62 @@ export class IpoAggregatorService {
   ): Promise<UnifiedIPO[]> {
     const baseIpos = await UpstoxIpoService.getIposByStatus(status, issueType);
 
-    const enrichedPromises = baseIpos.map(async (raw): Promise<UnifiedIPO> => {
+    // Also fetch live NSE issues if any additional live items exist
+    let nseIpos: Partial<UnifiedIPO>[] = [];
+    try {
+      const { fetchLiveNseIpos } = await import('@/services/nseIpoService');
+      const nseList = await fetchLiveNseIpos();
+      nseIpos = nseList
+        .filter((i) => {
+          if (status === 'listed') return Boolean(i.isListed);
+          const s = i.status === 'Active' ? 'open' : i.status === 'Forthcoming' ? 'upcoming' : 'closed';
+          return s === status;
+        })
+        .map((i) => {
+          const prices = (i.priceBand || i.issuePrice || '100').match(/\d+(?:\.\d+)?/g) || ['100'];
+          const maxPrice = parseFloat(prices[prices.length - 1]) || 100;
+          const minPrice = parseFloat(prices[0]) || maxPrice;
+          const currentType: IssueType = i.series === 'SME' ? 'sme' : 'regular';
+          return {
+            id: `${i.symbol.toLowerCase()}-ipo`,
+            symbol: i.symbol.toUpperCase(),
+            companyName: i.companyName,
+            issueType: currentType,
+            status: (status === 'listed' ? 'listed' : i.status === 'Active' ? 'open' : i.status === 'Forthcoming' ? 'upcoming' : 'closed') as 'upcoming' | 'open' | 'closed' | 'listed',
+            priceBandMin: minPrice,
+            priceBandMax: maxPrice,
+            lotSize: typeof i.lotSize === 'number' ? i.lotSize : (i.lotSize ? parseInt(i.lotSize, 10) : (currentType === 'sme' ? 1200 : 14)),
+            openDate: i.issueStartDate,
+            closeDate: i.issueEndDate,
+            issueSizeInCrores: i.issueSize ? parseFloat(i.issueSize) : undefined,
+            subscriptionTotal: parseFloat(i.noOfTime || '0') || undefined,
+            registrar: i.registrarName,
+            instrumentKey: `NSE_EQ|${i.symbol.toUpperCase()}`,
+          };
+        });
+      if (issueType) {
+        nseIpos = nseIpos.filter((i) => i.issueType === issueType);
+      }
+    } catch {
+      // ignore
+    }
+
+    // Merge Upstox and NSE without duplicates
+    const seen = new Set<string>();
+    const combined: Partial<UnifiedIPO>[] = [];
+    for (const item of [...baseIpos, ...nseIpos]) {
+      const sym = (item.symbol || '').toUpperCase();
+      if (!sym || seen.has(sym)) continue;
+      seen.add(sym);
+      combined.push(item);
+    }
+
+    const enrichedPromises = combined.map(async (raw): Promise<UnifiedIPO> => {
       const maxPrice = raw.priceBandMax || 100;
       const minPrice = raw.priceBandMin || maxPrice;
       const currentIssueType = raw.issueType || 'regular';
 
-      // Hybrid GMP lookup
+      // Live GMP lookup
       const gmp = await this.getGmpForSymbol(raw.symbol || '', maxPrice, currentIssueType);
 
       // Formula: (gmp / priceBandMax) * 100

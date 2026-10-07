@@ -2,6 +2,7 @@ import { LiveMarketIpoItem } from '@/types/liveMarket';
 import { fetchLiveNseIpos } from './nseIpoService';
 import { fetchLiveListedIpos, LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
+import { UpstoxIpoService } from '@/lib/services/upstox-ipo.service';
 
 export interface IPODataProvider {
   name: string;
@@ -21,60 +22,74 @@ export class NSEIPOProvider implements IPODataProvider {
   name = 'Upstox v2 & Hybrid GMP Exchange Pipeline';
 
   async getAllIpos(): Promise<LiveMarketIpoItem[]> {
+    // 1. Ingest official Upstox Primary Market API feed if active
+    let upstoxIpos: LiveMarketIpoItem[] = [];
     try {
-      const [openUnified, upcomingUnified, closedUnified, listedUnified] = await Promise.all([
-        IpoAggregatorService.getUnifiedIpos('open'),
-        IpoAggregatorService.getUnifiedIpos('upcoming'),
-        IpoAggregatorService.getUnifiedIpos('closed'),
-        IpoAggregatorService.getUnifiedIpos('listed'),
+      const [openRaw, upcRaw, closedRaw, listedRawUpstox] = await Promise.all([
+        UpstoxIpoService.fetchLiveFromUpstox('open'),
+        UpstoxIpoService.fetchLiveFromUpstox('upcoming'),
+        UpstoxIpoService.fetchLiveFromUpstox('closed'),
+        UpstoxIpoService.fetchLiveFromUpstox('listed'),
       ]);
+      const allUpstox = [...openRaw, ...upcRaw, ...closedRaw, ...listedRawUpstox];
+      if (allUpstox.length > 0) {
+        upstoxIpos = await Promise.all(
+          allUpstox.map(async (u) => {
+            const gmp = await IpoAggregatorService.getGmpForSymbol(
+              u.symbol || '',
+              u.priceBandMax || 100,
+              u.issueType || 'regular'
+            );
+            const maxPrice = u.priceBandMax || 100;
+            const gmpPercent = maxPrice > 0 ? Number(((gmp / maxPrice) * 100).toFixed(2)) : 0;
+            const statusStr: 'Upcoming' | 'Open' | 'Closed' | 'Listed' =
+              u.status === 'open'
+                ? 'Open'
+                : u.status === 'upcoming'
+                ? 'Upcoming'
+                : u.status === 'listed'
+                ? 'Listed'
+                : 'Closed';
 
-      const unifiedAll = [...openUnified, ...upcomingUnified, ...closedUnified, ...listedUnified];
-      if (unifiedAll.length > 0) {
-        return unifiedAll.map((u) => {
-          const statusStr: 'Upcoming' | 'Open' | 'Closed' | 'Listed' =
-            u.status === 'open'
-              ? 'Open'
-              : u.status === 'upcoming'
-              ? 'Upcoming'
-              : u.status === 'listed'
-              ? 'Listed'
-              : 'Closed';
-
-          return {
-            id: u.id,
-            symbol: u.symbol,
-            companyName: u.companyName,
-            status: statusStr,
-            series: u.issueType === 'sme' ? 'SME' : 'EQ',
-            priceBand: u.priceBandMin === u.priceBandMax ? `₹${u.priceBandMax}` : `₹${u.priceBandMin} – ₹${u.priceBandMax}`,
-            priceLow: u.priceBandMin,
-            priceHigh: u.priceBandMax,
-            lotSize: u.lotSize,
-            issueSize: u.issueSizeInCrores ? `₹${u.issueSizeInCrores} Cr` : '₹500 Cr',
-            openDate: u.openDate,
-            closeDate: u.closeDate,
-            allotmentDate: u.listingDate || u.closeDate || 'TBD',
-            listingDate: u.listingDate || 'TBD',
-            expectedListingDate: u.listingDate,
-            registrar: u.registrar || 'Link Intime India Pvt Ltd',
-            gmp: u.gmp,
-            gmpPercent: u.expectedListingGainPct,
-            currentSubscription: u.subscriptionTotal || 0,
-            retailSubscription: u.subscriptionRetail || (u.subscriptionTotal ? Number((u.subscriptionTotal * 0.75).toFixed(2)) : 0),
-            niiSubscription: u.subscriptionHni || (u.subscriptionTotal ? Number((u.subscriptionTotal * 1.15).toFixed(2)) : 0),
-            qibSubscription: u.subscriptionQib || (u.subscriptionTotal ? Number((u.subscriptionTotal * 1.45).toFixed(2)) : 0),
-            currentPrice: u.status === 'listed' ? u.priceBandMax * (1 + u.expectedListingGainPct / 100) : undefined,
-            listingPrice: u.status === 'listed' ? u.priceBandMax * (1 + u.expectedListingGainPct / 100) : undefined,
-            dayChange: u.status === 'listed' ? Number((u.gmp * 0.1).toFixed(2)) : undefined,
-            dayChangePercent: u.status === 'listed' ? Number((u.expectedListingGainPct * 0.1).toFixed(2)) : undefined,
-            volume: u.status === 'listed' ? 1200000 : undefined,
-            marketStatus: 'OPEN',
-          };
-        });
+            return {
+              id: u.id || `${(u.symbol || 'ipo').toLowerCase()}-ipo`,
+              symbol: (u.symbol || 'IPO').toUpperCase(),
+              companyName: u.companyName || u.symbol || 'Unknown Company',
+              status: statusStr,
+              series: u.issueType === 'sme' ? 'SME' : 'EQ',
+              priceBand:
+                u.priceBandMin === u.priceBandMax
+                  ? `₹${u.priceBandMax}`
+                  : `₹${u.priceBandMin} – ₹${u.priceBandMax}`,
+              priceLow: u.priceBandMin || 100,
+              priceHigh: u.priceBandMax || 100,
+              lotSize: u.lotSize || 14,
+              issueSize: u.issueSizeInCrores ? `₹${u.issueSizeInCrores} Cr` : '₹500 Cr',
+              openDate: u.openDate || 'TBD',
+              closeDate: u.closeDate || 'TBD',
+              allotmentDate: u.listingDate || u.closeDate || 'TBD',
+              listingDate: u.listingDate || 'TBD',
+              expectedListingDate: u.listingDate || 'TBD',
+              registrar: u.registrar || 'Link Intime India Pvt Ltd',
+              gmp,
+              gmpPercent,
+              currentSubscription: u.subscriptionTotal || 0,
+              retailSubscription:
+                u.subscriptionRetail ||
+                (u.subscriptionTotal ? Number((u.subscriptionTotal * 0.75).toFixed(2)) : 0),
+              niiSubscription:
+                u.subscriptionHni ||
+                (u.subscriptionTotal ? Number((u.subscriptionTotal * 1.15).toFixed(2)) : 0),
+              qibSubscription:
+                u.subscriptionQib ||
+                (u.subscriptionTotal ? Number((u.subscriptionTotal * 1.45).toFixed(2)) : 0),
+              marketStatus: 'OPEN',
+            };
+          })
+        );
       }
     } catch (err: any) {
-      console.warn('[NSEIPOProvider] Upstox pipeline fallback:', err.message);
+      console.warn('[NSEIPOProvider] Upstox primary feed notice:', err.message);
     }
 
     const [liveRaw, listedRaw] = await Promise.all([
@@ -82,10 +97,16 @@ export class NSEIPOProvider implements IPODataProvider {
       fetchLiveListedIpos(),
     ]);
 
-    const items: LiveMarketIpoItem[] = [];
+    const items: LiveMarketIpoItem[] = [...upstoxIpos];
+    const seenSymbols = new Set(items.map((i) => i.symbol.toUpperCase()));
 
     // 1. Process Live, Forthcoming, and Closed issues from NSE
     for (const raw of liveRaw) {
+      if (!raw.symbol) continue;
+      const symUpper = raw.symbol.toUpperCase();
+      if (seenSymbols.has(symUpper)) continue;
+      seenSymbols.add(symUpper);
+
       const isLive = raw.status === 'Active';
       const isUpcoming = raw.status === 'Forthcoming';
       const isActuallyListed = Boolean(
@@ -208,65 +229,6 @@ export class NSEIPOProvider implements IPODataProvider {
         volume: l.volume,
         marketStatus: 'OPEN',
       });
-    }
-
-    // If no active primary issues are currently in the closed-awaiting-allotment state, include recent issues awaiting allotment
-    const closedCount = items.filter((i) => i.status === 'Closed').length;
-    if (closedCount === 0) {
-      items.push(
-        {
-          id: 'deccan-infra',
-          symbol: 'DECCAN',
-          companyName: 'Deccan Urban Infrastructure Ltd',
-          status: 'Closed',
-          series: 'EQ',
-          priceBand: '₹88 – ₹93',
-          priceLow: 88,
-          priceHigh: 93,
-          lotSize: 160,
-          issueSize: '₹340 Cr',
-          openDate: '22 Sep 2026',
-          closeDate: '24 Sep 2026',
-          allotmentDate: '27 Sep 2026',
-          listingDate: '01 Oct 2026',
-          expectedListingDate: '01 Oct 2026',
-          registrar: 'Link Intime India Pvt Ltd',
-          registrarUrl: 'https://linkintime.co.in',
-          gmp: 24,
-          gmpPercent: 25.80,
-          currentSubscription: 38.45,
-          retailSubscription: 18.20,
-          niiSubscription: 42.10,
-          qibSubscription: 54.80,
-          employeeSubscription: 2.10,
-        },
-        {
-          id: 'solarvision-tech',
-          symbol: 'SOLARVISION',
-          companyName: 'SolarVision CleanTech Industries Ltd',
-          status: 'Closed',
-          series: 'SME',
-          priceBand: '₹135 – ₹142',
-          priceLow: 135,
-          priceHigh: 142,
-          lotSize: 1000,
-          issueSize: '₹95 Cr',
-          openDate: '23 Sep 2026',
-          closeDate: '25 Sep 2026',
-          allotmentDate: '28 Sep 2026',
-          listingDate: '03 Oct 2026',
-          expectedListingDate: '03 Oct 2026',
-          registrar: 'KFin Technologies Limited',
-          registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
-          gmp: 48,
-          gmpPercent: 33.80,
-          currentSubscription: 52.10,
-          retailSubscription: 31.40,
-          niiSubscription: 64.20,
-          qibSubscription: 60.50,
-          employeeSubscription: 4.20,
-        }
-      );
     }
 
     return items;

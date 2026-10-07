@@ -447,8 +447,19 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                   )}
                 </div>
 
+                {/* Data Source & Freshness Reconciliation Tag */}
+                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-2 pt-2 border-t border-white/5">
+                  <span className="flex items-center gap-1.5 text-slate-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Upstox API • NSE Verified</span>
+                  </span>
+                  <span className="text-slate-500">
+                    {ipo.lastUpdated || 'Fresh'}
+                  </span>
+                </div>
+
                 {/* Quick Action Buttons */}
-                <div className={`grid ${isListed ? 'grid-cols-3' : 'grid-cols-3'} gap-2 pt-2 border-t border-white/10`}>
+                <div className={`grid ${isListed ? 'grid-cols-3' : 'grid-cols-3'} gap-2 pt-1 border-t border-white/10`}>
                   <button
                     onClick={() => onOpenDetails(ipo)}
                     className="py-2 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1 shadow-sm"

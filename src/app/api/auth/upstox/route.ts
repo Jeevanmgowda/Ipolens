@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
-  const clientId = process.env.UPSTOX_CLIENT_ID;
+  const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
   const url = new URL(req.url);
-  const redirectUri = `${url.origin}/api/auth/callback/upstox`;
+  const redirectUri = (process.env.UPSTOX_REDIRECT_URI || `${url.origin}/api/auth/callback/upstox`).trim();
 
   if (!clientId || clientId.trim() === '' || clientId.includes('your_')) {
     const html = `

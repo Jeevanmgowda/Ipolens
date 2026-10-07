@@ -98,10 +98,10 @@ export class UpstoxIpoService {
 
     const token = this.getAccessToken();
 
-    // If no valid token configured, return local fallback without throwing error
+    // If no valid token configured, return live market fallback without throwing error
     if (!token) {
-      console.warn(`[UpstoxIpoService] UPSTOX_ACCESS_TOKEN not configured or empty. Using fallback for status '${status}'.`);
-      return this.getFallbackIpos(normalizedStatus, issueType);
+      console.warn(`[UpstoxIpoService] UPSTOX_ACCESS_TOKEN not configured or empty. Using live market fallback for status '${status}'.`);
+      return await this.getFallbackIpos(normalizedStatus, issueType);
     }
 
     try {
@@ -118,15 +118,15 @@ export class UpstoxIpoService {
       });
 
       if (!res.ok) {
-        console.warn(`[UpstoxIpoService] HTTP ${res.status} from ${url}. Falling back to local data.`);
-        return this.getFallbackIpos(normalizedStatus, issueType);
+        console.warn(`[UpstoxIpoService] HTTP ${res.status} from ${url}. Falling back to live market data.`);
+        return await this.getFallbackIpos(normalizedStatus, issueType);
       }
 
       const json = await res.json();
       const rawList: UpstoxIpoItem[] = json.data || [];
 
       if (!Array.isArray(rawList) || rawList.length === 0) {
-        return this.getFallbackIpos(normalizedStatus, issueType);
+        return await this.getFallbackIpos(normalizedStatus, issueType);
       }
 
       const mapped: Partial<UnifiedIPO>[] = rawList.map((item) =>
@@ -134,9 +134,16 @@ export class UpstoxIpoService {
       );
 
       // Filter by issueType if requested
-      const filtered = issueType
+      let filtered = issueType
         ? mapped.filter((i) => i.issueType === issueType)
         : mapped;
+
+      if (filtered.length === 0) {
+        const liveFallback = await this.getFallbackIpos(normalizedStatus, issueType);
+        if (liveFallback.length > 0) {
+          filtered = liveFallback;
+        }
+      }
 
       // Cache results
       try {
@@ -152,8 +159,45 @@ export class UpstoxIpoService {
 
       return filtered;
     } catch (err: any) {
-      console.warn(`[UpstoxIpoService] Error fetching IPOs for status '${status}': ${err.message}. Using fallback.`);
-      return this.getFallbackIpos(normalizedStatus, issueType);
+      console.warn(`[UpstoxIpoService] Error fetching IPOs for status '${status}': ${err.message}. Using live market fallback.`);
+      return await this.getFallbackIpos(normalizedStatus, issueType);
+    }
+  }
+
+  /**
+   * Directly fetch live IPOs from Upstox Developer API v2 without mock fallback
+   */
+  static async fetchLiveFromUpstox(
+    status: IpoStatus,
+    issueType?: IssueType
+  ): Promise<Partial<UnifiedIPO>[]> {
+    const token = this.getAccessToken();
+    if (!token) return [];
+
+    const normalizedStatus = this.normalizeStatus(status);
+    try {
+      let url = `${this.baseUrl}/ipos?status=${encodeURIComponent(normalizedStatus)}`;
+      if (issueType) {
+        url += `&issue_type=${encodeURIComponent(issueType)}`;
+      }
+
+      const res = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) return [];
+
+      const json = await res.json();
+      const rawList: UpstoxIpoItem[] = json.data || [];
+      if (!Array.isArray(rawList)) return [];
+
+      const mapped = rawList.map((item) => this.mapUpstoxItemToUnified(item, normalizedStatus));
+      return issueType ? mapped.filter((i) => i.issueType === issueType) : mapped;
+    } catch {
+      return [];
     }
   }
 
@@ -183,7 +227,7 @@ export class UpstoxIpoService {
     const token = this.getAccessToken();
 
     if (!token) {
-      return this.getFallbackIpoDetails(ipoId);
+      return await this.getFallbackIpoDetails(ipoId);
     }
 
     try {
@@ -196,15 +240,15 @@ export class UpstoxIpoService {
       });
 
       if (!res.ok) {
-        console.warn(`[UpstoxIpoService] HTTP ${res.status} on details for '${ipoId}'. Using fallback.`);
-        return this.getFallbackIpoDetails(ipoId);
+        console.warn(`[UpstoxIpoService] HTTP ${res.status} on details for '${ipoId}'. Using live fallback.`);
+        return await this.getFallbackIpoDetails(ipoId);
       }
 
       const json = await res.json();
       const item: UpstoxIpoItem = json.data;
 
       if (!item) {
-        return this.getFallbackIpoDetails(ipoId);
+        return await this.getFallbackIpoDetails(ipoId);
       }
 
       const unified = this.mapUpstoxItemToUnified(item, this.normalizeStatus(item.status));
@@ -224,7 +268,7 @@ export class UpstoxIpoService {
       return unified;
     } catch (err: any) {
       console.warn(`[UpstoxIpoService] Error fetching details for '${ipoId}': ${err.message}`);
-      return this.getFallbackIpoDetails(ipoId);
+      return await this.getFallbackIpoDetails(ipoId);
     }
   }
 
@@ -301,224 +345,116 @@ export class UpstoxIpoService {
   }
 
   /**
-   * Resilient fallback data if token is offline or API drops
+   * Resilient LIVE market fallback from NSE India and live web tracker (Zero offline mock data)
    */
-  private static getFallbackIpos(
+  private static async getFallbackIpos(
     status: 'upcoming' | 'open' | 'closed' | 'listed',
     issueType?: IssueType
-  ): Partial<UnifiedIPO>[] {
-    const allFallback: Partial<UnifiedIPO>[] = [
-      // OPEN
-      {
-        id: 'moneyview-technologies-limited-ipo',
-        symbol: 'MONEYVIEW',
-        companyName: 'Moneyview Technologies Limited',
-        issueType: 'regular',
-        status: 'open',
-        priceBandMin: 285,
-        priceBandMax: 300,
-        lotSize: 50,
-        openDate: '2026-09-28',
-        closeDate: '2026-10-02',
-        issueSizeInCrores: 1250,
-        subscriptionTotal: 73.04,
-        subscriptionRetail: 22.10,
-        subscriptionHni: 52.40,
-        subscriptionQib: 105.91,
-        registrar: 'Link Intime India Pvt Ltd',
-      },
-      {
-        id: 'shree-tnb-polymers-limited-ipo',
-        symbol: 'SHREETNB',
-        companyName: 'Shree TNB Polymers IPO',
-        issueType: 'sme',
-        status: 'open',
-        priceBandMin: 50,
-        priceBandMax: 53,
-        lotSize: 2000,
-        openDate: '2026-09-28',
-        closeDate: '2026-10-05',
-        issueSizeInCrores: 31,
-        subscriptionTotal: 0.33,
-        subscriptionRetail: 0.45,
-        subscriptionHni: 0.22,
-        registrar: 'MUFG Intime India Pvt Ltd',
-        instrumentKey: 'NSE_EQ|INE935K01018',
-      },
-      {
-        id: 'helios-energy-limited-ipo',
-        symbol: 'HELIOS',
-        companyName: 'Helios CleanEnergy Solutions Ltd',
-        issueType: 'regular',
-        status: 'open',
-        priceBandMin: 420,
-        priceBandMax: 442,
-        lotSize: 33,
-        openDate: '2026-09-27',
-        closeDate: '2026-09-30',
-        issueSizeInCrores: 850,
-        subscriptionTotal: 24.15,
-        subscriptionRetail: 16.30,
-        subscriptionHni: 32.40,
-        subscriptionQib: 41.20,
-        registrar: 'KFin Technologies Limited',
-      },
-      // UPCOMING
-      {
-        id: 'apex-cloud-technologies-limited-ipo',
-        symbol: 'APEXCLOUD',
-        companyName: 'Apex Cloud Technologies Limited',
-        issueType: 'regular',
-        status: 'upcoming',
-        priceBandMin: 680,
-        priceBandMax: 715,
-        lotSize: 20,
-        openDate: '2026-10-06',
-        closeDate: '2026-10-08',
-        issueSizeInCrores: 2400,
-        registrar: 'Link Intime India Pvt Ltd',
-      },
-      {
-        id: 'everestims-technologies-limited-ipo',
-        symbol: 'EIMS',
-        companyName: 'EverestIMS Technologies IPO',
-        issueType: 'sme',
-        status: 'upcoming',
-        priceBandMin: 80,
-        priceBandMax: 85,
-        lotSize: 1600,
-        openDate: '2026-09-29',
-        closeDate: '2026-10-05',
-        issueSizeInCrores: 48,
-        registrar: 'Bigshare Services Pvt Ltd',
-        instrumentKey: 'NSE_EQ|INE0YUW01020',
-      },
-      // CLOSED
-      {
-        id: 'deccan-urban-infra-limited-ipo',
-        symbol: 'DECCAN',
-        companyName: 'Deccan Urban Infrastructure Ltd',
-        issueType: 'regular',
-        status: 'closed',
-        priceBandMin: 145,
-        priceBandMax: 152,
-        lotSize: 98,
-        openDate: '2026-09-22',
-        closeDate: '2026-09-25',
-        listingDate: '2026-10-01',
-        issueSizeInCrores: 640,
-        subscriptionTotal: 48.60,
-        subscriptionRetail: 18.40,
-        subscriptionHni: 38.10,
-        subscriptionQib: 89.30,
-        registrar: 'Bigshare Services Pvt Ltd',
-      },
-      // LISTED
-      {
-        id: 'swiggy-limited-ipo',
-        symbol: 'SWIGGY',
-        companyName: 'Swiggy Limited',
-        issueType: 'regular',
-        status: 'listed',
-        priceBandMin: 371,
-        priceBandMax: 390,
-        lotSize: 38,
-        openDate: '2024-11-06',
-        closeDate: '2024-11-08',
-        listingDate: '2024-11-13',
-        issueSizeInCrores: 11327,
-        subscriptionTotal: 3.59,
-        subscriptionRetail: 1.14,
-        subscriptionHni: 0.41,
-        subscriptionQib: 6.02,
-        registrar: 'Link Intime India Pvt Ltd',
-        instrumentKey: 'NSE_EQ|INE00H001014',
-      },
-      {
-        id: 'hyundai-motor-india-limited-ipo',
-        symbol: 'HYUNDAI',
-        companyName: 'Hyundai Motor India Limited',
-        issueType: 'regular',
-        status: 'listed',
-        priceBandMin: 1865,
-        priceBandMax: 1960,
-        lotSize: 7,
-        openDate: '2024-10-15',
-        closeDate: '2024-10-17',
-        listingDate: '2024-10-22',
-        issueSizeInCrores: 27870,
-        subscriptionTotal: 2.37,
-        subscriptionRetail: 0.50,
-        subscriptionHni: 0.60,
-        subscriptionQib: 6.97,
-        registrar: 'KFin Technologies Limited',
-        instrumentKey: 'NSE_EQ|INE0V6F01027',
-      },
-      {
-        id: 'bajaj-housing-finance-limited-ipo',
-        symbol: 'BAJAJHFL',
-        companyName: 'Bajaj Housing Finance Limited',
-        issueType: 'regular',
-        status: 'listed',
-        priceBandMin: 66,
-        priceBandMax: 70,
-        lotSize: 214,
-        openDate: '2024-09-09',
-        closeDate: '2024-09-11',
-        listingDate: '2024-09-16',
-        issueSizeInCrores: 6560,
-        subscriptionTotal: 67.43,
-        subscriptionRetail: 7.41,
-        subscriptionHni: 43.10,
-        subscriptionQib: 222.05,
-        registrar: 'KFin Technologies Limited',
-        instrumentKey: 'NSE_EQ|INE377Y01014',
-      },
-      {
-        id: 'waaree-energies-limited-ipo',
-        symbol: 'WAAREE',
-        companyName: 'Waaree Energies Limited',
-        issueType: 'regular',
-        status: 'listed',
-        priceBandMin: 1427,
-        priceBandMax: 1503,
-        lotSize: 9,
-        openDate: '2024-10-21',
-        closeDate: '2024-10-23',
-        listingDate: '2024-10-28',
-        issueSizeInCrores: 4321,
-        subscriptionTotal: 76.34,
-        subscriptionRetail: 10.79,
-        subscriptionHni: 62.49,
-        subscriptionQib: 208.63,
-        registrar: 'Link Intime India Pvt Ltd',
-        instrumentKey: 'NSE_EQ|INE377N01017',
-      },
-    ];
+  ): Promise<Partial<UnifiedIPO>[]> {
+    try {
+      const { fetchLiveNseIpos } = await import('@/services/nseIpoService');
+      const liveList = await fetchLiveNseIpos();
 
-    let filtered = allFallback.filter((i) => i.status === status);
-    if (issueType) {
-      filtered = filtered.filter((i) => i.issueType === issueType);
+      const mapped: Partial<UnifiedIPO>[] = liveList
+        .filter((item) => {
+          if (status === 'listed') {
+            return Boolean(item.isListed);
+          }
+          const itemStatus = item.status === 'Active' ? 'open' : item.status === 'Forthcoming' ? 'upcoming' : 'closed';
+          return itemStatus === status;
+        })
+        .map((item) => {
+          const priceMatch = (item.priceBand || item.issuePrice || '100').match(/\d+(?:\.\d+)?/g) || ['100'];
+          const minPrice = parseFloat(priceMatch[0]) || 100;
+          const maxPrice = parseFloat(priceMatch[priceMatch.length - 1]) || minPrice;
+          const currentIssueType: IssueType = item.series === 'SME' ? 'sme' : 'regular';
+          const lotSize = typeof item.lotSize === 'number' ? item.lotSize : (item.lotSize ? parseInt(item.lotSize, 10) : (currentIssueType === 'sme' ? 1200 : 14));
+
+          return {
+            id: `${item.symbol.toLowerCase()}-ipo`,
+            symbol: item.symbol.toUpperCase(),
+            companyName: item.companyName,
+            issueType: currentIssueType,
+            status,
+            priceBandMin: minPrice,
+            priceBandMax: maxPrice,
+            lotSize,
+            openDate: item.issueStartDate,
+            closeDate: item.issueEndDate,
+            listingDate: item.status === 'Closed' || item.isListed ? 'Recent Listing' : undefined,
+            issueSizeInCrores: item.issueSize ? parseFloat(item.issueSize) : undefined,
+            subscriptionTotal: parseFloat(item.noOfTime || '0') || undefined,
+            registrar: item.registrarName,
+            instrumentKey: `NSE_EQ|${item.symbol.toUpperCase()}`,
+          };
+        });
+
+      if (issueType) {
+        return mapped.filter((i) => i.issueType === issueType);
+      }
+      return mapped;
+    } catch (err: any) {
+      console.warn('[UpstoxIpoService] Live fallback notice:', err.message);
+      return [];
     }
-    return filtered;
   }
 
-  private static getFallbackIpoDetails(ipoId: string): Partial<UnifiedIPO> | null {
-    const cleanId = ipoId.toLowerCase().trim();
-    const all = [
-      ...this.getFallbackIpos('open'),
-      ...this.getFallbackIpos('upcoming'),
-      ...this.getFallbackIpos('closed'),
-      ...this.getFallbackIpos('listed'),
-    ];
+  private static async getFallbackIpoDetails(ipoId: string): Promise<Partial<UnifiedIPO> | null> {
+    const clean = ipoId.replace(/-ipo$/i, '').toUpperCase().trim();
+    try {
+      const { fetchLiveIpoDetail } = await import('@/services/nseIpoService');
+      const liveDetail = await fetchLiveIpoDetail(clean);
+      if (liveDetail) {
+        const prices = (liveDetail.issuePrice || '100').match(/\d+(?:\.\d+)?/g) || ['100'];
+        const priceMax = parseFloat(prices[prices.length - 1]) || 100;
+        const priceMin = parseFloat(prices[0]) || priceMax;
+        const currentIssueType: IssueType = liveDetail.series === 'SME' ? 'sme' : 'regular';
+        return {
+          id: `${liveDetail.symbol.toLowerCase()}-ipo`,
+          symbol: liveDetail.symbol.toUpperCase(),
+          companyName: liveDetail.companyName,
+          issueType: currentIssueType,
+          status: liveDetail.status === 'Active' ? 'open' : liveDetail.status === 'Forthcoming' ? 'upcoming' : 'closed',
+          priceBandMin: priceMin,
+          priceBandMax: priceMax,
+          lotSize: liveDetail.lotSize || (currentIssueType === 'sme' ? 1200 : 14),
+          openDate: liveDetail.issueStartDate,
+          closeDate: liveDetail.issueEndDate,
+          issueSizeInCrores: liveDetail.issueSizeCr,
+          subscriptionTotal: parseFloat(liveDetail.noOfTimesIssueSubscribed || '0') || undefined,
+          registrar: liveDetail.registrarName,
+          instrumentKey: `NSE_EQ|${liveDetail.symbol.toUpperCase()}`,
+        };
+      }
+    } catch {
+      // ignore
+    }
 
-    const match = all.find(
-      (i) =>
-        i.id?.toLowerCase() === cleanId ||
-        i.symbol?.toLowerCase() === cleanId ||
-        cleanId.includes(i.symbol?.toLowerCase() || '')
-    );
+    // Try finding in listed registry
+    try {
+      const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
+      const listed = LISTED_IPOS_REGISTRY.find(
+        (l) => l.symbol.toUpperCase() === clean || ipoId.toLowerCase().includes(l.symbol.toLowerCase())
+      );
+      if (listed) {
+        return {
+          id: `${listed.symbol.toLowerCase()}-ipo`,
+          symbol: listed.symbol,
+          companyName: listed.companyName,
+          issueType: listed.series === 'SME' ? 'sme' : 'regular',
+          status: 'listed',
+          priceBandMin: listed.issuePrice,
+          priceBandMax: listed.issuePrice,
+          lotSize: listed.series === 'SME' ? 1200 : 35,
+          listingDate: listed.listingDate,
+          registrar: listed.allotmentRegistrar,
+          instrumentKey: `NSE_EQ|${listed.symbol}`,
+        };
+      }
+    } catch {
+      // ignore
+    }
 
-    return match || all[0];
+    return null;
   }
 }

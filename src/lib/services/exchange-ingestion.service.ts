@@ -111,6 +111,7 @@ export class ExchangeIngestionService {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.5',
         },
+        signal: AbortSignal.timeout(3500),
       });
       const rawCookies = response.headers.get('set-cookie') || '';
       const cookieHeader = rawCookies
@@ -155,6 +156,7 @@ export class ExchangeIngestionService {
           'Referer': `${this.NSE_BASE}/market-data/all-upcoming-issues-ipo`,
           'Accept': 'application/json',
         },
+        signal: AbortSignal.timeout(3500),
       });
 
       if (res.ok) {

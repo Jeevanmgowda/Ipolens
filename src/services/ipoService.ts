@@ -15,14 +15,10 @@ export class IpoService {
   private static mockProvider = new MockIPOProvider();
 
   /**
-   * Determine whether to use mock demo IPO data or live scraping
+   * Determine whether to use mock demo IPO data or live exchange scraping
    */
   static isMockMode(): boolean {
-    const envVal = process.env.USE_MOCK_MARKET_DATA;
-    if (envVal === 'false') {
-      return false;
-    }
-    return true; // Default to free-development mode
+    return process.env.USE_MOCK_MARKET_DATA === 'true';
   }
 
   static getProvider(): IPODataProvider {
@@ -150,9 +146,9 @@ export class IpoService {
       {
         id: 'alert-1',
         type: 'SUBSCRIPTION',
-        title: 'Subscription Threshold Alert',
-        message: 'Helios Green Energy crossed 20x overall book subscription (now 24.15x).',
-        symbol: 'HELIOS',
+        title: 'Active Primary Bidding',
+        message: 'R.K. Fashion Accessories IPO (RKFAL) live bidding window open on exchange.',
+        symbol: 'RKFAL',
         timestamp: '10 mins ago',
         read: false,
       },
@@ -160,8 +156,8 @@ export class IpoService {
         id: 'alert-2',
         type: 'GMP',
         title: 'GMP Surge Detected',
-        message: 'Demo Technologies Ltd GMP expanded by +₹12 to ₹72 (+15.1%).',
-        symbol: 'DEMOTECH',
+        message: 'Acme India Industries GMP estimated at +₹40 per equity share.',
+        symbol: 'ACMERAIL',
         timestamp: '25 mins ago',
         read: false,
       },
@@ -169,8 +165,8 @@ export class IpoService {
         id: 'alert-3',
         type: 'CLOSING_SOON',
         title: 'Bidding Window Closing',
-        message: 'Demo Technologies Ltd window closes today at 5:00 PM IST.',
-        symbol: 'DEMOTECH',
+        message: 'R.K. Fashion Accessories issue closes on 07-Oct at 5:00 PM IST.',
+        symbol: 'RKFAL',
         timestamp: '1 hour ago',
         read: false,
       },

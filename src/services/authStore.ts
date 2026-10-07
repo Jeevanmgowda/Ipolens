@@ -1,8 +1,11 @@
 import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '../types/auth';
 import { isValidPan } from './duplicateEnforcer';
+import { hashPassword, verifyPassword } from '../lib/security/passwordHash';
+import { db, isPostgresConfigured, schema } from '../db';
 
 export interface RegisteredUserRecord extends User {
-  passwordHash: string; // In production this would be bcrypt hashed
+  passwordHash: string;
+  passwordSalt?: string;
 }
 
 // Initial registered users database seeded with default demo accounts
@@ -49,12 +52,20 @@ export function validateSignInCredentials(creds: SignInCredentials): { valid: bo
     return { valid: false, error: 'No account found with this email address.' };
   }
 
-  if (existingUser.passwordHash !== password) {
+  // Check password: either via salted PBKDF2 hash or plaintext match for demo seeds
+  let passwordMatches = false;
+  if (existingUser.passwordSalt) {
+    passwordMatches = verifyPassword(password, existingUser.passwordHash, existingUser.passwordSalt);
+  } else {
+    passwordMatches = existingUser.passwordHash === password;
+  }
+
+  if (!passwordMatches) {
     return { valid: false, error: 'Incorrect password. Please try again.' };
   }
 
-  // Strip passwordHash before returning
-  const { passwordHash: _, ...safeUser } = existingUser;
+  // Strip passwordHash and passwordSalt before returning
+  const { passwordHash: _, passwordSalt: __, ...safeUser } = existingUser;
   return { valid: true, user: safeUser };
 }
 
@@ -91,11 +102,15 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
 
   const role = investorCategory === 'Institutional' ? 'institutional' : investorCategory === 'bNII' || investorCategory === 'sNII' ? 'hni' : 'retail';
 
+  // Securely hash password with cryptographically secure salt & PBKDF2 (100k rounds)
+  const { hash, salt } = hashPassword(password);
+
   const newUser: RegisteredUserRecord = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     name: name.trim(),
     email: normalizedEmail,
-    passwordHash: password,
+    passwordHash: hash,
+    passwordSalt: salt,
     role,
     investorCategory: investorCategory || 'Retail',
     primaryPan: primaryPan ? primaryPan.trim().toUpperCase() : undefined,
@@ -106,7 +121,26 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
 
   registeredUsersStore.push(newUser);
 
-  const { passwordHash: _, ...safeUser } = newUser;
+  // Synchronize to PostgreSQL if configured
+  if (isPostgresConfigured && db) {
+    try {
+      db.insert(schema.usersTable).values({
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        passwordHash: hash,
+        salt,
+        role: newUser.role,
+        investorCategory: newUser.investorCategory || 'Retail',
+        primaryPan: newUser.primaryPan,
+        createdAt: new Date(newUser.createdAt),
+      }).then(() => {}).catch((e: any) => console.warn('[AuthStore] Error syncing user to DB:', e));
+    } catch (e) {
+      console.warn('[AuthStore] Notice inserting user to DB:', e);
+    }
+  }
+
+  const { passwordHash: _, passwordSalt: __, ...safeUser } = newUser;
   return { valid: true, user: safeUser };
 }
 
@@ -124,7 +158,7 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
     if (avatarUrl && !existingUser.avatarUrl) {
       existingUser.avatarUrl = avatarUrl;
     }
-    const { passwordHash: _, ...safeUser } = existingUser;
+    const { passwordHash: _, passwordSalt: __, ...safeUser } = existingUser;
     return { valid: true, user: safeUser };
   }
 
@@ -142,12 +176,15 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
       ? 'hni'
       : 'retail';
 
+  const { hash, salt } = hashPassword(`google_oauth_${Date.now()}_${Math.random()}`);
+
   const newUser: RegisteredUserRecord = {
     id: `usr_g_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     name: name?.trim() || email.split('@')[0],
     email: normalizedEmail,
     avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || email)}`,
-    passwordHash: `google_oauth_${Date.now()}_${Math.random().toString(36)}`,
+    passwordHash: hash,
+    passwordSalt: salt,
     role,
     investorCategory: category,
     primaryPan: primaryPan ? primaryPan.trim().toUpperCase() : undefined,
@@ -157,7 +194,6 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
   };
 
   registeredUsersStore.push(newUser);
-  const { passwordHash: _, ...safeUser } = newUser;
+  const { passwordHash: _, passwordSalt: __, ...safeUser } = newUser;
   return { valid: true, user: safeUser };
 }
-

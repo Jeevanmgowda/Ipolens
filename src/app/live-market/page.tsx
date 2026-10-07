@@ -51,10 +51,10 @@ export default function LiveMarketPage() {
     price: number;
     lotSize: number;
   }>({
-    symbol: 'DEMOTECH',
-    companyName: 'Demo Technologies Ltd',
-    price: 475,
-    lotSize: 31,
+    symbol: 'RKFAL',
+    companyName: 'R.K. Fashion Accessories Limited',
+    price: 82,
+    lotSize: 1600,
   });
 
   // Fetch initial live market data

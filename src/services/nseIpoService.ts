@@ -183,14 +183,37 @@ function deriveTicker(name: string): string {
   return (words[0].replace(/[^a-zA-Z0-9]/g, '').slice(0, 5) + initials.slice(1, 4)).toUpperCase();
 }
 
+interface LiveScrapedItem {
+  name: string;
+  gmp: number;
+  price: string;
+  dates: string;
+  status: IpoStatus;
+  series: IpoSeries;
+  listingPrice?: string;
+}
+
+let marketFeedCache: {
+  timestamp: number;
+  data: {
+    activeAndUpcoming: LiveScrapedItem[];
+    closed: { name: string; price: string; gmp: number; listingPrice: string }[];
+  };
+} | null = null;
+
 // Extract live tables from live market feed (IPOWatch)
-async function extractLiveMarketFeed(): Promise<{
-  activeAndUpcoming: { name: string; gmp: number; price: string; dates: string; status: IpoStatus; series: IpoSeries }[];
+export async function extractLiveMarketFeed(): Promise<{
+  activeAndUpcoming: LiveScrapedItem[];
   closed: { name: string; price: string; gmp: number; listingPrice: string }[];
 }> {
+  const now = Date.now();
+  if (marketFeedCache && now - marketFeedCache.timestamp < 30000) {
+    return marketFeedCache.data;
+  }
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
 
     const res = await fetch('https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/', {
       headers: COMMON_HEADERS,
@@ -199,56 +222,76 @@ async function extractLiveMarketFeed(): Promise<{
     });
     clearTimeout(timeoutId);
 
-    if (!res.ok) return { activeAndUpcoming: [], closed: [] };
+    if (!res.ok) return marketFeedCache?.data || { activeAndUpcoming: [], closed: [] };
     const html = await res.text();
     const tables = html.match(/<table[^>]*>([\s\S]*?)<\/table>/g) || [];
 
-    const activeAndUpcoming: { name: string; gmp: number; price: string; dates: string; status: IpoStatus; series: IpoSeries }[] = [];
+    const activeAndUpcoming: LiveScrapedItem[] = [];
+    const closed: { name: string; price: string; gmp: number; listingPrice: string }[] = [];
 
-    // Parse Table 0 (Mainboard) & Table 1 (SME)
-    const parseTable = (tableHtml: string, series: IpoSeries) => {
+    // Parse all tables in the live page
+    tables.forEach((tableHtml, tableIdx) => {
+      const defaultSeries: IpoSeries = tableIdx === 1 ? 'SME' : 'EQ';
       const rows = tableHtml.match(/<tr[^>]*>([\s\S]*?)<\/tr>/g) || [];
       for (let i = 1; i < rows.length; i++) {
-        const cells = (rows[i].match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []).map(cleanHtmlText);
-        if (cells.length >= 7) {
-          const name = cells[0];
-          if (!name || name.toLowerCase().includes('ipo name')) continue;
+        const cells = (rows[i].match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g) || []).map(cleanHtmlText);
+        if (cells.length >= 4) {
+          const rawName = cells[0];
+          if (!rawName || rawName.toLowerCase().includes('ipo name') || rawName.toLowerCase().includes('company')) continue;
+
+          const isClosed = /close/i.test(rawName) || (cells[5] && /close/i.test(cells[5]));
+          const isOpen = !isClosed && (/open/i.test(rawName) || (cells[5] && /open/i.test(cells[5])));
+
+          const name = rawName.replace(/open|upcoming|closed/gi, '').trim();
           const gmpMatch = cells[1].match(/(\d+(?:\.\d+)?)/);
           const gmp = gmpMatch ? parseFloat(gmpMatch[1]) : 0;
-          const price = cleanPriceText(cells[3]);
-          const dates = cells[5];
-          const rawStatus = cells[6];
-          const status: IpoStatus = rawStatus.toLowerCase().includes('open') ? 'Active' : 'Forthcoming';
-          activeAndUpcoming.push({ name, gmp, price, dates, status, series });
+          const price = cleanPriceText(cells[3] || cells[2] || '');
+          const dates = cells[5] || cells[4] || '';
+          const series: IpoSeries = /sme/i.test(name) || /sme/i.test(rawName) ? 'SME' : defaultSeries;
+
+          if (isClosed) {
+            closed.push({ name, price, gmp, listingPrice: cells[4] || price });
+          } else {
+            const status: IpoStatus = isOpen ? 'Active' : 'Forthcoming';
+            activeAndUpcoming.push({ name, gmp, price, dates, status, series });
+          }
         }
       }
-    };
+    });
 
-    if (tables[0]) parseTable(tables[0], 'EQ');
-    if (tables[1]) parseTable(tables[1], 'SME');
+    const result = { activeAndUpcoming, closed };
+    marketFeedCache = { timestamp: now, data: result };
+    return result;
+  } catch (err) {
+    return marketFeedCache?.data || { activeAndUpcoming: [], closed: [] };
+  }
+}
 
-    // Parse Table 2 (Closed / Listed IPOs)
-    const closed: { name: string; price: string; gmp: number; listingPrice: string }[] = [];
-    if (tables[2]) {
-      const rows = tables[2].match(/<tr[^>]*>([\s\S]*?)<\/tr>/g) || [];
-      for (let i = 1; i < Math.min(35, rows.length); i++) {
-        const cells = (rows[i].match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []).map(cleanHtmlText);
-        if (cells.length >= 4) {
-          const name = cells[0];
-          if (!name || name.toLowerCase().includes('ipo name')) continue;
-          const price = cleanPriceText(cells[1]);
-          const gmpMatch = cells[2].match(/(\d+(?:\.\d+)?)/);
-          const gmp = gmpMatch ? parseFloat(gmpMatch[1]) : 0;
-          const listingPrice = cleanPriceText(cells[3]);
-          closed.push({ name, price, gmp, listingPrice });
-        }
+/**
+ * Look up real scraped GMP dynamically from live market feeds
+ */
+export async function getLiveScrapedGmp(symbolOrName: string): Promise<number | null> {
+  try {
+    const feed = await extractLiveMarketFeed();
+    const clean = symbolOrName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const item of feed.activeAndUpcoming) {
+      const itemNorm = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const ticker = deriveTicker(item.name).toLowerCase();
+      if (itemNorm.includes(clean) || clean.includes(itemNorm) || ticker === clean) {
+        return item.gmp;
       }
     }
-
-    return { activeAndUpcoming, closed };
-  } catch (err) {
-    return { activeAndUpcoming: [], closed: [] };
+    for (const item of feed.closed) {
+      const itemNorm = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const ticker = deriveTicker(item.name).toLowerCase();
+      if (itemNorm.includes(clean) || clean.includes(itemNorm) || ticker === clean) {
+        return item.gmp;
+      }
+    }
+  } catch {
+    // optional
   }
+  return null;
 }
 
 // 100% Live Extraction of Open, Upcoming, and Closed IPOs
@@ -444,18 +487,21 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       const gmp = item.gmp > 0 ? item.gmp : Math.max(0, Math.round(listingPriceNum - issuePriceNum));
       const gmpPercent = issuePriceNum > 0 ? Math.round(((listingPriceNum - issuePriceNum) / issuePriceNum) * 100) : 0;
 
+      const hasListedPrice = listingPriceNum > 0 && listingPriceNum !== issuePriceNum;
+      const isSme = /sme/i.test(item.name);
+
       map.set(sym, {
         symbol: sym,
         companyName: item.name,
-        series: 'EQ',
+        series: isSme ? 'SME' : 'EQ',
         status: 'Closed',
         issueStartDate: 'Recent Offering',
         issueEndDate: 'Bidding Closed',
         issuePrice: cleanPriceText(item.price),
         priceBand: cleanPriceText(item.price),
-        listingPrice: cleanPriceText(item.listingPrice),
-        isListed: true,
-        lotSize: '14',
+        listingPrice: hasListedPrice ? cleanPriceText(item.listingPrice) : undefined,
+        isListed: hasListedPrice,
+        lotSize: isSme ? '1200' : '14',
         noOfTime: '15.00',
         gmpEstimate: gmp,
         gmpPercent: gmpPercent,

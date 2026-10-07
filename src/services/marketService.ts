@@ -12,7 +12,7 @@ export class MarketService {
   static isMockMode(): boolean {
     const envVal = process.env.USE_MOCK_MARKET_DATA;
     if (envVal === 'false') {
-      return !this.upstoxProvider.isConfigured();
+      return false;
     }
     return true; // Default to true for zero-credential free development
   }
@@ -21,7 +21,7 @@ export class MarketService {
    * Returns current active data provider instance
    */
   static getProvider(): MarketDataProvider {
-    if (!this.isMockMode() && this.upstoxProvider.isConfigured()) {
+    if (!this.isMockMode()) {
       return this.upstoxProvider;
     }
     return this.mockProvider;

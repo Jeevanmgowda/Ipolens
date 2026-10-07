@@ -18,6 +18,7 @@ export class UpstoxProvider implements MarketDataProvider {
   private clientSecret: string;
   private accessToken: string;
   private baseUrl = 'https://api.upstox.com/v2';
+  private yahooFallback = new YahooFinanceProvider();
   private mockFallback = new MockMarketProvider();
 
   constructor() {
@@ -94,146 +95,290 @@ export class UpstoxProvider implements MarketDataProvider {
   }
 
   async getQuote(symbol: string): Promise<MarketQuoteData> {
-    if (!this.isConfigured()) {
+    const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
+
+    // 1. If Upstox token is present, attempt official Upstox API v2 quote
+    if (this.isConfigured()) {
+      const instrumentKey = this.resolveInstrumentKey(cleanSymbol);
+      try {
+        const res = await fetch(`${this.baseUrl}/market-quote/quotes?instrument_key=${encodeURIComponent(instrumentKey)}`, {
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${this.accessToken}`,
+          },
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          const colonKey = instrumentKey.replace('|', ':');
+          const data = json.data?.[colonKey]
+            || json.data?.[instrumentKey]
+            || json.data?.[`NSE_EQ:${cleanSymbol}`]
+            || json.data?.[`NSE_INDEX:${cleanSymbol}`]
+            || Object.values(json.data || {})[0];
+
+          if (data && (data.last_price || data.ohlc?.close)) {
+            const ltp = Number(data.last_price || data.ohlc?.close || 0);
+            const prevClose = Number(data.prev_close || data.ohlc?.close || ltp);
+            const change = Number((ltp - prevClose).toFixed(2));
+            const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
+
+            return {
+              symbol: cleanSymbol,
+              ltp,
+              open: Number(data.ohlc?.open || ltp),
+              high: Number(data.ohlc?.high || ltp),
+              low: Number(data.ohlc?.low || ltp),
+              previousClose: prevClose,
+              volume: Number(data.volume || 0),
+              change,
+              changePercent,
+              timestamp: new Date().toISOString(),
+              isMock: false,
+            };
+          }
+        } else {
+          console.warn(`[Upstox] HTTP ${res.status} on quote for ${cleanSymbol}. Falling back to live exchange feed.`);
+        }
+      } catch (err: any) {
+        console.warn(`[Upstox] Network error on quote for ${cleanSymbol}: ${err.message}. Trying live exchange feed.`);
+      }
+    }
+
+    // 2. If mock mode is explicitly requested, use mock fallback simulator
+    if (process.env.USE_MOCK_MARKET_DATA === 'true') {
       return this.mockFallback.getQuote(symbol);
     }
 
+    // 3. Resilient live secondary market quote from exchange gateway
+    try {
+      return await this.yahooFallback.getQuote(symbol);
+    } catch {
+      return this.mockFallback.getQuote(symbol);
+    }
+  }
+
+  async getOhlc(symbol: string, timeframe: string = '1D'): Promise<MarketOhlcCandle[]> {
     const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
-    const instrumentKey = this.resolveInstrumentKey(cleanSymbol);
+
+    // 1. If Upstox token is present, attempt official Upstox API v2 OHLC
+    if (this.isConfigured()) {
+      const instrumentKey = this.resolveInstrumentKey(cleanSymbol);
+      const isIntraday = ['1m', '5m', '15m', '30m', '1H'].includes(timeframe);
+
+      let url: string;
+      if (isIntraday) {
+        const interval = (timeframe === '30m' || timeframe === '1H') ? '30minute' : '1minute';
+        url = `${this.baseUrl}/historical-candle/intraday/${encodeURIComponent(instrumentKey)}/${interval}`;
+      } else {
+        let intervalStr = 'day';
+        let daysBack = 180;
+        if (timeframe === '1W') {
+          intervalStr = 'week';
+          daysBack = 365;
+        } else if (timeframe === '1M') {
+          intervalStr = 'month';
+          daysBack = 1000;
+        }
+
+        const toDate = new Date().toISOString().split('T')[0];
+        const fromDateObj = new Date();
+        fromDateObj.setDate(fromDateObj.getDate() - daysBack);
+        const fromDate = fromDateObj.toISOString().split('T')[0];
+        url = `${this.baseUrl}/historical-candle/${encodeURIComponent(instrumentKey)}/${intervalStr}/${toDate}/${fromDate}`;
+      }
+
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${this.accessToken}`,
+          },
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          const rawCandles = json.data?.candles || [];
+
+          if (Array.isArray(rawCandles) && rawCandles.length > 0) {
+            let candles: MarketOhlcCandle[] = rawCandles
+              .map((c: any[]) => {
+                const d = new Date(c[0]);
+                const timeLabel = isIntraday
+                  ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                  : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+                return {
+                  time: timeLabel,
+                  timestamp: d.getTime(),
+                  open: Number(c[1]),
+                  high: Number(c[2]),
+                  low: Number(c[3]),
+                  close: Number(c[4]),
+                  volume: Number(c[5] || 0),
+                };
+              })
+              .reverse();
+
+            if (timeframe === '5m' || timeframe === '15m') {
+              const bucketSize = timeframe === '5m' ? 5 : 15;
+              candles = aggregateCandleBuckets(candles, bucketSize);
+            } else if (timeframe === '1H') {
+              candles = aggregateCandleBuckets(candles, 2);
+            }
+
+            return candles;
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[Upstox] Error on OHLC for ${cleanSymbol}: ${err.message}. Trying live exchange feed.`);
+      }
+    }
+
+    // 2. If mock mode is explicitly requested, use mock fallback simulator
+    if (process.env.USE_MOCK_MARKET_DATA === 'true') {
+      return this.mockFallback.getOhlc(symbol, timeframe);
+    }
+
+    // 3. Resilient live secondary market OHLC candles from exchange gateway
+    try {
+      return await this.yahooFallback.getOhlc(symbol, timeframe);
+    } catch {
+      return this.mockFallback.getOhlc(symbol, timeframe);
+    }
+  }
+}
+
+/**
+ * Resilient Yahoo Finance Live Market Provider
+ * Provides live secondary market LTP and OHLC bars directly from NSE India without requiring daily tokens.
+ */
+export class YahooFinanceProvider implements MarketDataProvider {
+  name = 'Yahoo Finance (Live NSE Exchange)';
+
+  private resolveTicker(symbol: string): string {
+    const clean = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
+    if (clean === 'NIFTY' || clean === 'NIFTY 50') return '^NSEI';
+    return `${clean}.NS`;
+  }
+
+  async getQuote(symbol: string): Promise<MarketQuoteData> {
+    const ticker = this.resolveTicker(symbol);
+    const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
 
     try {
-      const res = await fetch(`${this.baseUrl}/market-quote/quotes?instrument_key=${encodeURIComponent(instrumentKey)}`, {
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${this.accessToken}`,
-        },
-      });
+      const res = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+          next: { revalidate: 10 },
+        }
+      );
 
-      if (!res.ok) {
-        console.warn(`[Upstox] HTTP ${res.status} on quote for ${cleanSymbol}, falling back to mock.`);
-        return this.mockFallback.getQuote(symbol);
-      }
-
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      const colonKey = instrumentKey.replace('|', ':');
-      const data = json.data?.[colonKey]
-        || json.data?.[instrumentKey]
-        || json.data?.[`NSE_EQ:${cleanSymbol}`]
-        || json.data?.[`NSE_INDEX:${cleanSymbol}`]
-        || Object.values(json.data || {})[0];
-
-      if (!data) {
-        console.warn(`[Upstox] No quote data returned for ${cleanSymbol} (${instrumentKey}), using fallback.`);
-        return this.mockFallback.getQuote(symbol);
+      const meta = json.chart?.result?.[0]?.meta;
+      if (!meta || typeof meta.regularMarketPrice !== 'number') {
+        throw new Error('Quote data not available in response');
       }
 
-      const ltp = Number(data.last_price || data.ohlc?.close || 0);
-      const prevClose = Number(data.prev_close || data.ohlc?.close || ltp);
+      const ltp = Number(meta.regularMarketPrice.toFixed(2));
+      const prevClose =
+        typeof meta.chartPreviousClose === 'number'
+          ? Number(meta.chartPreviousClose.toFixed(2))
+          : ltp;
       const change = Number((ltp - prevClose).toFixed(2));
-      const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
+      const changePercent =
+        prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
 
       return {
         symbol: cleanSymbol,
         ltp,
-        open: Number(data.ohlc?.open || ltp),
-        high: Number(data.ohlc?.high || ltp),
-        low: Number(data.ohlc?.low || ltp),
+        open: Number(meta.regularMarketDayHigh || ltp),
+        high: Number(meta.regularMarketDayHigh || ltp),
+        low: Number(meta.regularMarketDayLow || ltp),
         previousClose: prevClose,
-        volume: Number(data.volume || 0),
+        volume: Number(meta.regularMarketVolume || 0),
         change,
         changePercent,
         timestamp: new Date().toISOString(),
         isMock: false,
       };
     } catch (err: any) {
-      console.warn(`[Upstox] Error on quote: ${err.message}, using fallback.`);
-      return this.mockFallback.getQuote(symbol);
+      console.warn(`[YahooFinanceProvider] Quote fetch error for ${cleanSymbol}:`, err.message);
+      throw err;
     }
   }
 
   async getOhlc(symbol: string, timeframe: string = '1D'): Promise<MarketOhlcCandle[]> {
-    if (!this.isConfigured()) {
-      return this.mockFallback.getOhlc(symbol, timeframe);
-    }
-
+    const ticker = this.resolveTicker(symbol);
     const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
-    const instrumentKey = this.resolveInstrumentKey(cleanSymbol);
-    const isIntraday = ['1m', '5m', '15m', '30m', '1H'].includes(timeframe);
 
-    let url: string;
-    if (isIntraday) {
-      const interval = (timeframe === '30m' || timeframe === '1H') ? '30minute' : '1minute';
-      url = `${this.baseUrl}/historical-candle/intraday/${encodeURIComponent(instrumentKey)}/${interval}`;
-    } else {
-      let intervalStr = 'day';
-      let daysBack = 180;
-      if (timeframe === '1W') {
-        intervalStr = 'week';
-        daysBack = 365;
-      } else if (timeframe === '1M') {
-        intervalStr = 'month';
-        daysBack = 1000;
-      }
-
-      const toDate = new Date().toISOString().split('T')[0];
-      const fromDateObj = new Date();
-      fromDateObj.setDate(fromDateObj.getDate() - daysBack);
-      const fromDate = fromDateObj.toISOString().split('T')[0];
-      url = `${this.baseUrl}/historical-candle/${encodeURIComponent(instrumentKey)}/${intervalStr}/${toDate}/${fromDate}`;
-    }
+    let interval = '1d';
+    let range = '1mo';
+    if (timeframe === '1m') { interval = '1m'; range = '1d'; }
+    else if (timeframe === '5m') { interval = '5m'; range = '1d'; }
+    else if (timeframe === '15m') { interval = '15m'; range = '5d'; }
+    else if (timeframe === '30m') { interval = '30m'; range = '5d'; }
+    else if (timeframe === '1H') { interval = '60m'; range = '1mo'; }
+    else if (timeframe === '1D') { interval = '1d'; range = '6mo'; }
+    else if (timeframe === '1W') { interval = '1wk'; range = '1y'; }
+    else if (timeframe === '1M') { interval = '1mo'; range = '2y'; }
 
     try {
-      const res = await fetch(url, {
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${this.accessToken}`,
-        },
-      });
+      const res = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${interval}&range=${range}`,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+          },
+          next: { revalidate: 30 },
+        }
+      );
 
-      if (!res.ok) {
-        console.warn(`[Upstox] HTTP ${res.status} on OHLC for ${cleanSymbol}, falling back to mock.`);
-        return this.mockFallback.getOhlc(symbol, timeframe);
-      }
-
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      const rawCandles = json.data?.candles || [];
+      const result = json.chart?.result?.[0];
+      const timestamps: number[] = result?.timestamp || [];
+      const quotes = result?.indicators?.quote?.[0] || {};
+      const opens = quotes.open || [];
+      const highs = quotes.high || [];
+      const lows = quotes.low || [];
+      const closes = quotes.close || [];
+      const volumes = quotes.volume || [];
 
-      if (!Array.isArray(rawCandles) || rawCandles.length === 0) {
-        return this.mockFallback.getOhlc(symbol, timeframe);
+      const candles: MarketOhlcCandle[] = [];
+      const isIntraday = ['1m', '5m', '15m', '30m', '1H'].includes(timeframe);
+
+      for (let i = 0; i < timestamps.length; i++) {
+        if (closes[i] === null || closes[i] === undefined) continue;
+        const d = new Date(timestamps[i] * 1000);
+        const timeLabel = isIntraday
+          ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+          : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+        candles.push({
+          time: timeLabel,
+          timestamp: timestamps[i] * 1000,
+          open: Number(opens[i]?.toFixed(2) || closes[i].toFixed(2)),
+          high: Number(highs[i]?.toFixed(2) || closes[i].toFixed(2)),
+          low: Number(lows[i]?.toFixed(2) || closes[i].toFixed(2)),
+          close: Number(closes[i].toFixed(2)),
+          volume: Number(volumes[i] || 0),
+        });
       }
 
-      // Upstox returns newest candles first; sort ascending for charts
-      let candles: MarketOhlcCandle[] = rawCandles
-        .map((c: any[]) => {
-          const d = new Date(c[0]);
-          const timeLabel = isIntraday
-            ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
-            : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-
-          return {
-            time: timeLabel,
-            timestamp: d.getTime(),
-            open: Number(c[1]),
-            high: Number(c[2]),
-            low: Number(c[3]),
-            close: Number(c[4]),
-            volume: Number(c[5] || 0),
-          };
-        })
-        .reverse();
-
-      // Aggregate buckets if needed (e.g. 5m, 15m, 1H)
-      if (timeframe === '5m' || timeframe === '15m') {
-        const bucketSize = timeframe === '5m' ? 5 : 15;
-        candles = aggregateCandleBuckets(candles, bucketSize);
-      } else if (timeframe === '1H') {
-        candles = aggregateCandleBuckets(candles, 2);
-      }
-
-      return candles;
+      if (candles.length > 0) return candles;
+      throw new Error('No candle records parsed');
     } catch (err: any) {
-      console.warn(`[Upstox] Error on OHLC: ${err.message}, using fallback.`);
-      return this.mockFallback.getOhlc(symbol, timeframe);
+      console.warn(`[YahooFinanceProvider] OHLC fetch error for ${cleanSymbol}:`, err.message);
+      throw err;
     }
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { validateSignInCredentials } from '@/services/authStore';
+import { createSession } from '@/lib/security/session';
 
 export async function POST(request: Request) {
   try {
@@ -13,19 +14,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const { token, expiresAt } = await createSession(result.user.id, !!body.rememberMe);
+
     const response = NextResponse.json({
       success: true,
       user: result.user,
-      token: `jwt_session_${result.user.id}_${Date.now()}`,
+      token,
       message: 'Signed in successfully',
     });
 
-    // Set HTTP-only cookie for session simulation
+    const maxAgeSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
+
+    // Set secure HttpOnly cookies
+    response.cookies.set('ipolens_session', token, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: maxAgeSeconds,
+    });
+
     response.cookies.set('ipolens_token', `jwt_session_${result.user.id}`, {
       path: '/',
       httpOnly: true,
+      sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
-      maxAge: body.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24, // 30 days or 1 day
+      maxAge: maxAgeSeconds,
     });
 
     return response;

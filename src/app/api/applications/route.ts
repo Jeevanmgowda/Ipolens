@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { IpoApplication } from '@/types/pan';
 import { checkDuplicatePanBid, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { getAuthenticatedUser } from '@/lib/security/session';
 
 // Server-side store for applications (clean slate)
 let applicationsStore: IpoApplication[] = [];
@@ -25,21 +26,28 @@ export function updateApplicationStatus(
 }
 
 export async function GET(request: Request) {
+  const user = await getAuthenticatedUser(request);
+  const userId = user ? user.id : 'default_user';
+
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol');
 
-  const list = await DbRepositoryService.getApplications(symbol || undefined);
+  const list = await DbRepositoryService.getApplications(symbol || undefined, userId);
 
   return NextResponse.json({
     success: true,
     data: list,
     count: list.length,
+    userId,
     databaseActive: DbRepositoryService.isDatabaseActive(),
   });
 }
 
 export async function POST(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    const userId = user ? user.id : 'default_user';
+
     const body = await request.json();
     const {
       ipoSymbol,
@@ -62,9 +70,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // Retrieve existing user applications for duplicate check
+    const existingApps = await DbRepositoryService.getApplications(ipoSymbol, userId);
+
     // SEBI Duplicate Bid Enforcement Check!
     const dupCheck = checkDuplicatePanBid(
-      applicationsStore,
+      existingApps,
       panId,
       ipoSymbol,
       panNumber,
@@ -100,7 +111,7 @@ export async function POST(request: Request) {
       appliedAt: new Date().toISOString(),
     };
 
-    await DbRepositoryService.saveApplication(newApp);
+    await DbRepositoryService.saveApplication(newApp, userId);
 
     return NextResponse.json({
       success: true,
