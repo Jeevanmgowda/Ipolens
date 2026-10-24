@@ -95,23 +95,36 @@ export class RegistrarScannerService {
     }
 
     // 2. High-accuracy deterministic fallback engine
-    if (!querySucceeded) {
+    let isSimulation = false;
+    let sourceBadge = '🟢 OFFICIAL REGISTRAR';
+
+    if (querySucceeded) {
+      isSimulation = false;
+      sourceBadge = '🟢 OFFICIAL REGISTRAR';
+      message = status === 'Allotted'
+        ? `Official Allotment Confirmed: ${sharesAllotted} shares allotted to ${profile.name}.`
+        : `Non-allottee status confirmed at ${registrar.name}. ASBA fund unblock initiated.`;
+    } else {
+      isSimulation = true;
       if (!app) {
         // No recorded application in database for this PAN
         status = 'Not Allotted';
         sharesAllotted = 0;
-        message = `No active bid found for ${profile.name} (${profile.pan.substring(0, 5)}****) in ${cleanSymbol} at ${registrar.name}.`;
+        sourceBadge = '🟡 DEMO SIMULATION';
+        message = `[Demo / Indicative Simulation] No active bid recorded for ${profile.name} (${profile.pan.substring(0, 5)}****) in ${cleanSymbol}. Verify official status on ${registrar.name} portal: ${registrar.portalUrl}`;
       } else if (app.status === 'Allotted') {
         status = 'Allotted';
         sharesAllotted = app.allottedShares || (category === 'sNII' ? lotsApplied * lotSize : lotSize);
-        message = `Official Allotment Confirmed: ${sharesAllotted} shares allotted to ${profile.name}.`;
+        sourceBadge = '⚪ RECORDED APPLICATION';
+        message = `[Recorded Status] Allotment confirmed from user records: ${sharesAllotted} shares allotted to ${profile.name}.`;
       } else if (app.status === 'Not Allotted') {
         status = 'Not Allotted';
         sharesAllotted = 0;
-        message = `Non-allottee status confirmed at ${registrar.name}. ASBA fund unblock initiated.`;
+        sourceBadge = '⚪ RECORDED APPLICATION';
+        message = `[Recorded Status] Non-allottee status recorded in user records. Verify fund unblock on ${registrar.name} portal: ${registrar.portalUrl}`;
       } else {
         // Application is currently 'Applied' or 'Mandate Approved'
-        // Deterministic SEBI allotment outcome based on hash of PAN and symbol
+        // Deterministic simulation indicator (DO NOT claim official confirmation!)
         const hash = Array.from(`${cleanSymbol}_${profile.pan}`).reduce(
           (acc, char) => acc + char.charCodeAt(0),
           0
@@ -124,11 +137,13 @@ export class RegistrarScannerService {
           status = 'Allotted';
           // sNII receives minimum sNII lot; Retail receives 1 lot
           sharesAllotted = category === 'sNII' ? lotsApplied * lotSize : lotSize;
-          message = `Official Allotment Confirmed: ${sharesAllotted} shares allotted (${lotsApplied} lot(s)).`;
+          sourceBadge = '🟡 DEMO SIMULATION';
+          message = `[Demo / Indicative Simulation] Simulated outcome: ${sharesAllotted} shares (${lotsApplied} lot(s)). Always verify official allotment on ${registrar.name} portal: ${registrar.portalUrl}`;
         } else {
           status = 'Not Allotted';
           sharesAllotted = 0;
-          message = `Non-allottee status confirmed at ${registrar.name}. ASBA fund unblock initiated.`;
+          sourceBadge = '🟡 DEMO SIMULATION';
+          message = `[Demo / Indicative Simulation] Simulated outcome: Non-allottee. Always verify official allotment on ${registrar.name} portal: ${registrar.portalUrl}`;
         }
       }
     }
@@ -163,6 +178,9 @@ export class RegistrarScannerService {
       applicationNo: app ? `APP${app.id.slice(-8).toUpperCase()}` : `REQ${Date.now().toString().slice(-6)}`,
       applicationId: app?.id,
       syncedToDatabase,
+      isSimulation,
+      sourceBadge,
+      registrarUrl: registrar.portalUrl,
       message,
       scannedAt: new Date().toISOString(),
     };

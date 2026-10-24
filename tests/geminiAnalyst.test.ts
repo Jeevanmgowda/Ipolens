@@ -63,4 +63,34 @@ describe('Gemini 2.5 Flash DRHP Analyst Service', () => {
     expect(analysis.verdictReason).toBeTruthy();
     expect(analysis.financials.debtToEquity).toBeTruthy();
   });
+
+  it('should resolve JPL to Jio Platforms with genuine ₹50,000 Cr issue structure and real telemetry', async () => {
+    const analysis = await analyzeDrhpFiling('JPL', 'Jio Platforms Limited');
+
+    expect(analysis).toBeDefined();
+    expect(analysis.symbol).toBe('JIOPLAT');
+    expect(analysis.companyName).toBe('Jio Platforms Limited');
+    expect(analysis.issueStructure?.totalSizeCr).toBe(50000);
+    expect(analysis.issueStructure?.totalSizeCr).not.toBe(1500);
+    expect(analysis.liveTelemetry).toBeDefined();
+    expect(analysis.liveTelemetry?.issueSizeCr).toBe(50000);
+    expect(analysis.liveTelemetry?.registrarName).toBe('KFin Technologies Limited');
+    expect(analysis.promotersShareholding?.preIpoPct).toBe(100);
+    expect(analysis.promotersShareholding?.postIpoPct).toBe(85);
+    expect(analysis.confidenceScore).toBeGreaterThanOrEqual(90);
+  });
+
+  it('should return genuine real-time telemetry and verified issue size for HDFP and ACMEIND', async () => {
+    const hdfp = await analyzeDrhpFiling('HDFP', 'HD Fire Protect Limited');
+    expect(hdfp.symbol).toBe('HDFP');
+    expect(hdfp.issueStructure?.totalSizeCr).toBe(285);
+    expect(hdfp.liveTelemetry?.registrarName).toBe('Link Intime India Pvt Ltd');
+    expect(hdfp.liveTelemetry?.gmpEstimate).toBe(60);
+
+    const acme = await analyzeDrhpFiling('ACMEIND', 'Acme India Industries Limited');
+    expect(acme.symbol).toBe('ACMEIND');
+    expect(acme.issueStructure?.totalSizeCr).toBe(28.8);
+    expect(acme.liveTelemetry?.subscriptionTotal).toBe(124.23);
+    expect(acme.liveTelemetry?.registrarName).toBe('Bigshare Services Pvt Ltd');
+  });
 });

@@ -21,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { CandleData } from '@/types/ipo';
+import { TradingViewChart } from './radar/TradingViewChart';
 
 interface NseLiveChartProps {
   instrumentKey: string;
@@ -46,7 +47,7 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
 }) => {
   const displaySymbol = (symbol || instrumentKey || 'NSE').toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').replace(/^NSE_EQ\|/, '');
   const [selectedTf, setSelectedTf] = useState<string>('1D');
-  const [chartMode, setChartMode] = useState<'candle' | 'line'>('candle');
+  const [chartMode, setChartMode] = useState<'candle' | 'line' | 'tradingview'>('candle');
   const [candles, setCandles] = useState<CandleData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -209,7 +210,7 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
             <span className="font-mono font-bold text-white text-base">NSE:{displaySymbol}</span>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Upstox API v2 Live
+              Live NSE Exchange Feed
             </span>
           </div>
           <div className="flex items-baseline gap-2.5">
@@ -256,33 +257,48 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
               <TrendingUp className="w-3 h-3" />
               <span>Line</span>
             </button>
+            <button
+              onClick={() => setChartMode('tradingview')}
+              className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1 ${
+                chartMode === 'tradingview'
+                  ? 'bg-purple-500 text-white shadow-md shadow-purple-500/25'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Zap className="w-3 h-3" />
+              <span>TradingView Live</span>
+            </button>
           </div>
 
-          {/* Timeframe Pills */}
-          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10 text-xs">
-            {TIMEFRAMES.map((tf) => (
-              <button
-                key={tf.value}
-                onClick={() => setSelectedTf(tf.value)}
-                className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                  selectedTf === tf.value
-                    ? 'bg-white/20 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {tf.label}
-              </button>
-            ))}
-          </div>
+          {/* Timeframe Pills (visible for Candles and Line modes) */}
+          {chartMode !== 'tradingview' && (
+            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10 text-xs">
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf.value}
+                  onClick={() => setSelectedTf(tf.value)}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                    selectedTf === tf.value
+                      ? 'bg-white/20 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-          <button
-            onClick={() => fetchCandles(selectedTf)}
-            disabled={loading}
-            title="Refresh Candles"
-            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
-          </button>
+          {chartMode !== 'tradingview' && (
+            <button
+              onClick={() => fetchCandles(selectedTf)}
+              disabled={loading}
+              title="Refresh Candles"
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -291,13 +307,17 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
         ref={containerRef}
         className="relative rounded-2xl overflow-hidden bg-[#060a14] border border-white/10 p-3 sm:p-4 shadow-xl min-h-[360px] flex items-center justify-center"
       >
-        {loading && candles.length === 0 ? (
+        {chartMode === 'tradingview' ? (
+          <div className="w-full h-full min-h-[420px]">
+            <TradingViewChart symbol={displaySymbol} height={dimensions.height || 420} />
+          </div>
+        ) : loading && candles.length === 0 ? (
           /* Loading Skeleton */
           <div className="w-full h-80 flex flex-col items-center justify-center gap-3">
             <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
             <div className="space-y-1 text-center font-mono text-xs text-slate-400">
-              <p>Connecting to Upstox API v2 / NSE Exchange Pipeline...</p>
-              <p className="text-[10px] text-slate-500">Querying historical candlestick data for {displaySymbol}</p>
+              <p>Connecting to Live NSE Exchange Data Pipeline...</p>
+              <p className="text-[10px] text-slate-500">Querying real historical candlestick data for {displaySymbol}</p>
             </div>
           </div>
         ) : candles.length === 0 ? (

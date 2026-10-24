@@ -36,9 +36,9 @@ let sqlConnection: ReturnType<typeof postgres> | null = null;
 if (isPostgresConfigured) {
   try {
     sqlConnection = postgres(connectionString, {
-      max: 10,
+      max: 5,
       idle_timeout: 20,
-      connect_timeout: 10,
+      connect_timeout: 2,
       prepare: false, // Recommended for Supabase / Neon connection pooler (PgBouncer)
     });
     dbClient = drizzle(sqlConnection, { schema });

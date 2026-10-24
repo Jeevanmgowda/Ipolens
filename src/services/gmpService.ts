@@ -35,35 +35,56 @@ export class GmpService {
     const now = Date.now();
     const points: GmpHistoryPoint[] = [];
 
-    // Starting baseline GMP earlier in the timeline
-    let runningGmp = Math.max(10, Math.round(baseGmp * 0.72));
+    if (baseGmp <= 0) {
+      // If issue has 0 GMP or flat sentiment, record exact flat zero line
+      for (let i = pointCount - 1; i >= 0; i--) {
+        const timeMs = now - i * stepMs;
+        const dateObj = new Date(timeMs);
+        const dateLabel =
+          timeframe === '1D'
+            ? dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+            : dateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
 
-    for (let i = pointCount - 1; i >= 0; i--) {
-      const timeMs = now - i * stepMs;
-      const dateObj = new Date(timeMs);
+        points.push({
+          date: dateLabel,
+          time: dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          timestamp: timeMs,
+          gmp: 0,
+          gmpPercent: 0,
+          estimatedListingPrice: issuePrice,
+        });
+      }
+    } else {
+      // Starting baseline GMP earlier in the timeline
+      let runningGmp = Math.max(1, Math.round(baseGmp * 0.72));
 
-      // Random gentle drift towards the current baseGmp
-      const drift = (baseGmp - runningGmp) / (i + 1);
-      const randomNoise = (Math.random() - 0.45) * 8;
-      const gmpVal = i === 0 ? baseGmp : Math.max(5, Math.round(runningGmp + drift + randomNoise));
-      runningGmp = gmpVal;
+      for (let i = pointCount - 1; i >= 0; i--) {
+        const timeMs = now - i * stepMs;
+        const dateObj = new Date(timeMs);
 
-      const gmpPercent = issuePrice > 0 ? Number(((gmpVal / issuePrice) * 100).toFixed(1)) : 0;
-      const estimatedListingPrice = issuePrice + gmpVal;
+        // Gentle drift towards the current baseGmp
+        const drift = (baseGmp - runningGmp) / (i + 1);
+        const randomNoise = (Math.random() - 0.45) * Math.min(8, baseGmp * 0.1);
+        const gmpVal = i === 0 ? baseGmp : Math.max(1, Math.round(runningGmp + drift + randomNoise));
+        runningGmp = gmpVal;
 
-      const dateLabel =
-        timeframe === '1D'
-          ? dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-          : dateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+        const gmpPercent = issuePrice > 0 ? Number(((gmpVal / issuePrice) * 100).toFixed(1)) : 0;
+        const estimatedListingPrice = issuePrice + gmpVal;
 
-      points.push({
-        date: dateLabel,
-        time: dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        timestamp: timeMs,
-        gmp: gmpVal,
-        gmpPercent,
-        estimatedListingPrice,
-      });
+        const dateLabel =
+          timeframe === '1D'
+            ? dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+            : dateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+
+        points.push({
+          date: dateLabel,
+          time: dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          timestamp: timeMs,
+          gmp: gmpVal,
+          gmpPercent,
+          estimatedListingPrice,
+        });
+      }
     }
 
     const gmpValues = points.map((p) => p.gmp);

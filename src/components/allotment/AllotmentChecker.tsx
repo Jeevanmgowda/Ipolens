@@ -337,6 +337,14 @@ export const AllotmentChecker: React.FC = () => {
           </div>
         </div>
 
+        {/* Regulatory & Honesty Notice */}
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-xs text-amber-200">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+          <div className="leading-relaxed">
+            <strong className="font-semibold text-white">Regulatory Notice:</strong> IPOLENS does not guarantee IPO allotment or access registrar databases without authorized user consent. Allotment simulations are deterministic indicators for family cashflow planning. Always verify official allotment on the registrar&apos;s portal.
+          </div>
+        </div>
+
         {/* Real-Time Listed IPO Selection Header & Controls */}
         <div className="space-y-3 pt-2 border-t border-white/10">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -619,20 +627,40 @@ export const AllotmentChecker: React.FC = () => {
                       </td>
 
                       <td className="p-3">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
-                            item.status === 'Allotted'
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                          }`}
-                        >
-                          {item.status === 'Allotted' ? (
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                          ) : (
-                            <XCircle className="w-3.5 h-3.5" />
+                        <div className="space-y-1">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                              item.status === 'Allotted'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            }`}
+                          >
+                            {item.status === 'Allotted' ? (
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            ) : (
+                              <XCircle className="w-3.5 h-3.5" />
+                            )}
+                            {item.status}
+                          </span>
+
+                          {item.sourceBadge && (
+                            <span className="block text-[9px] font-mono text-slate-400">
+                              {item.sourceBadge}
+                            </span>
                           )}
-                          {item.status}
-                        </span>
+
+                          {item.registrarUrl && (
+                            <a
+                              href={item.registrarUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-0.5 underline"
+                            >
+                              Verify on Portal
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
+                        </div>
                       </td>
 
                       <td className="p-3">

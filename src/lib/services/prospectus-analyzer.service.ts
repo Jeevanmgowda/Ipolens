@@ -8,6 +8,21 @@ export interface IpoInsightResponse {
   anchorQuality: string;
 }
 
+const withTimeout = <T>(promise: Promise<T>, ms: number = 7000): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`API request timed out after ${ms}ms`)), ms);
+    promise
+      .then((val) => {
+        clearTimeout(timer);
+        resolve(val);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+};
+
 export async function generateIpoInsight(
   companyName: string,
   drhpSummary: string
@@ -24,31 +39,34 @@ Generate a structured analysis strictly conforming to the required schema.
 Prospectus Context:
 ${drhpSummary}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'OBJECT',
-            properties: {
-              verdict: { type: 'STRING', enum: ['SUBSCRIBE', 'AVOID', 'NEUTRAL'] },
-              confidenceScore: { type: 'NUMBER', description: 'Score between 0 and 100' },
-              topStrengths: { type: 'ARRAY', items: { type: 'STRING' } },
-              topRisks: { type: 'ARRAY', items: { type: 'STRING' } },
-              anchorQuality: { type: 'STRING' },
+      const response = await withTimeout(
+        ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                verdict: { type: 'STRING', enum: ['SUBSCRIBE', 'AVOID', 'NEUTRAL'] },
+                confidenceScore: { type: 'NUMBER', description: 'Score between 0 and 100' },
+                topStrengths: { type: 'ARRAY', items: { type: 'STRING' } },
+                topRisks: { type: 'ARRAY', items: { type: 'STRING' } },
+                anchorQuality: { type: 'STRING' },
+              },
+              required: ['verdict', 'confidenceScore', 'topStrengths', 'topRisks'],
             },
-            required: ['verdict', 'confidenceScore', 'topStrengths', 'topRisks'],
           },
-        },
-      });
+        }),
+        7000
+      );
 
       const parsed = JSON.parse(response.text || '{}');
       if (parsed.verdict && parsed.confidenceScore !== undefined) {
         return parsed as IpoInsightResponse;
       }
     } catch (aiErr) {
-      console.warn('Gemini 2.5 Flash DRHP analysis notice, using deterministic fallback:', aiErr);
+      console.warn('Gemini Flash DRHP analysis notice, using deterministic fallback:', aiErr);
     }
   }
 

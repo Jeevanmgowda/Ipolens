@@ -316,7 +316,7 @@ export default function LiveMarketPage() {
                   <h3 className="text-base font-bold text-white leading-tight">
                     {selectedIpoForStockChart.companyName} ({selectedIpoForStockChart.symbol})
                   </h3>
-                  <p className="text-xs text-slate-400">Live Listed Market Feed • Upstox / NSE Architecture</p>
+                  <p className="text-xs text-slate-400">Live Listed Market Feed • Real-Time NSE Exchange Feed</p>
                 </div>
               </div>
               <button

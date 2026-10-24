@@ -1,5 +1,5 @@
 import { LiveMarketIpoItem } from '@/types/liveMarket';
-import { fetchLiveNseIpos } from './nseIpoService';
+import { fetchLiveNseIpos, calculateRemainingTime, isBiddingClosed } from './nseIpoService';
 import { fetchLiveListedIpos, LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { UpstoxIpoService } from '@/lib/services/upstox-ipo.service';
@@ -64,7 +64,7 @@ export class NSEIPOProvider implements IPODataProvider {
               priceLow: u.priceBandMin || 100,
               priceHigh: u.priceBandMax || 100,
               lotSize: u.lotSize || 14,
-              issueSize: u.issueSizeInCrores ? `₹${u.issueSizeInCrores} Cr` : '₹500 Cr',
+              issueSize: u.issueSizeInCrores ? `₹${u.issueSizeInCrores} Cr` : '—',
               openDate: u.openDate || 'TBD',
               closeDate: u.closeDate || 'TBD',
               allotmentDate: u.listingDate || u.closeDate || 'TBD',
@@ -74,15 +74,9 @@ export class NSEIPOProvider implements IPODataProvider {
               gmp,
               gmpPercent,
               currentSubscription: u.subscriptionTotal || 0,
-              retailSubscription:
-                u.subscriptionRetail ||
-                (u.subscriptionTotal ? Number((u.subscriptionTotal * 0.75).toFixed(2)) : 0),
-              niiSubscription:
-                u.subscriptionHni ||
-                (u.subscriptionTotal ? Number((u.subscriptionTotal * 1.15).toFixed(2)) : 0),
-              qibSubscription:
-                u.subscriptionQib ||
-                (u.subscriptionTotal ? Number((u.subscriptionTotal * 1.45).toFixed(2)) : 0),
+              retailSubscription: u.subscriptionRetail || 0,
+              niiSubscription: u.subscriptionHni || 0,
+              qibSubscription: u.subscriptionQib || 0,
               marketStatus: 'OPEN',
             };
           })
@@ -107,33 +101,52 @@ export class NSEIPOProvider implements IPODataProvider {
       if (seenSymbols.has(symUpper)) continue;
       seenSymbols.add(symUpper);
 
-      const isLive = raw.status === 'Active';
-      const isUpcoming = raw.status === 'Forthcoming';
       const isActuallyListed = Boolean(
         raw.isListed ||
+        raw.status === 'Listed' ||
         (raw.listingPrice && raw.listingPrice !== 'TBD' && raw.listingPrice !== '₹0' && !raw.listingPrice.includes('TBD')) ||
         LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
         listedRaw.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase())
       );
-      const isClosed = raw.status === 'Closed' && !isActuallyListed;
+
+      const computedRemainingTime = raw.remainingTime || calculateRemainingTime(raw.issueEndDate);
+      const isClosedIssue =
+        !isActuallyListed &&
+        (raw.status === 'Closed' ||
+          computedRemainingTime === 'Bidding Closed' ||
+          isBiddingClosed(raw.issueEndDate));
 
       let status: 'Upcoming' | 'Open' | 'Closed' | 'Listed' = 'Closed';
-      if (isLive) status = 'Open';
-      else if (isUpcoming) status = 'Upcoming';
-      else if (isActuallyListed) status = 'Listed';
-      else if (isClosed) status = 'Closed';
+      if (isActuallyListed) {
+        status = 'Listed';
+      } else if (isClosedIssue) {
+        status = 'Closed';
+      } else if (raw.status === 'Active') {
+        status = 'Open';
+      } else if (raw.status === 'Forthcoming') {
+        status = 'Upcoming';
+      } else {
+        status = 'Closed';
+      }
 
-      // Parse price band numbers
-      const prices = (raw.priceBand || raw.issuePrice || '100').match(/\d+(?:\.\d+)?/g) || ['100'];
-      const priceLow = parseFloat(prices[0]) || 100;
-      const priceHigh = parseFloat(prices[prices.length - 1]) || priceLow;
-      const lotSize = typeof raw.lotSize === 'number' ? raw.lotSize : parseInt(String(raw.lotSize || '14'), 10) || 14;
+      // Parse price band numbers safely without comma splitting
+      const cleanPriceStr = (raw.priceBand || raw.issuePrice || '100').replace(/,/g, '');
+      const prices = cleanPriceStr.match(/\d+(?:\.\d+)?/g) || ['100'];
+      const priceLow = raw.priceLow !== undefined ? raw.priceLow : (parseFloat(prices[0]) || 100);
+      const priceHigh = raw.priceHigh !== undefined ? raw.priceHigh : (parseFloat(prices[prices.length - 1]) || priceLow);
+      const lotSize = typeof raw.lotSize === 'number'
+        ? raw.lotSize
+        : parseInt(String(raw.lotSize || '14').replace(/,/g, ''), 10) || 14;
 
-      const totalSub = parseFloat(raw.noOfTime || '0.00') || 0;
-      // Synthesize realistic institutional category proportions based on exchange total
-      const qibSub = Number((totalSub * 1.45).toFixed(2));
-      const niiSub = Number((totalSub * 1.15).toFixed(2));
-      const retailSub = Number((totalSub * 0.75).toFixed(2));
+      const totalSub = typeof raw.noOfTime === 'string'
+        ? (parseFloat(raw.noOfTime) || 0)
+        : (typeof raw.noOfTime === 'number' ? raw.noOfTime : 0);
+
+      // Real category subscription from verified exchange feeds
+      const qibSub = raw.qibSubscription !== undefined ? raw.qibSubscription : 0;
+      const niiSub = raw.niiSubscription !== undefined ? raw.niiSubscription : 0;
+      const retailSub = raw.retailSubscription !== undefined ? raw.retailSubscription : 0;
+      const employeeSub = raw.employeeSubscription !== undefined ? raw.employeeSubscription : 0;
 
       // Resolve secondary market figures if listed
       const listedMatch = listedRaw.find((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
@@ -146,6 +159,24 @@ export class NSEIPOProvider implements IPODataProvider {
       const dayChangePercentVal = (listedMatch as any)?.dayChangePercent || 0;
       const volumeVal = (listedMatch as any)?.volume || 750000;
 
+      const isDebt = raw.series === 'DEBT';
+      const gmp = isDebt ? 0 : (raw.gmpEstimate || 0);
+      const gmpPercent = isDebt ? 0 : (raw.gmpPercent || 0);
+
+      const effectiveRemainingTime = isActuallyListed
+        ? 'Listed on Exchange'
+        : (isClosedIssue ? 'Bidding Closed' : (computedRemainingTime || 'Upcoming'));
+
+      const issueSizeFormatted = raw.issueSize
+        ? (raw.issueSize.includes('Cr')
+            ? (raw.issueSize.startsWith('₹') ? raw.issueSize : `₹${raw.issueSize}`)
+            : `₹${raw.issueSize} Cr`)
+        : '—';
+
+      const minInvestment = raw.minInvestment !== undefined
+        ? raw.minInvestment
+        : (priceHigh * lotSize);
+
       items.push({
         id: raw.symbol.toLowerCase(),
         symbol: raw.symbol.toUpperCase(),
@@ -156,7 +187,8 @@ export class NSEIPOProvider implements IPODataProvider {
         priceLow,
         priceHigh,
         lotSize,
-        issueSize: raw.issueSize ? `₹${raw.issueSize} Cr` : '₹1,250 Cr',
+        minInvestment,
+        issueSize: issueSizeFormatted,
         openDate: raw.issueStartDate || 'TBD',
         closeDate: raw.issueEndDate || 'TBD',
         allotmentDate: 'TBD',
@@ -164,15 +196,15 @@ export class NSEIPOProvider implements IPODataProvider {
         expectedListingDate: raw.issueEndDate ? 'T+3 Trading Days' : 'TBD',
         registrar: raw.registrarName || 'Link Intime India Pvt Ltd',
         registrarUrl: raw.registrarUrl,
-        gmp: raw.gmpEstimate || 0,
-        gmpPercent: raw.gmpPercent || 0,
+        gmp,
+        gmpPercent,
         currentSubscription: totalSub,
         retailSubscription: retailSub,
         niiSubscription: niiSub,
         qibSubscription: qibSub,
-        employeeSubscription: Number((totalSub * 0.2).toFixed(2)),
-        remainingTime: isLive ? '1 Day, 4 Hours' : undefined,
-        isClosingSoon: isLive,
+        employeeSubscription: employeeSub,
+        remainingTime: effectiveRemainingTime,
+        isClosingSoon: status === 'Open' && Boolean(computedRemainingTime?.includes('Hours Left')),
         issuePrice: issuePriceVal,
         listingPrice: listingPriceVal,
         currentPrice: currentPriceVal,
@@ -206,8 +238,9 @@ export class NSEIPOProvider implements IPODataProvider {
         priceBand: `₹${l.issuePrice}`,
         priceLow: l.issuePrice,
         priceHigh: l.issuePrice,
-        lotSize: 14,
-        issueSize: '₹1,500 Cr',
+        lotSize: l.lotSize || 14,
+        minInvestment: l.issuePrice * (l.lotSize || 14),
+        issueSize: l.issueSize || '—',
         openDate: 'Past Issue',
         closeDate: 'Past Issue',
         allotmentDate: 'Allotted',
@@ -216,11 +249,11 @@ export class NSEIPOProvider implements IPODataProvider {
         registrar: l.allotmentRegistrar || 'Link Intime India Pvt Ltd',
         gmp: Math.round(l.listingPrice - l.issuePrice),
         gmpPercent: l.listingGainPercent,
-        currentSubscription: 18.5,
-        retailSubscription: 12.4,
-        niiSubscription: 22.8,
-        qibSubscription: 28.6,
-        employeeSubscription: 3.2,
+        currentSubscription: l.subscriptionTotal || 0,
+        retailSubscription: l.subscriptionRetail || 0,
+        niiSubscription: l.subscriptionNii || 0,
+        qibSubscription: l.subscriptionQib || 0,
+        employeeSubscription: 0,
         issuePrice: l.issuePrice,
         listingPrice: l.listingPrice,
         currentPrice: l.currentPrice,
@@ -236,17 +269,17 @@ export class NSEIPOProvider implements IPODataProvider {
 
   async getUpcomingIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Upcoming');
+    return all.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getOpenIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Open');
+    return all.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getClosedIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Closed');
+    return all.filter((i) => i.status === 'Closed' || (i.status !== 'Listed' && i.remainingTime === 'Bidding Closed'));
   }
 
   async getListedIpos(): Promise<LiveMarketIpoItem[]> {
@@ -338,11 +371,11 @@ export class MockIPOProvider implements IPODataProvider {
       priceHigh: 650,
       lotSize: 23,
       issueSize: '₹4,500 Cr',
-      openDate: '01 Oct 2026',
-      closeDate: '03 Oct 2026',
-      allotmentDate: '06 Oct 2026',
-      listingDate: '10 Oct 2026',
-      expectedListingDate: '10 Oct 2026',
+      openDate: '10 Nov 2026',
+      closeDate: '12 Nov 2026',
+      allotmentDate: '15 Nov 2026',
+      listingDate: '18 Nov 2026',
+      expectedListingDate: '18 Nov 2026',
       registrar: 'Link Intime India Pvt Ltd',
       registrarUrl: 'https://linkintime.co.in',
       gmp: 140,
@@ -363,11 +396,11 @@ export class MockIPOProvider implements IPODataProvider {
       priceHigh: 122,
       lotSize: 1000,
       issueSize: '₹84 Cr',
-      openDate: '05 Oct 2026',
-      closeDate: '07 Oct 2026',
-      allotmentDate: '09 Oct 2026',
-      listingDate: '13 Oct 2026',
-      expectedListingDate: '13 Oct 2026',
+      openDate: '16 Nov 2026',
+      closeDate: '18 Nov 2026',
+      allotmentDate: '20 Nov 2026',
+      listingDate: '23 Nov 2026',
+      expectedListingDate: '23 Nov 2026',
       registrar: 'Bigshare Services Pvt Ltd',
       registrarUrl: 'https://www.bigshareonline.com',
       gmp: 38,
@@ -642,23 +675,38 @@ export class MockIPOProvider implements IPODataProvider {
   ];
 
   async getAllIpos(): Promise<LiveMarketIpoItem[]> {
-    return [...this.mockIpos];
+    return this.mockIpos.map((ipo) => {
+      if (ipo.status === 'Listed') return ipo;
+      const isClosed = isBiddingClosed(ipo.closeDate) || ipo.remainingTime === 'Bidding Closed';
+      if (isClosed) {
+        return {
+          ...ipo,
+          status: 'Closed' as const,
+          remainingTime: 'Bidding Closed',
+        };
+      }
+      return ipo;
+    });
   }
 
   async getUpcomingIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.mockIpos.filter((i) => i.status === 'Upcoming');
+    const all = await this.getAllIpos();
+    return all.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getOpenIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.mockIpos.filter((i) => i.status === 'Open');
+    const all = await this.getAllIpos();
+    return all.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getClosedIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.mockIpos.filter((i) => i.status === 'Closed');
+    const all = await this.getAllIpos();
+    return all.filter((i) => i.status === 'Closed' || (i.status !== 'Listed' && i.remainingTime === 'Bidding Closed'));
   }
 
   async getListedIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.mockIpos.filter((i) => i.status === 'Listed');
+    const all = await this.getAllIpos();
+    return all.filter((i) => i.status === 'Listed');
   }
 
   async getIpoDetails(idOrSymbol: string): Promise<LiveMarketIpoItem | null> {

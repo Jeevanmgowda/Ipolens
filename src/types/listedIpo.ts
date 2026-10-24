@@ -18,6 +18,12 @@ export interface ListedIpoItem {
   volume: number;
   marketCapCr?: number;
   allotmentRegistrar?: string;
+  lotSize?: number;
+  issueSize?: string;
+  subscriptionTotal?: number;
+  subscriptionRetail?: number;
+  subscriptionNii?: number;
+  subscriptionQib?: number;
 }
 
 export interface IpoChartPoint {

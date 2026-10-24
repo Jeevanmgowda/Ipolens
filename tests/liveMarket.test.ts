@@ -244,4 +244,54 @@ describe('Live Market Feature Test Suite', () => {
       expect(overview.isMock).toBe(false);
     });
   });
+
+  describe('Bidding Cutoff & Closed / Past Tab Routing Enforcement', () => {
+    it('should route any IPO whose bidding has closed into Closed/Past tab and never Upcoming/Open', async () => {
+      process.env.USE_MOCK_MARKET_DATA = 'false';
+      const nseProvider = new NSEIPOProvider();
+      const all = await nseProvider.getAllIpos();
+
+      const hdfp = all.find((i) => i.symbol === 'HDFP');
+      expect(hdfp).toBeDefined();
+      expect(hdfp?.status).toBe('Closed');
+      expect(hdfp?.remainingTime).toBe('Bidding Closed');
+
+      const upcoming = await nseProvider.getUpcomingIpos();
+      const open = await nseProvider.getOpenIpos();
+      const closed = await nseProvider.getClosedIpos();
+
+      // HDFP must NOT be in upcoming or open
+      expect(upcoming.some((i) => i.symbol === 'HDFP')).toBe(false);
+      expect(open.some((i) => i.symbol === 'HDFP')).toBe(false);
+      // HDFP must be in closed
+      expect(closed.some((i) => i.symbol === 'HDFP')).toBe(true);
+
+      // Verify for ALL IPOs: if bidding is closed, status must be Closed or Listed
+      for (const ipo of all) {
+        if (ipo.remainingTime === 'Bidding Closed') {
+          expect(['Closed', 'Listed']).toContain(ipo.status);
+          expect(upcoming.some((u) => u.symbol === ipo.symbol)).toBe(false);
+          expect(open.some((o) => o.symbol === ipo.symbol)).toBe(false);
+        }
+      }
+    });
+
+    it('should accurately resolve effective status in IpoCategoriesTabs helper', async () => {
+      const { getEffectiveIpoStatus } = await import('../src/components/live-market/IpoCategoriesTabs');
+
+      // Test closed by remainingTime
+      expect(getEffectiveIpoStatus({ status: 'Upcoming', remainingTime: 'Bidding Closed' } as any)).toBe('closed');
+      expect(getEffectiveIpoStatus({ status: 'Open', remainingTime: 'Bidding Closed' } as any)).toBe('closed');
+      expect(getEffectiveIpoStatus({ status: 'Closed', remainingTime: 'Bidding Closed' } as any)).toBe('closed');
+
+      // Test active/open
+      expect(getEffectiveIpoStatus({ status: 'Open', remainingTime: '2 Days, 4 Hours' } as any)).toBe('open');
+
+      // Test true upcoming
+      expect(getEffectiveIpoStatus({ status: 'Upcoming', remainingTime: 'Opens 06-Nov-2026' } as any)).toBe('upcoming');
+
+      // Test listed
+      expect(getEffectiveIpoStatus({ status: 'Listed', remainingTime: 'Listed on Exchange' } as any)).toBe('listed');
+    });
+  });
 });

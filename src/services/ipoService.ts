@@ -32,9 +32,9 @@ export class IpoService {
     const provider = this.getProvider();
     const all = await provider.getAllIpos();
 
-    const upcoming = all.filter((i) => i.status === 'Upcoming');
-    const open = all.filter((i) => i.status === 'Open');
-    const closingSoon = all.filter((i) => i.status === 'Open' && i.isClosingSoon);
+    const upcoming = all.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
+    const open = all.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
+    const closingSoon = all.filter((i) => i.status === 'Open' && i.isClosingSoon && i.remainingTime !== 'Bidding Closed');
     const listed = all.filter((i) => i.status === 'Listed');
 
     // Top Gainer among listed IPOs
@@ -132,8 +132,8 @@ export class IpoService {
     return GmpService.getGmpHistory(
       ipo.symbol,
       ipo.companyName,
-      ipo.gmp || 75,
-      ipo.priceHigh || 450,
+      ipo.gmp ?? 0,
+      ipo.priceHigh || ipo.priceLow || 100,
       timeframe
     );
   }

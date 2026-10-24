@@ -14,11 +14,11 @@ export class SubscriptionService {
     qib?: number,
     employee?: number
   ): IpoSubscriptionDetails {
-    // If specific category multiples are not provided, synthesize realistic SEBI book proportions
-    const r = retail ?? Number((totalMultiple * 0.65).toFixed(2));
-    const n = nii ?? Number((totalMultiple * 1.05).toFixed(2));
-    const q = qib ?? Number((totalMultiple * 1.55).toFixed(2));
-    const emp = employee ?? Number((Math.min(5, totalMultiple * 0.15)).toFixed(2));
+    // Use exact exchange multiples or 0 if specific category telemetry is unavailable
+    const r = retail !== undefined ? retail : 0;
+    const n = nii !== undefined ? nii : 0;
+    const q = qib !== undefined ? qib : 0;
+    const emp = employee !== undefined ? employee : 0;
 
     return {
       symbol: symbol.toUpperCase(),

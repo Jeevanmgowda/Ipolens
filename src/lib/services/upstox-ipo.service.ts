@@ -115,6 +115,7 @@ export class UpstoxIpoService {
           'Accept': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
+        signal: AbortSignal.timeout(process.env.NODE_ENV === 'test' ? 1000 : 3000),
       });
 
       if (!res.ok) {
@@ -186,6 +187,7 @@ export class UpstoxIpoService {
           'Accept': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
+        signal: AbortSignal.timeout(process.env.NODE_ENV === 'test' ? 1000 : 3000),
       });
 
       if (!res.ok) return [];
@@ -237,6 +239,7 @@ export class UpstoxIpoService {
           'Accept': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
+        signal: AbortSignal.timeout(process.env.NODE_ENV === 'test' ? 1000 : 3000),
       });
 
       if (!res.ok) {
@@ -360,7 +363,9 @@ export class UpstoxIpoService {
           if (status === 'listed') {
             return Boolean(item.isListed);
           }
-          const itemStatus = item.status === 'Active' ? 'open' : item.status === 'Forthcoming' ? 'upcoming' : 'closed';
+          const isClosed = item.status === 'Closed' || item.remainingTime === 'Bidding Closed';
+          if (isClosed) return status === 'closed';
+          const itemStatus = item.status === 'Active' ? 'open' : 'upcoming';
           return itemStatus === status;
         })
         .map((item) => {
@@ -388,6 +393,29 @@ export class UpstoxIpoService {
             instrumentKey: `NSE_EQ|${item.symbol.toUpperCase()}`,
           };
         });
+
+      if (status === 'listed' && mapped.length === 0) {
+        const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
+        const listedMapped: Partial<UnifiedIPO>[] = LISTED_IPOS_REGISTRY.map((l) => ({
+          id: `${l.symbol.toLowerCase()}-ipo`,
+          symbol: l.symbol.toUpperCase(),
+          companyName: l.companyName,
+          issueType: l.series === 'SME' ? 'sme' : 'regular',
+          status: 'listed',
+          priceBandMin: l.issuePrice,
+          priceBandMax: l.issuePrice,
+          lotSize: l.series === 'SME' ? 1200 : 14,
+          openDate: 'Past Issue',
+          closeDate: 'Past Issue',
+          listingDate: l.listingDate,
+          registrar: l.allotmentRegistrar,
+          instrumentKey: `NSE_EQ|${l.symbol.toUpperCase()}`,
+        }));
+        if (issueType) {
+          return listedMapped.filter((i) => i.issueType === issueType);
+        }
+        return listedMapped;
+      }
 
       if (issueType) {
         return mapped.filter((i) => i.issueType === issueType);

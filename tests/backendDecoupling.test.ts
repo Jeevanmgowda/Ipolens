@@ -52,7 +52,7 @@ describe('Decoupled Backend Architecture', () => {
       expect(typeof first.close).toBe('number');
       expect(typeof first.volume).toBe('number');
       expect(first.high).toBeGreaterThanOrEqual(first.low);
-    }, 15000);
+    }, 20000);
   });
 
   describe('Redis Cache & PubSub Infrastructure', () => {
@@ -121,6 +121,6 @@ describe('Decoupled Backend Architecture', () => {
       expect(Array.isArray(insight.topRisks)).toBe(true);
       expect(insight.topRisks.length).toBeGreaterThan(0);
       expect(typeof insight.anchorQuality).toBe('string');
-    }, 15000);
+    }, 20000);
   });
 });

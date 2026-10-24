@@ -483,11 +483,11 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
                 high: Math.max(prev?.high || tickLtp, tickLtp),
                 low: Math.min(prev?.low || tickLtp, tickLtp),
                 previousClose: prevClose,
-                volume: parsed.volume || (prev?.volume || 0) + Math.floor(Math.random() * 50 + 5),
+                volume: parsed.volume || prev?.volume || 0,
                 change: newChange,
                 changePercent: newChangePercent,
                 timestamp: new Date().toISOString(),
-                isMock: parsed.isMock ?? prev?.isMock ?? false,
+                isMock: false,
               };
             });
 
@@ -502,7 +502,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
                     high: tickLtp,
                     low: tickLtp,
                     close: tickLtp,
-                    volume: 100,
+                    volume: parsed.volume || 100,
                   },
                 ];
               }
@@ -513,7 +513,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
                 close: tickLtp,
                 high: Math.max(last.high, tickLtp),
                 low: Math.min(last.low, tickLtp),
-                volume: (last.volume || 0) + 15,
+                volume: parsed.volume || last.volume || 0,
               };
 
               return [...prevCandles.slice(0, -1), updatedLast];
@@ -616,7 +616,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
               }`}
             >
               <BarChart2 className="w-3.5 h-3.5" />
-              <span>Upstox Candles</span>
+              <span>Candles</span>
             </button>
 
             <button
@@ -628,7 +628,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
               }`}
             >
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>Upstox Line</span>
+              <span>Line</span>
             </button>
 
             <button
@@ -640,7 +640,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
               }`}
             >
               <Activity className="w-3.5 h-3.5" />
-              <span>TradingView NSE</span>
+              <span>TradingView Live</span>
             </button>
           </div>
 

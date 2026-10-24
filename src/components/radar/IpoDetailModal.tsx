@@ -106,26 +106,27 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
   // Status flags
   const statusStr = (detail?.status as string) || '';
   const isListed = detail?.isListed || statusStr === 'Listed';
-  const isIssueOpen = statusStr === 'Active' || statusStr === 'Open';
-  const isUpcoming = statusStr === 'Forthcoming' || statusStr === 'Upcoming';
-  const isClosed = statusStr === 'Closed';
+  const remStr = (detail?.remainingTime || '').toLowerCase();
+  const isClosed = !isListed && (statusStr === 'Closed' || remStr.includes('closed') || remStr.includes('bidding closed'));
+  const isIssueOpen = !isListed && !isClosed && (statusStr === 'Active' || statusStr === 'Open');
+  const isUpcoming = !isListed && !isClosed && !isIssueOpen;
 
   const companyName = detail?.companyName || symbol;
-  const priceBand = detail?.issuePrice || '₹450 - ₹475';
-  const lotSize = detail?.lotSize || 31;
-  const issueSize = detail?.issueSizeShares || (detail?.issueSizeCr ? `₹${detail.issueSizeCr} Cr` : '₹1,250 Cr');
+  const priceBand = detail?.issuePrice || 'TBD';
+  const lotSize = detail?.lotSize || 1;
+  const issueSize = detail?.issueSizeShares || (detail?.issueSizeCr ? `₹${detail.issueSizeCr} Cr` : '—');
   const openDate = detail?.issueStartDate || 'Upcoming';
   const closeDate = detail?.issueEndDate || 'Upcoming';
   const allotmentDate = subData?.allotmentDate || 'TBA';
   const listingDate = subData?.listingDate || (isListed ? 'Listed' : 'TBA');
   const registrar = detail?.registrarName || 'Link Intime India Pvt Ltd';
 
-  // Subscription multiples (fallback to subData or defaults)
-  const retailSub = subData?.retail ?? 8.42;
-  const niiSub = subData?.nii ?? 14.62;
-  const qibSub = subData?.qib ?? 21.37;
-  const empSub = subData?.employee ?? 1.25;
-  const totalSub = subData?.total ?? parseFloat(detail?.noOfTimesIssueSubscribed || '13.82');
+  // Subscription multiples (use real data, default to 0 if not available)
+  const retailSub = subData?.retail ?? detail?.retailSubscription ?? 0;
+  const niiSub = subData?.nii ?? detail?.niiSubscription ?? 0;
+  const qibSub = subData?.qib ?? detail?.qibSubscription ?? 0;
+  const empSub = subData?.employee ?? detail?.employeeSubscription ?? 0;
+  const totalSub = subData?.total ?? (detail?.noOfTimesIssueSubscribed ? parseFloat(detail.noOfTimesIssueSubscribed) : 0);
 
   // Helper for progress bar max visual calculation
   const getBarWidth = (val: number) => {
@@ -134,12 +135,12 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
   };
 
   // Derive numeric price and values for ML model
-  const priceNumbers = priceBand.match(/\d+(\.\d+)?/g);
+  const priceNumbers = priceBand.replace(/,/g, '').match(/\d+(\.\d+)?/g);
   const cutoffPrice = priceNumbers && priceNumbers.length > 0
     ? parseFloat(priceNumbers[priceNumbers.length - 1])
-    : 450;
-  const issueSizeInCr = detail?.issueSizeCr || 1250;
-  const currentGmp = detail?.gmpEstimate ?? (detail?.expectedListingGainPct ? (cutoffPrice * detail.expectedListingGainPct) / 100 : 75);
+    : 100;
+  const issueSizeInCr = detail?.issueSizeCr || 100;
+  const currentGmp = detail?.gmpEstimate ?? (detail?.expectedListingGainPct ? (cutoffPrice * detail.expectedListingGainPct) / 100 : 0);
 
   const mlPrediction = predictListingGain({
     symbol,
@@ -798,8 +799,8 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
               <LiveGmpTrendChart
                 symbol={symbol}
                 companyName={companyName}
-                baseGmp={75}
-                issuePrice={450}
+                baseGmp={currentGmp}
+                issuePrice={cutoffPrice > 0 ? cutoffPrice : 100}
               />
             </div>
           )}
@@ -810,7 +811,7 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
               <LiveStockPriceChart
                 symbol={symbol}
                 companyName={companyName}
-                initialPrice={detail?.listingPrice ? Number(detail.listingPrice) : 450}
+                initialPrice={detail?.listingPrice ? Number(detail.listingPrice) : (cutoffPrice + currentGmp)}
               />
             </div>
           )}

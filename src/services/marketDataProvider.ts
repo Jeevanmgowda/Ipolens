@@ -151,11 +151,7 @@ export class UpstoxProvider implements MarketDataProvider {
     }
 
     // 3. Resilient live secondary market quote from exchange gateway
-    try {
-      return await this.yahooFallback.getQuote(symbol);
-    } catch {
-      return this.mockFallback.getQuote(symbol);
-    }
+    return await this.yahooFallback.getQuote(symbol);
   }
 
   async getOhlc(symbol: string, timeframe: string = '1D'): Promise<MarketOhlcCandle[]> {
@@ -241,11 +237,7 @@ export class UpstoxProvider implements MarketDataProvider {
     }
 
     // 3. Resilient live secondary market OHLC candles from exchange gateway
-    try {
-      return await this.yahooFallback.getOhlc(symbol, timeframe);
-    } catch {
-      return this.mockFallback.getOhlc(symbol, timeframe);
-    }
+    return await this.yahooFallback.getOhlc(symbol, timeframe);
   }
 }
 
@@ -257,8 +249,22 @@ export class YahooFinanceProvider implements MarketDataProvider {
   name = 'Yahoo Finance (Live NSE Exchange)';
 
   private resolveTicker(symbol: string): string {
-    const clean = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
+    const clean = symbol
+      .toUpperCase()
+      .replace(/^NSE_EQ\|/, '')
+      .replace(/^NSE_INDEX\|/, '')
+      .replace(/\.NS$/, '')
+      .replace(/^NSE:/, '')
+      .trim();
+
     if (clean === 'NIFTY' || clean === 'NIFTY 50') return '^NSEI';
+    if (clean === 'WAAREE') return 'WAAREEENER.NS';
+
+    const registered = LISTED_IPOS_REGISTRY.find(
+      (m) => m.symbol.toUpperCase() === clean
+    );
+    if (registered) return registered.ticker;
+
     return `${clean}.NS`;
   }
 
@@ -319,15 +325,15 @@ export class YahooFinanceProvider implements MarketDataProvider {
     const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
 
     let interval = '1d';
-    let range = '1mo';
-    if (timeframe === '1m') { interval = '1m'; range = '1d'; }
-    else if (timeframe === '5m') { interval = '5m'; range = '1d'; }
+    let range = '6mo';
+    if (timeframe === '1m') { interval = '1m'; range = '5d'; }
+    else if (timeframe === '5m') { interval = '5m'; range = '5d'; }
     else if (timeframe === '15m') { interval = '15m'; range = '5d'; }
-    else if (timeframe === '30m') { interval = '30m'; range = '5d'; }
+    else if (timeframe === '30m') { interval = '30m'; range = '1mo'; }
     else if (timeframe === '1H') { interval = '60m'; range = '1mo'; }
-    else if (timeframe === '1D') { interval = '1d'; range = '6mo'; }
-    else if (timeframe === '1W') { interval = '1wk'; range = '1y'; }
-    else if (timeframe === '1M') { interval = '1mo'; range = '2y'; }
+    else if (timeframe === '1D') { interval = '1d'; range = '1y'; }
+    else if (timeframe === '1W') { interval = '1wk'; range = '2y'; }
+    else if (timeframe === '1M') { interval = '1mo'; range = '5y'; }
 
     try {
       const res = await fetch(
@@ -357,19 +363,24 @@ export class YahooFinanceProvider implements MarketDataProvider {
       const isIntraday = ['1m', '5m', '15m', '30m', '1H'].includes(timeframe);
 
       for (let i = 0; i < timestamps.length; i++) {
-        if (closes[i] === null || closes[i] === undefined) continue;
+        if (closes[i] === null || closes[i] === undefined || isNaN(closes[i])) continue;
         const d = new Date(timestamps[i] * 1000);
         const timeLabel = isIntraday
           ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
           : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
+        const closeVal = Number(closes[i].toFixed(2));
+        const openVal = Number((opens[i] != null && !isNaN(opens[i]) ? opens[i] : closeVal).toFixed(2));
+        const highVal = Number((highs[i] != null && !isNaN(highs[i]) ? highs[i] : Math.max(openVal, closeVal)).toFixed(2));
+        const lowVal = Number((lows[i] != null && !isNaN(lows[i]) ? lows[i] : Math.min(openVal, closeVal)).toFixed(2));
+
         candles.push({
           time: timeLabel,
           timestamp: timestamps[i] * 1000,
-          open: Number(opens[i]?.toFixed(2) || closes[i].toFixed(2)),
-          high: Number(highs[i]?.toFixed(2) || closes[i].toFixed(2)),
-          low: Number(lows[i]?.toFixed(2) || closes[i].toFixed(2)),
-          close: Number(closes[i].toFixed(2)),
+          open: openVal,
+          high: highVal,
+          low: lowVal,
+          close: closeVal,
           volume: Number(volumes[i] || 0),
         });
       }

@@ -35,6 +35,17 @@ interface IpoCategoriesTabsProps {
   onOpenStockChart: (ipo: LiveMarketIpoItem) => void;
 }
 
+export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
+  if (ipo.status === 'Listed') return 'listed';
+  const rem = (ipo.remainingTime || '').toLowerCase();
+  if (rem.includes('bidding closed') || rem.includes('closed') || ipo.status === 'Closed') {
+    return 'closed';
+  }
+  if (ipo.status === 'Open') return 'open';
+  if (ipo.status === 'Upcoming') return 'upcoming';
+  return 'closed';
+}
+
 export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
   ipos,
   watchlist,
@@ -45,30 +56,37 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<IpoCategoryTab>('open');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [seriesFilter, setSeriesFilter] = useState<'all' | 'EQ' | 'SME'>('all');
+  const [seriesFilter, setSeriesFilter] = useState<'all' | 'EQ' | 'SME' | 'DEBT'>('all');
   const [watchlistOnly, setWatchlistOnly] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'gmp' | 'subscription' | 'issuesize' | 'listingdate' | 'price' | 'change'>('gmp');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
-  // Counts by category
+  // Counts by category (strictly categorized by effective bidding lifecycle)
   const counts = useMemo(() => {
-    return {
-      upcoming: ipos.filter((i) => i.status === 'Upcoming').length,
-      open: ipos.filter((i) => i.status === 'Open').length,
-      closed: ipos.filter((i) => i.status === 'Closed').length,
-      listed: ipos.filter((i) => i.status === 'Listed').length,
-    };
+    let upcoming = 0;
+    let open = 0;
+    let closed = 0;
+    let listed = 0;
+    for (const ipo of ipos) {
+      const eff = getEffectiveIpoStatus(ipo);
+      if (eff === 'open') open++;
+      else if (eff === 'upcoming') upcoming++;
+      else if (eff === 'closed') closed++;
+      else if (eff === 'listed') listed++;
+    }
+    return { upcoming, open, closed, listed };
   }, [ipos]);
 
   // Filter & Sort
   const filteredIpos = useMemo(() => {
     return ipos
       .filter((ipo) => {
+        const eff = getEffectiveIpoStatus(ipo);
         // Tab matching
-        if (activeTab === 'upcoming' && ipo.status !== 'Upcoming') return false;
-        if (activeTab === 'open' && ipo.status !== 'Open') return false;
-        if (activeTab === 'closed' && ipo.status !== 'Closed') return false;
-        if (activeTab === 'listed' && ipo.status !== 'Listed') return false;
+        if (activeTab === 'upcoming' && eff !== 'upcoming') return false;
+        if (activeTab === 'open' && eff !== 'open') return false;
+        if (activeTab === 'closed' && eff !== 'closed') return false;
+        if (activeTab === 'listed' && eff !== 'listed') return false;
 
         // Series matching
         if (seriesFilter !== 'all' && ipo.series !== seriesFilter) return false;
@@ -155,7 +173,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
               )}
             </button>
 
-            {/* Segment Selector (Mainboard vs SME) */}
+            {/* Segment Selector (Mainboard vs SME vs Debt) */}
             <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10 text-xs">
               <button
                 onClick={() => setSeriesFilter('all')}
@@ -180,6 +198,14 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                 }`}
               >
                 SME
+              </button>
+              <button
+                onClick={() => setSeriesFilter('DEBT')}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                  seriesFilter === 'DEBT' ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Debt
               </button>
             </div>
 
@@ -258,9 +284,11 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredIpos.map((ipo) => {
             const isWatchlisted = watchlist.includes(ipo.symbol.toUpperCase());
-            const isOpen = ipo.status === 'Open';
-            const isUpcoming = ipo.status === 'Upcoming';
-            const isListed = ipo.status === 'Listed';
+            const effStatus = getEffectiveIpoStatus(ipo);
+            const isOpen = effStatus === 'open';
+            const isUpcoming = effStatus === 'upcoming';
+            const isListed = effStatus === 'listed';
+            const isClosed = effStatus === 'closed';
 
             return (
               <div
@@ -275,7 +303,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <span className="font-mono font-bold text-base text-white">{ipo.symbol}</span>
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            ipo.series === 'SME'
+                            ipo.series === 'DEBT'
+                              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                              : ipo.series === 'SME'
                               ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
                               : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
                           }`}
@@ -303,7 +333,8 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           Listed
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700/50 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                           Closed
                         </span>
                       )}
@@ -327,7 +358,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         ? `Opens: ${ipo.openDate}`
                         : isOpen
                         ? `Closes: ${ipo.closeDate}`
-                        : `Listed: ${ipo.listingDate}`}
+                        : isListed
+                        ? `Listed: ${ipo.listingDate}`
+                        : `Closed: ${ipo.closeDate || 'Recent Offering'}`}
                     </span>
                     {isOpen && ipo.remainingTime && (
                       <span className="text-amber-300 font-bold flex items-center gap-1">
@@ -350,7 +383,11 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
 
                     <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
                       <span className="text-[10px] text-slate-400 font-medium block">
-                        {isListed ? 'Today\'s Change' : `Lot Size (${ipo.lotSize} shares)`}
+                        {isListed
+                          ? "Today's Change"
+                          : ipo.series === 'DEBT'
+                          ? `Min Lot (${ipo.lotSize} ${ipo.lotSize === 1 ? 'unit' : 'units'})`
+                          : `Lot Size (${ipo.lotSize} shares)`}
                       </span>
                       {isListed ? (
                         <span
@@ -362,7 +399,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         </span>
                       ) : (
                         <span className="font-mono text-sm font-bold text-cyan-300 mt-0.5 block">
-                          ₹{(ipo.priceHigh * ipo.lotSize).toLocaleString('en-IN')}
+                          ₹{(ipo.minInvestment || (ipo.priceHigh * ipo.lotSize)).toLocaleString('en-IN')}
                         </span>
                       )}
                     </div>
@@ -412,7 +449,11 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           </span>
                         </div>
                         {/* Sub-category pills */}
-                        {ipo.currentSubscription > 0 && (
+                        {ipo.series === 'DEBT' ? (
+                          <div className="p-1 rounded bg-white/5 text-[10px] font-mono text-center text-slate-400">
+                            Exchange Public Tranche (Overall: {ipo.currentSubscription > 0 ? `${ipo.currentSubscription}x` : 'Open'})
+                          </div>
+                        ) : (ipo.retailSubscription > 0 || ipo.niiSubscription > 0 || ipo.qibSubscription > 0) ? (
                           <div className="grid grid-cols-3 gap-1 pt-1 text-[10px] font-mono text-center">
                             <div className="p-1 rounded bg-white/5">
                               <span className="text-slate-400 block text-[9px]">Retail</span>
@@ -427,7 +468,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                               <span className="text-slate-200 font-semibold">{ipo.qibSubscription}x</span>
                             </div>
                           </div>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* GMP Metric */}
@@ -436,12 +477,22 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           <Flame className="w-3.5 h-3.5 text-purple-400" />
                           Estimated GMP
                         </span>
-                        <div className="flex items-center gap-1 font-mono font-bold text-purple-300">
-                          <span>+₹{ipo.gmp}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/25">
-                            +{ipo.gmpPercent}%
+                        {ipo.series === 'DEBT' ? (
+                          <span className="font-mono text-xs text-slate-400">
+                            N/A (Debt Instrument)
                           </span>
-                        </div>
+                        ) : ipo.gmp > 0 ? (
+                          <div className="flex items-center gap-1 font-mono font-bold text-purple-300">
+                            <span>+₹{ipo.gmp}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/25">
+                              +{ipo.gmpPercent}%
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-mono text-xs text-slate-400">
+                            ₹0 (Flat)
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -451,10 +502,16 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                 <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-2 pt-2 border-t border-white/5">
                   <span className="flex items-center gap-1.5 text-slate-400">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Upstox API • NSE Verified</span>
+                    <span>
+                      {ipo.series === 'SME'
+                        ? 'NSE / BSE SME'
+                        : ipo.series === 'DEBT'
+                        ? 'NSE Debt'
+                        : 'NSE Exchange'} Verified
+                    </span>
                   </span>
-                  <span className="text-slate-500">
-                    {ipo.lastUpdated || 'Fresh'}
+                  <span className="text-slate-400">
+                    {ipo.remainingTime || 'Live Feed'}
                   </span>
                 </div>
 
@@ -474,7 +531,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                       className="col-span-2 py-2 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 hover:text-cyan-100 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/10"
                     >
                       <TrendingUp className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                      <span>Live Chart (Upstox)</span>
+                      <span>Live Chart</span>
                     </button>
                   ) : (
                     <>
@@ -539,7 +596,8 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
               <tbody className="divide-y divide-white/5">
                 {filteredIpos.map((ipo) => {
                   const isWatchlisted = watchlist.includes(ipo.symbol.toUpperCase());
-                  const isListed = ipo.status === 'Listed';
+                  const effStatus = getEffectiveIpoStatus(ipo);
+                  const isListed = effStatus === 'listed';
 
                   return (
                     <tr key={ipo.symbol} className="hover:bg-white/[0.02] transition">
@@ -556,7 +614,15 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold text-white text-sm">{ipo.symbol}</span>
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-white/5 text-slate-300">
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+                              ipo.series === 'DEBT'
+                                ? 'bg-amber-500/15 text-amber-300'
+                                : ipo.series === 'SME'
+                                ? 'bg-purple-500/15 text-purple-300'
+                                : 'bg-white/5 text-slate-300'
+                            }`}
+                          >
                             {ipo.series}
                           </span>
                         </div>
@@ -593,12 +659,20 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           </td>
                           <td className="py-3.5 px-4">
                             <span className="font-mono text-cyan-300 font-bold block">{ipo.currentSubscription}x</span>
-                            <span className="text-[10px] text-slate-400 block font-mono">QIB: {ipo.qibSubscription}x</span>
+                            {ipo.series !== 'DEBT' && ipo.qibSubscription > 0 && (
+                              <span className="text-[10px] text-slate-400 block font-mono">QIB: {ipo.qibSubscription}x</span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4">
-                            <div className="font-mono font-bold text-purple-300">
-                              +₹{ipo.gmp} ({ipo.gmpPercent}%)
-                            </div>
+                            {ipo.series === 'DEBT' ? (
+                              <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
+                            ) : ipo.gmp > 0 ? (
+                              <div className="font-mono font-bold text-purple-300">
+                                +₹{ipo.gmp} ({ipo.gmpPercent}%)
+                              </div>
+                            ) : (
+                              <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-300 text-[11px]">
                             <div>Allot: {ipo.allotmentDate || 'T+3 Days'}</div>
@@ -614,7 +688,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             {activeTab === 'open' ? (
                               <div className="font-mono">
                                 <span className="text-cyan-300 font-bold block">{ipo.currentSubscription}x Total</span>
-                                <span className="text-[10px] text-slate-400 block">QIB: {ipo.qibSubscription}x</span>
+                                {ipo.series !== 'DEBT' && ipo.qibSubscription > 0 && (
+                                  <span className="text-[10px] text-slate-400 block">QIB: {ipo.qibSubscription}x</span>
+                                )}
                               </div>
                             ) : (
                               <div className="font-mono text-slate-300 text-[11px]">
@@ -623,12 +699,22 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             )}
                           </td>
                           <td className="py-3.5 px-4">
-                            <div className="font-mono font-bold text-purple-300">
-                              +₹{ipo.gmp} ({ipo.gmpPercent}%)
-                            </div>
+                            {ipo.series === 'DEBT' ? (
+                              <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
+                            ) : ipo.gmp > 0 ? (
+                              <div className="font-mono font-bold text-purple-300">
+                                +₹{ipo.gmp} ({ipo.gmpPercent}%)
+                              </div>
+                            ) : (
+                              <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 text-slate-300">
-                            <span className="font-mono font-medium block">{ipo.lotSize} shares</span>
+                            <span className="font-mono font-medium block">
+                              {ipo.series === 'DEBT'
+                                ? `${ipo.lotSize} ${ipo.lotSize === 1 ? 'unit' : 'units'}`
+                                : `${ipo.lotSize} shares`}
+                            </span>
                             <span className="text-[10px] text-slate-500 block">{ipo.issueSize}</span>
                           </td>
                         </>

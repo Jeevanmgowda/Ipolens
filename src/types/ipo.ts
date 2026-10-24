@@ -1,6 +1,6 @@
 export type IpoStatus = 'upcoming' | 'open' | 'closed' | 'listed' | 'Active' | 'Forthcoming' | 'Closed' | 'Listed';
 export type IssueType = 'regular' | 'sme';
-export type IpoSeries = 'EQ' | 'SME';
+export type IpoSeries = 'EQ' | 'SME' | 'DEBT';
 
 export interface UnifiedIPO {
   id: string;
@@ -44,14 +44,23 @@ export interface LiveIpoSummary {
   issueEndDate: string;
   issuePrice: string;
   priceBand?: string;
+  priceLow?: number;
+  priceHigh?: number;
   lotSize?: string | number;
+  minInvestment?: number;
   issueSize?: string;
+  issueSizeCr?: number;
   noOfSharesOffered?: string;
   noOfsharesBid?: string;
   noOfTime?: string; // Overall subscription multiple e.g. "1.16"
   isBse?: string;
   gmpEstimate?: number; // Estimated GMP in INR
   gmpPercent?: number;  // Estimated gain %
+  retailSubscription?: number;
+  niiSubscription?: number;
+  qibSubscription?: number;
+  employeeSubscription?: number;
+  remainingTime?: string;
   registrarName?: string;
   registrarUrl?: string;
   isListed?: boolean;
@@ -97,7 +106,12 @@ export interface LiveIpoDetail {
   graphData: IpoGraphPoint[];
   registrarName: string;
   registrarUrl: string;
-  registrarSlug: 'linkintime' | 'kfintech' | 'bigshare' | 'other';
+  registrarSlug: 'linkintime' | 'kfintech' | 'bigshare' | 'cameo' | 'maashitla' | 'other';
+  retailSubscription?: number;
+  niiSubscription?: number;
+  qibSubscription?: number;
+  employeeSubscription?: number;
+  remainingTime?: string;
   isListed?: boolean;
   listingPrice?: number | string;
   gmpEstimate?: number;

@@ -1,11 +1,47 @@
 import { NextResponse } from 'next/server';
-import { predictListingGain, IpoMarketFeatures } from '@/services/mlListingGainModel';
+import {
+  predictListingGain,
+  validateIpoFeatures,
+  computeEvaluationMetrics,
+  ACTIVE_MODEL_VERSION,
+  REGULATORY_DISCLAIMER,
+  IpoMarketFeatures,
+} from '@/services/mlListingGainModel';
 
 export const dynamic = 'force-dynamic';
+
+export async function GET() {
+  const metrics = computeEvaluationMetrics();
+  return NextResponse.json({
+    success: true,
+    data: {
+      modelVersion: ACTIVE_MODEL_VERSION,
+      status: 'ACTIVE',
+      target: 'listing_gain_pct',
+      units: 'Percentage (%) and INR (₹)',
+      horizon: 'Listing Day Open (T+3)',
+      evaluation: metrics,
+      disclaimer: REGULATORY_DISCLAIMER,
+    },
+  });
+}
 
 export async function POST(request: Request) {
   try {
     const body: Partial<IpoMarketFeatures> = await request.json();
+
+    const validation = validateIpoFeatures(body);
+    if (!validation.valid && (!body.symbol || body.symbol === '')) {
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'INSUFFICIENT_DATA',
+          error: validation.reason,
+          missingFields: validation.missingFields,
+        },
+        { status: 422 }
+      );
+    }
 
     const features: IpoMarketFeatures = {
       symbol: body.symbol || 'DEMO',

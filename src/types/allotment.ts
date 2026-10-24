@@ -41,6 +41,9 @@ export interface MultiPanScanResultItem {
   applicationNo: string;
   applicationId?: string;
   syncedToDatabase: boolean;
+  isSimulation?: boolean;
+  sourceBadge?: string;
+  registrarUrl?: string;
   message: string;
   scannedAt: string;
 }

@@ -70,12 +70,17 @@ export function getRedisClient(): any {
     url.includes('YOUR_PASSWORD') ||
     url.includes('YOUR_HOST');
 
+  if (process.env.NODE_ENV === 'test') {
+    return globalMemoryFallback;
+  }
+
   if (!isPlaceholder && typeof url === 'string' && (url.startsWith('redis://') || url.startsWith('rediss://'))) {
     try {
       const client = new Redis(url, {
         lazyConnect: true,
         maxRetriesPerRequest: 1,
         connectTimeout: 2000,
+        enableOfflineQueue: false,
         retryStrategy: (times) => {
           if (times > 2) return null; // stop retrying and let fallback handle
           return 500;

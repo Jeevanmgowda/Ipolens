@@ -1,6 +1,7 @@
 import { db, isPostgresConfigured, schema } from '@/db';
 import { eq, desc, and } from 'drizzle-orm';
 import { FamilyPanProfile, IpoApplication } from '@/types/pan';
+import { HoldingItem } from '@/types/portfolio';
 import { getUserPansStore } from '@/app/api/pans/route';
 import { getApplicationsStore, updateApplicationStatus as updateMemoryAppStatus } from '@/app/api/applications/route';
 import { encryptPan, maskPan } from '@/lib/security/panEncryption';
@@ -15,6 +16,8 @@ import { encryptPan, maskPan } from '@/lib/security/panEncryption';
 const inMemoryWatchlist = new Map<string, Array<{ id: string; symbol: string; companyName: string; addedAt: string }>>();
 // Memory notifications fallback
 const inMemoryNotifications = new Map<string, Array<any>>();
+// Memory holdings fallback with per-user isolation
+const inMemoryHoldings = new Map<string, HoldingItem[]>();
 
 export class DbRepositoryService {
   /**
@@ -235,7 +238,142 @@ export class DbRepositoryService {
   }
 
   // ==========================================
-  // 3. Exchange Telemetry & Subscription Snapshots
+  // 3. Demat Portfolio Holdings (PostgreSQL Persistence & User Isolation)
+  // ==========================================
+
+  static async getHoldings(userId: string = 'default_user'): Promise<HoldingItem[]> {
+    if (this.isDatabaseActive() && db) {
+      try {
+        const rows = await db
+          .select()
+          .from(schema.portfolioHoldingsTable)
+          .where(eq(schema.portfolioHoldingsTable.userId, userId))
+          .orderBy(desc(schema.portfolioHoldingsTable.updatedAt));
+
+        if (rows.length > 0) {
+          return rows.map((r) => {
+            const qty = r.quantity;
+            const avgPrice = Number(r.averageBuyPrice);
+            const curPrice = Number(r.currentPrice);
+            const investedVal = Math.round(qty * avgPrice * 100) / 100;
+            const currentVal = Math.round(qty * curPrice * 100) / 100;
+            const pnl = Math.round((currentVal - investedVal) * 100) / 100;
+            const pnlPct = investedVal > 0 ? Math.round(((currentVal - investedVal) / investedVal) * 10000) / 100 : 0;
+
+            return {
+              id: r.id,
+              symbol: r.symbol,
+              isin: r.isin,
+              companyName: r.companyName,
+              quantity: qty,
+              averageBuyPrice: avgPrice,
+              currentPrice: curPrice,
+              investedValue: investedVal,
+              currentValue: currentVal,
+              unrealizedPnl: pnl,
+              unrealizedPnlPercent: pnlPct,
+              isIpoAllotment: Boolean(r.isIpoAllotment),
+              importedFromBroker: r.importedFromBroker || undefined,
+              lastUpdated: r.updatedAt ? r.updatedAt.toISOString() : new Date().toISOString(),
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('[DB Repository] Error querying portfolio_holdings, falling back to memory store:', err);
+      }
+    }
+
+    return inMemoryHoldings.get(userId) || [];
+  }
+
+  static async saveHoldings(holdings: HoldingItem[], userId: string = 'default_user'): Promise<HoldingItem[]> {
+    if (this.isDatabaseActive() && db && holdings.length > 0) {
+      try {
+        for (const h of holdings) {
+          await db
+            .insert(schema.portfolioHoldingsTable)
+            .values({
+              id: h.id,
+              userId,
+              symbol: h.symbol.toUpperCase(),
+              isin: h.isin,
+              companyName: h.companyName,
+              quantity: h.quantity,
+              averageBuyPrice: h.averageBuyPrice.toFixed(2),
+              currentPrice: h.currentPrice.toFixed(2),
+              isIpoAllotment: h.isIpoAllotment,
+              importedFromBroker: h.importedFromBroker || 'generic',
+              updatedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: schema.portfolioHoldingsTable.id,
+              set: {
+                quantity: h.quantity,
+                averageBuyPrice: h.averageBuyPrice.toFixed(2),
+                currentPrice: h.currentPrice.toFixed(2),
+                updatedAt: new Date(),
+              },
+            });
+        }
+      } catch (err) {
+        console.warn('[DB Repository] Error saving holdings to DB:', err);
+      }
+    }
+
+    // Keep memory store synchronized
+    const existing = inMemoryHoldings.get(userId) || [];
+    const map = new Map<string, HoldingItem>(existing.map((e) => [e.symbol, e]));
+    for (const h of holdings) {
+      map.set(h.symbol, h);
+    }
+    const updated = Array.from(map.values());
+    inMemoryHoldings.set(userId, updated);
+    return updated;
+  }
+
+  static async deleteHolding(id: string, userId: string = 'default_user'): Promise<boolean> {
+    if (this.isDatabaseActive() && db) {
+      try {
+        await db
+          .delete(schema.portfolioHoldingsTable)
+          .where(
+            and(
+              eq(schema.portfolioHoldingsTable.id, id),
+              eq(schema.portfolioHoldingsTable.userId, userId)
+            )
+          );
+      } catch (err) {
+        console.warn('[DB Repository] Error deleting holding from DB:', err);
+      }
+    }
+
+    const list = inMemoryHoldings.get(userId) || [];
+    const idx = list.findIndex((h) => h.id === id);
+    if (idx !== -1) {
+      list.splice(idx, 1);
+      inMemoryHoldings.set(userId, list);
+      return true;
+    }
+    return false;
+  }
+
+  static async clearHoldings(userId: string = 'default_user'): Promise<boolean> {
+    if (this.isDatabaseActive() && db) {
+      try {
+        await db
+          .delete(schema.portfolioHoldingsTable)
+          .where(eq(schema.portfolioHoldingsTable.userId, userId));
+      } catch (err) {
+        console.warn('[DB Repository] Error clearing holdings from DB:', err);
+      }
+    }
+
+    inMemoryHoldings.set(userId, []);
+    return true;
+  }
+
+  // ==========================================
+  // 4. Exchange Telemetry & Subscription Snapshots
   // ==========================================
 
   static async saveExchangeSnapshot(
@@ -649,6 +787,7 @@ export class DbRepositoryService {
 
     inMemoryWatchlist.delete(userId);
     inMemoryNotifications.delete(userId);
+    inMemoryHoldings.delete(userId);
     return true;
   }
 }

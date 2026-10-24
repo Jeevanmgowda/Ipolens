@@ -82,27 +82,36 @@ export class IpoAggregatorService {
       nseIpos = nseList
         .filter((i) => {
           if (status === 'listed') return Boolean(i.isListed);
-          const s = i.status === 'Active' ? 'open' : i.status === 'Forthcoming' ? 'upcoming' : 'closed';
+          const isClosed = i.status === 'Closed' || i.remainingTime === 'Bidding Closed';
+          if (isClosed) return status === 'closed';
+          const s = i.status === 'Active' ? 'open' : 'upcoming';
           return s === status;
         })
         .map((i) => {
-          const prices = (i.priceBand || i.issuePrice || '100').match(/\d+(?:\.\d+)?/g) || ['100'];
-          const maxPrice = parseFloat(prices[prices.length - 1]) || 100;
-          const minPrice = parseFloat(prices[0]) || maxPrice;
+          const cleanPriceStr = (i.priceBand || i.issuePrice || '100').replace(/,/g, '');
+          const prices = cleanPriceStr.match(/\d+(?:\.\d+)?/g) || ['100'];
+          const maxPrice = i.priceHigh !== undefined ? i.priceHigh : (parseFloat(prices[prices.length - 1]) || 100);
+          const minPrice = i.priceLow !== undefined ? i.priceLow : (parseFloat(prices[0]) || maxPrice);
           const currentType: IssueType = i.series === 'SME' ? 'sme' : 'regular';
+          const isClosed = i.status === 'Closed' || i.remainingTime === 'Bidding Closed';
+          const itemStatus: 'upcoming' | 'open' | 'closed' | 'listed' =
+            i.isListed ? 'listed' : isClosed ? 'closed' : i.status === 'Active' ? 'open' : 'upcoming';
           return {
             id: `${i.symbol.toLowerCase()}-ipo`,
             symbol: i.symbol.toUpperCase(),
             companyName: i.companyName,
             issueType: currentType,
-            status: (status === 'listed' ? 'listed' : i.status === 'Active' ? 'open' : i.status === 'Forthcoming' ? 'upcoming' : 'closed') as 'upcoming' | 'open' | 'closed' | 'listed',
+            status: itemStatus,
             priceBandMin: minPrice,
             priceBandMax: maxPrice,
-            lotSize: typeof i.lotSize === 'number' ? i.lotSize : (i.lotSize ? parseInt(i.lotSize, 10) : (currentType === 'sme' ? 1200 : 14)),
+            lotSize: typeof i.lotSize === 'number' ? i.lotSize : (i.lotSize ? parseInt(String(i.lotSize).replace(/,/g, ''), 10) : (currentType === 'sme' ? 1600 : 14)),
             openDate: i.issueStartDate,
             closeDate: i.issueEndDate,
-            issueSizeInCrores: i.issueSize ? parseFloat(i.issueSize) : undefined,
+            issueSizeInCrores: i.issueSize ? parseFloat(i.issueSize.replace(/[^0-9.]/g, '')) : undefined,
             subscriptionTotal: parseFloat(i.noOfTime || '0') || undefined,
+            subscriptionRetail: i.retailSubscription,
+            subscriptionHni: i.niiSubscription,
+            subscriptionQib: i.qibSubscription,
             registrar: i.registrarName,
             instrumentKey: `NSE_EQ|${i.symbol.toUpperCase()}`,
           };

@@ -50,7 +50,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(3);
+  const [isLiveExchange, setIsLiveExchange] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Check Upstox live exchange session status
+  useEffect(() => {
+    fetch('/api/auth/upstox/status')
+      .then((res) => res.json())
+      .then((data) => {
+        setIsLiveExchange(Boolean(data?.valid));
+      })
+      .catch(() => {
+        setIsLiveExchange(false);
+      });
+  }, [isRefreshing, lastUpdatedTime]);
 
   const handleTabClick = (tab: ActiveTab) => {
     if (pathname !== '/') {
@@ -99,10 +112,23 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Side: Live NSE Status & User Authentication */}
           <div className="flex items-center gap-2.5 shrink-0">
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 live-pulse" />
-              <span className="font-semibold tracking-wide uppercase text-[10px]">LIVE NSE INDIA</span>
-            </div>
+            {isLiveExchange ? (
+              <div
+                title="Connected to authorized Upstox Live Market Feed"
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 live-pulse" />
+                <span className="font-semibold tracking-wide uppercase text-[10px]">🟢 LIVE EXCHANGE</span>
+              </div>
+            ) : (
+              <div
+                title="Running in verified offline demo/fixture mode. Authenticate Upstox for live broker feed."
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span className="font-semibold tracking-wide uppercase text-[10px]">🟡 DEMO TELEMETRY</span>
+              </div>
+            )}
 
             <button
               onClick={onRefresh}

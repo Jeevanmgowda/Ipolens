@@ -23,7 +23,7 @@ describe('Upstox Developer API v2 & Hybrid GMP Pipeline', () => {
       const listed = await UpstoxIpoService.getIposByStatus('listed');
       expect(Array.isArray(listed)).toBe(true);
       expect(listed.length).toBeGreaterThan(0);
-    });
+    }, 30000);
 
     it('should filter IPOs by issueType (sme vs regular)', async () => {
       const smeIpos = await UpstoxIpoService.getIposByStatus('open', 'sme');

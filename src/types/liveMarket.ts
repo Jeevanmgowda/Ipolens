@@ -7,7 +7,7 @@ export interface LiveMarketIpoItem {
   symbol: string;
   companyName: string;
   status: 'Upcoming' | 'Open' | 'Closed' | 'Listed';
-  series: 'EQ' | 'SME';
+  series: 'EQ' | 'SME' | 'DEBT';
   priceBand: string;
   priceRange?: string; // alias for priceBand
   priceLow: number;

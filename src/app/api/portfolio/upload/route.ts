@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { parseBrokerCsv } from '@/services/brokerParser';
-import { HoldingItem } from '@/types/portfolio';
-
-// Server-side holdings store (clean slate, populated only via user CSV import)
-export let userHoldingsStore: HoldingItem[] = [];
+import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { getAuthenticatedUser } from '@/lib/security/session';
 
 export async function POST(request: Request) {
   try {
+    const authUser = await getAuthenticatedUser(request);
+    const userId = authUser ? authUser.id : 'default_user';
+
     const contentType = request.headers.get('content-type') || '';
     let csvText = '';
     let fileName = 'holdings.csv';
@@ -31,19 +32,20 @@ export async function POST(request: Request) {
 
     const importResult = parseBrokerCsv(csvText, fileName);
 
+    let totalHoldingsCount = 0;
     if (importResult.validHoldingsImported > 0) {
-      // Merge new holdings, replacing or updating existing symbols
-      const existingMap = new Map<string, HoldingItem>(userHoldingsStore.map((h) => [h.symbol, h]));
-      for (const h of importResult.importedHoldings) {
-        existingMap.set(h.symbol, h);
-      }
-      userHoldingsStore = Array.from(existingMap.values());
+      await DbRepositoryService.saveHoldings(importResult.importedHoldings, userId);
+      const allHoldings = await DbRepositoryService.getHoldings(userId);
+      totalHoldingsCount = allHoldings.length;
+    } else {
+      const currentHoldings = await DbRepositoryService.getHoldings(userId);
+      totalHoldingsCount = currentHoldings.length;
     }
 
     return NextResponse.json({
       success: importResult.validHoldingsImported > 0,
       data: importResult,
-      totalHoldingsCount: userHoldingsStore.length,
+      totalHoldingsCount,
       message: `Parsed ${importResult.totalRowsProcessed} rows from ${importResult.brokerDetected.toUpperCase()} export. Imported ${importResult.validHoldingsImported} holdings, skipped ${importResult.duplicateRowsSkipped} duplicates.`,
     });
   } catch (err: any) {
