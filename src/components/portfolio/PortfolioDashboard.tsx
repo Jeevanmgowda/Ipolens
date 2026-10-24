@@ -23,6 +23,7 @@ export const PortfolioDashboard: React.FC = () => {
   const [holdings, setHoldings] = useState<HoldingItem[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingDemo, setLoadingDemo] = useState<boolean>(false);
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [filterIpoOnly, setFilterIpoOnly] = useState<boolean>(false);
   const [showTaxWidget, setShowTaxWidget] = useState<boolean>(true);
@@ -45,6 +46,30 @@ export const PortfolioDashboard: React.FC = () => {
   useEffect(() => {
     fetchPortfolio();
   }, []);
+
+  const handleLoadDemoPortfolio = async () => {
+    setLoadingDemo(true);
+    try {
+      const sampleCsv = `Instrument,ISIN,Qty.,Avg. cost,LTP,Cur. val,P&L,Net chg.
+BAJAJHFL,INE084A01016,214,70.00,131.25,28087.50,13107.50,87.50%
+TATATECH,INE142M01025,30,500.00,985.40,29562.00,14562.00,97.08%
+SWIGGY,INE00H001014,38,390.00,428.50,16283.00,1463.00,9.87%
+HYUNDAI,INE00F201023,7,1960.00,1845.00,12915.00,-805.00,-5.87%
+INFY,INE009A01021,25,1450.00,1885.20,47130.00,10880.00,30.01%
+TCS,INE467B01029,15,3600.00,4120.00,61800.00,7800.00,14.44%`;
+
+      await fetch('/api/portfolio/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csvContent: sampleCsv, fileName: 'zerodha_verified_demo.csv' }),
+      });
+      await fetchPortfolio();
+    } catch (e) {
+      console.error('Failed to load demo portfolio:', e);
+    } finally {
+      setLoadingDemo(false);
+    }
+  };
 
   const handleDeleteHolding = async (id: string) => {
     try {
@@ -234,13 +259,23 @@ export const PortfolioDashboard: React.FC = () => {
           <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
             Upload your Zerodha Kite, Groww, 5paisa, or CAS statement to track real-time P&L and analyze your IPO listing gains.
           </p>
-          <button
-            onClick={() => setIsUploadOpen(true)}
-            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-xs cursor-pointer transition shadow-md shadow-cyan-500/20"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>Import Your Broker CSV</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
+            <button
+              onClick={() => setIsUploadOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-xs cursor-pointer transition shadow-md shadow-cyan-500/20"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>Import Your Broker CSV</span>
+            </button>
+            <button
+              onClick={handleLoadDemoPortfolio}
+              disabled={loadingDemo}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold text-xs border border-purple-500/30 cursor-pointer transition disabled:opacity-50"
+            >
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span>{loadingDemo ? 'Loading Demo Portfolio...' : 'Load Verified Demo Portfolio (Zerodha)'}</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="rounded-2xl border border-white/10 bg-slate-900/50 overflow-hidden">
