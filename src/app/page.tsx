@@ -42,10 +42,10 @@ export default function Home() {
     price: number;
     lotSize: number;
   }>({
-    symbol: 'NSE',
-    companyName: 'National Stock Exchange of India Ltd',
-    price: 1785,
-    lotSize: 14,
+    symbol: 'JIOPLAT',
+    companyName: 'Jio Platforms Limited',
+    price: 450,
+    lotSize: 33,
   });
 
   // AI Analyst selection state
@@ -53,8 +53,8 @@ export default function Home() {
     symbol: string;
     companyName: string;
   }>({
-    symbol: 'NSE',
-    companyName: 'National Stock Exchange of India Ltd',
+    symbol: 'JIOPLAT',
+    companyName: 'Jio Platforms Limited',
   });
 
   const handleApplyWithPans = (
@@ -109,6 +109,7 @@ export default function Home() {
             <AiResearchView
               initialSymbol={selectedIpoForAi.symbol}
               initialCompanyName={selectedIpoForAi.companyName}
+              onBackToRadar={() => setActiveTab('radar')}
             />
           </div>
         )}

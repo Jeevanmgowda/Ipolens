@@ -51,10 +51,10 @@ export default function LiveMarketPage() {
     price: number;
     lotSize: number;
   }>({
-    symbol: 'RKFAL',
-    companyName: 'R.K. Fashion Accessories Limited',
-    price: 82,
-    lotSize: 1600,
+    symbol: 'JIOPLAT',
+    companyName: 'Jio Platforms Limited',
+    price: 450,
+    lotSize: 33,
   });
 
   // Fetch initial live market data

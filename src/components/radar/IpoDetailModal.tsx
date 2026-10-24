@@ -716,8 +716,18 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
                       </span>
                     </div>
                     <div className="mt-3 flex items-baseline gap-2">
-                      <span className="text-3xl font-extrabold font-mono text-emerald-400">
-                        +{mlPrediction.mlPredictedGainPct}%
+                      <span
+                        className={`text-3xl font-extrabold font-mono ${
+                          mlPrediction.mlPredictedGainPct > 0
+                            ? 'text-emerald-400'
+                            : mlPrediction.mlPredictedGainPct === 0
+                            ? 'text-amber-400'
+                            : 'text-rose-400'
+                        }`}
+                      >
+                        {mlPrediction.mlPredictedGainPct > 0
+                          ? `+${mlPrediction.mlPredictedGainPct}%`
+                          : `${mlPrediction.mlPredictedGainPct}%`}
                       </span>
                       <span className="text-sm text-slate-300 font-mono">
                         → Target: <strong className="text-white">₹{mlPrediction.predictedListingPrice}</strong>
