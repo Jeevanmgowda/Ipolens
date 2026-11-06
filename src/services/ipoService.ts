@@ -13,6 +13,7 @@ import { SubscriptionService } from './subscriptionService';
 export class IpoService {
   private static nseProvider = new NSEIPOProvider();
   private static mockProvider = new MockIPOProvider();
+  private static latestIposCache: LiveMarketIpoItem[] = [];
 
   /**
    * Determine whether to use mock demo IPO data or live exchange scraping
@@ -31,6 +32,7 @@ export class IpoService {
   static async getOverview(): Promise<LiveMarketOverviewResponse> {
     const provider = this.getProvider();
     const all = await provider.getAllIpos();
+    this.latestIposCache = all;
 
     const upcoming = all.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
     const open = all.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
@@ -38,9 +40,10 @@ export class IpoService {
     const listed = all.filter((i) => i.status === 'Listed');
 
     // Top Gainer among listed IPOs
-    const topGainer = listed.length > 0
-      ? [...listed].sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))[0]
-      : undefined;
+    const validGainers = listed.filter((i) => i.currentPrice && i.dayChangePercent !== undefined);
+    const topGainer = validGainers.length > 0
+      ? [...validGainers].sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))[0]
+      : (listed.length > 0 ? listed[0] : undefined);
 
     // Highest Subscribed among open/closed IPOs
     const topSubscribed = all.length > 0
@@ -139,46 +142,79 @@ export class IpoService {
   }
 
   /**
-   * Notification-ready simulated/real alert queue
+   * Notification-ready simulated/real alert queue dynamically generated from live market data
    */
-  static getAlerts(): MarketAlertItem[] {
-    return [
-      {
-        id: 'alert-1',
+  static getAlerts(items?: LiveMarketIpoItem[]): MarketAlertItem[] {
+    const all = items && items.length > 0 ? items : this.latestIposCache;
+    const alerts: MarketAlertItem[] = [];
+
+    const open = all.filter((i) => i.status === 'Open');
+    const listed = all.filter((i) => i.status === 'Listed');
+    const topGmp = all.filter((i) => i.gmp > 0).sort((a, b) => b.gmpPercent - a.gmpPercent)[0];
+    const topGainer = listed.filter((i) => i.currentPrice).sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))[0];
+    const closingSoon = open.find((i) => i.isClosingSoon || i.remainingTime?.includes('Hours'));
+
+    if (open.length > 0) {
+      const active = open[0];
+      alerts.push({
+        id: `alert-open-${active.symbol}`,
         type: 'SUBSCRIPTION',
         title: 'Active Primary Bidding',
-        message: 'R.K. Fashion Accessories IPO (RKFAL) live bidding window open on exchange.',
-        symbol: 'RKFAL',
-        timestamp: '10 mins ago',
+        message: `${active.companyName} (${active.symbol}) bidding window is open on exchange${active.currentSubscription > 0 ? ` (${active.currentSubscription}x subscribed)` : ''}.`,
+        symbol: active.symbol,
+        timestamp: 'Live Feed',
         read: false,
-      },
-      {
-        id: 'alert-2',
+      });
+    }
+
+    if (topGmp) {
+      alerts.push({
+        id: `alert-gmp-${topGmp.symbol}`,
         type: 'GMP',
         title: 'GMP Surge Detected',
-        message: 'Acme India Industries GMP estimated at +₹40 per equity share.',
-        symbol: 'ACMERAIL',
-        timestamp: '25 mins ago',
+        message: `${topGmp.companyName} estimated GMP trading at +₹${topGmp.gmp} (+${topGmp.gmpPercent}%).`,
+        symbol: topGmp.symbol,
+        timestamp: 'Live Market',
         read: false,
-      },
-      {
-        id: 'alert-3',
+      });
+    }
+
+    if (closingSoon) {
+      alerts.push({
+        id: `alert-closing-${closingSoon.symbol}`,
         type: 'CLOSING_SOON',
         title: 'Bidding Window Closing',
-        message: 'R.K. Fashion Accessories issue closes on 07-Oct at 5:00 PM IST.',
-        symbol: 'RKFAL',
-        timestamp: '1 hour ago',
+        message: `${closingSoon.companyName} (${closingSoon.symbol}) issue closes on ${closingSoon.closeDate}.`,
+        symbol: closingSoon.symbol,
+        timestamp: 'Action Required',
         read: false,
-      },
-      {
-        id: 'alert-4',
+      });
+    }
+
+    if (topGainer && topGainer.currentPrice) {
+      alerts.push({
+        id: `alert-move-${topGainer.symbol}`,
         type: 'PRICE_MOVE',
         title: 'Post-Listing Outperformer',
-        message: 'Premier Energies gained +2.98% intraday, trading at ₹1,120.40.',
-        symbol: 'PREMIERENE',
-        timestamp: '2 hours ago',
+        message: `${topGainer.companyName} gained ${(topGainer.dayChangePercent || 0) >= 0 ? '+' : ''}${topGainer.dayChangePercent}% intraday, trading at ₹${topGainer.currentPrice.toFixed(2)}.`,
+        symbol: topGainer.symbol,
+        timestamp: 'Live Secondary Feed',
         read: true,
-      },
-    ];
+      });
+    }
+
+    if (alerts.length === 0) {
+      alerts.push({
+        id: 'alert-default-live',
+        type: 'SUBSCRIPTION',
+        title: 'Live Market Telemetry Active',
+        message: 'Real-time primary exchange gateway synchronized.',
+        symbol: 'MARKET',
+        timestamp: 'Live Feed',
+        read: false,
+      });
+    }
+
+    return alerts;
   }
 }

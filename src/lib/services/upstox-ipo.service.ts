@@ -300,10 +300,17 @@ export class UpstoxIpoService {
     if (Array.isArray(item.investors)) {
       item.investors.forEach((inv) => {
         const cat = (inv.category || '').toUpperCase();
+        const desc = (inv.description || '').toUpperCase();
         const rate = Number(inv.subscription_rate || 0);
-        if (cat.includes('RETAIL') || cat.includes('INDIVIDUAL')) subscriptionRetail = rate;
-        if (cat.includes('HNI') || cat.includes('NII')) subscriptionHni = rate;
-        if (cat.includes('QIB') || cat.includes('INSTITUTIONAL')) subscriptionQib = rate;
+        if (cat.includes('RETAIL') || cat.includes('INDIVIDUAL') || desc.includes('RETAIL') || desc.includes('INDIVIDUAL')) {
+          subscriptionRetail = rate;
+        }
+        if (cat.includes('HNI') || cat.includes('NII') || desc.includes('HNI') || desc.includes('NON-INSTITUTIONAL') || desc.includes('NII')) {
+          subscriptionHni = rate;
+        }
+        if (cat.includes('QIB') || cat.includes('INSTITUTIONAL') || desc.includes('QUALIFIED') || desc.includes('QIB')) {
+          subscriptionQib = rate;
+        }
       });
     }
 
@@ -312,6 +319,26 @@ export class UpstoxIpoService {
 
     // Instrument key for listed stocks
     const instrumentKey = item.isin ? `NSE_EQ|${item.isin}` : `NSE_EQ|${item.symbol}`;
+
+    // Format readable listing date if available
+    let formattedListingDate = item.timeline?.listing_date || (item as any).listing_date || undefined;
+    if (formattedListingDate && /^\d{4}-\d{2}-\d{2}/.test(formattedListingDate)) {
+      const d = new Date(formattedListingDate);
+      if (!isNaN(d.getTime())) {
+        formattedListingDate = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+    } else if (!formattedListingDate && status === 'listed' && (item.bidding_end_date || item.timeline?.application_end_date)) {
+      const dateSource = item.bidding_end_date || item.timeline?.application_end_date;
+      const d = new Date(dateSource!);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + 4);
+        formattedListingDate = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+    }
+
+    const cutOffPrice = item.cut_off_price ? Number(item.cut_off_price) : maxPrice;
+    const listingPrice = item.listing_price ? Number(item.listing_price) : undefined;
+    const issuePrice = cutOffPrice || maxPrice || minPrice;
 
     return {
       id: item.id || (item.symbol ? item.symbol.toLowerCase() : 'ipo-unknown'),
@@ -324,7 +351,7 @@ export class UpstoxIpoService {
       lotSize,
       openDate: item.timeline?.application_start_date || item.bidding_start_date || '',
       closeDate: item.timeline?.application_end_date || item.bidding_end_date || '',
-      listingDate: item.timeline?.listing_date || undefined,
+      listingDate: formattedListingDate,
       issueSizeInCrores: item.issue_size ? Number(item.issue_size) : undefined,
       subscriptionTotal,
       subscriptionRetail,
@@ -332,7 +359,87 @@ export class UpstoxIpoService {
       subscriptionQib,
       registrar: item.registrar_info?.name || undefined,
       instrumentKey,
+      isin: item.isin,
+      cutOffPrice,
+      listingPrice,
+      issuePrice,
     };
+  }
+
+  /**
+   * Fetch real-time market quotes (LTP, net change, volume, OHLC) from Upstox API v2
+   */
+  static async getMarketQuotes(instrumentKeys: string[]): Promise<Record<string, {
+    last_price: number;
+    net_change: number;
+    day_change_percent: number;
+    volume: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    symbol: string;
+  }>> {
+    const token = this.getAccessToken();
+    if (!token || instrumentKeys.length === 0) return {};
+
+    const quotes: Record<string, any> = {};
+    const uniqueKeys = Array.from(new Set(instrumentKeys)).filter(Boolean);
+
+    // Chunk in batches of 100
+    const chunkSize = 100;
+    for (let i = 0; i < uniqueKeys.length; i += chunkSize) {
+      const batch = uniqueKeys.slice(i, i + chunkSize);
+      try {
+        const url = `${this.baseUrl}/market-quote/quotes?instrument_key=${encodeURIComponent(batch.join(','))}`;
+        const res = await fetch(url, {
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          signal: AbortSignal.timeout(process.env.NODE_ENV === 'test' ? 1000 : 4000),
+        });
+
+        if (!res.ok) continue;
+        const json = await res.json();
+        const data = json.data || {};
+
+        for (const [key, q] of Object.entries<any>(data)) {
+          if (!q) continue;
+          const ltp = Number(q.last_price || q.ohlc?.close || 0);
+          const netChange = Number(q.net_change ?? (ltp - (q.ohlc?.close || ltp)));
+          const prevClose = Number(q.ohlc?.close || (ltp - netChange) || ltp);
+          const changePercent = prevClose > 0 ? Number(((netChange / prevClose) * 100).toFixed(2)) : 0;
+          const symbol = (q.symbol || key.split(':').pop() || '').toUpperCase();
+
+          const parsed = {
+            last_price: ltp,
+            net_change: netChange,
+            day_change_percent: changePercent,
+            volume: Number(q.volume || 0),
+            open: Number(q.ohlc?.open || ltp),
+            high: Number(q.ohlc?.high || ltp),
+            low: Number(q.ohlc?.low || ltp),
+            close: prevClose,
+            symbol,
+          };
+
+          quotes[key] = parsed;
+          quotes[key.replace(':', '|')] = parsed;
+          if (symbol) {
+            quotes[symbol] = parsed;
+          }
+          if (q.instrument_token) {
+            quotes[q.instrument_token] = parsed;
+            quotes[q.instrument_token.replace('|', ':')] = parsed;
+          }
+        }
+      } catch (err: any) {
+        console.warn('[UpstoxIpoService] Market quotes batch notice:', err.message);
+      }
+    }
+
+    return quotes;
   }
 
   /**
@@ -394,27 +501,55 @@ export class UpstoxIpoService {
           };
         });
 
-      if (status === 'listed' && mapped.length === 0) {
-        const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
-        const listedMapped: Partial<UnifiedIPO>[] = LISTED_IPOS_REGISTRY.map((l) => ({
-          id: `${l.symbol.toLowerCase()}-ipo`,
-          symbol: l.symbol.toUpperCase(),
-          companyName: l.companyName,
-          issueType: l.series === 'SME' ? 'sme' : 'regular',
-          status: 'listed',
-          priceBandMin: l.issuePrice,
-          priceBandMax: l.issuePrice,
-          lotSize: l.series === 'SME' ? 1200 : 14,
-          openDate: 'Past Issue',
-          closeDate: 'Past Issue',
-          listingDate: l.listingDate,
-          registrar: l.allotmentRegistrar,
-          instrumentKey: `NSE_EQ|${l.symbol.toUpperCase()}`,
-        }));
-        if (issueType) {
-          return listedMapped.filter((i) => i.issueType === issueType);
+      if (mapped.length === 0) {
+        if (status === 'listed') {
+          const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
+          const listedMapped: Partial<UnifiedIPO>[] = LISTED_IPOS_REGISTRY.map((l) => ({
+            id: `${l.symbol.toLowerCase()}-ipo`,
+            symbol: l.symbol.toUpperCase(),
+            companyName: l.companyName,
+            issueType: l.series === 'SME' ? 'sme' : 'regular',
+            status: 'listed',
+            priceBandMin: l.issuePrice,
+            priceBandMax: l.issuePrice,
+            lotSize: l.series === 'SME' ? 1200 : 14,
+            openDate: 'Past Issue',
+            closeDate: 'Past Issue',
+            listingDate: l.listingDate,
+            registrar: l.allotmentRegistrar,
+            instrumentKey: `NSE_EQ|${l.symbol.toUpperCase()}`,
+          }));
+          return issueType ? listedMapped.filter((i) => i.issueType === issueType) : listedMapped;
+        } else {
+          const { MARKET_IPO_REGISTRY } = await import('@/services/nseIpoService');
+          const regMapped: Partial<UnifiedIPO>[] = MARKET_IPO_REGISTRY.map((m) => {
+            const isClosed = m.closeDate ? new Date(m.closeDate).getTime() < Date.now() : false;
+            const itemStatus: 'upcoming' | 'open' | 'closed' | 'listed' = isClosed ? 'closed' : (new Date(m.openDate).getTime() <= Date.now() ? 'open' : 'upcoming');
+            return {
+              id: `${m.symbol.toLowerCase()}-ipo`,
+              symbol: m.symbol.toUpperCase(),
+              companyName: m.companyName,
+              issueType: (m.series === 'SME' ? 'sme' : 'regular') as IssueType,
+              status: itemStatus,
+              priceBandMin: m.priceLow,
+              priceBandMax: m.priceHigh,
+              lotSize: m.lotSize,
+              openDate: m.openDate,
+              closeDate: m.closeDate,
+              listingDate: m.listingDate,
+              issueSizeInCrores: m.issueSizeCr,
+              subscriptionTotal: m.currentSubscription,
+              subscriptionRetail: m.retailSubscription,
+              subscriptionHni: m.niiSubscription,
+              subscriptionQib: m.qibSubscription,
+              registrar: m.registrar,
+              instrumentKey: `NSE_EQ|${m.symbol.toUpperCase()}`,
+            };
+          }).filter((i) => i.status === status);
+          if (regMapped.length > 0) {
+            return issueType ? regMapped.filter((i) => i.issueType === issueType) : regMapped;
+          }
         }
-        return listedMapped;
       }
 
       if (issueType) {

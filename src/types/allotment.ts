@@ -1,4 +1,17 @@
-export type RegistrarSlug = 'linkintime' | 'kfintech' | 'bigshare' | 'cameo' | 'other';
+export type RegistrarSlug =
+  | 'linkintime'
+  | 'kfintech'
+  | 'bigshare'
+  | 'cameo'
+  | 'maashitla'
+  | 'skyline'
+  | 'other';
+
+export interface RegistrarServerMirror {
+  serverName: string;
+  url: string;
+  isPrimary?: boolean;
+}
 
 export interface RegistrarInfo {
   name: string;
@@ -7,6 +20,7 @@ export interface RegistrarInfo {
   queryEndpoint?: string;
   queryParamFormat?: string;
   description: string;
+  mirrors?: RegistrarServerMirror[];
 }
 
 export interface AllotmentScanResult {
@@ -62,4 +76,31 @@ export interface MultiPanScanSummary {
   totalRefundAmount: number;
   scannedAt: string;
   items: MultiPanScanResultItem[];
+}
+
+export interface SinglePanInquiryResult {
+  symbol: string;
+  companyName: string;
+  pan: string;
+  panMasked: string;
+  status: 'Allotted' | 'Not Allotted' | 'Pending' | 'Technical Rejection';
+  registrarName: string;
+  registrarSlug: RegistrarSlug;
+  applicantName?: string;
+  applicationNo?: string;
+  dpClientId?: string;
+  category?: string;
+  lotsApplied: number;
+  sharesApplied: number;
+  sharesAllotted: number;
+  bidPrice: number;
+  allotmentValue: number;
+  refundAmount: number;
+  message: string;
+  sourceBadge: string;
+  isSimulation: boolean;
+  isOfficialGatewayRequired: boolean;
+  directPortalUrl: string;
+  mirrors: RegistrarServerMirror[];
+  checkedAt: string;
 }

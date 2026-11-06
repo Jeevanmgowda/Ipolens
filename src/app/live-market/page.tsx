@@ -116,7 +116,19 @@ export default function LiveMarketPage() {
           uniqueMap.set(item.symbol, item);
         }
       });
-      setIpos(Array.from(uniqueMap.values()));
+      const uniqueList = Array.from(uniqueMap.values());
+      setIpos(uniqueList);
+
+      // Dynamically initialize multi-apply modal with first real open IPO
+      const firstOpen = uniqueList.find((i) => i.status === 'Open');
+      if (firstOpen) {
+        setApplyIpoData({
+          symbol: firstOpen.symbol,
+          companyName: firstOpen.companyName,
+          price: firstOpen.priceHigh || firstOpen.priceLow || 100,
+          lotSize: firstOpen.lotSize || 14,
+        });
+      }
 
       // Load watchlist
       if (watchlistRes.status === 'fulfilled') {

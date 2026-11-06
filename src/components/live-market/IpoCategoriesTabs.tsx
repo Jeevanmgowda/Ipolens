@@ -355,11 +355,11 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-cyan-400" />
                       {isUpcoming
-                        ? `Opens: ${ipo.openDate}`
+                        ? `Opens: ${ipo.openDate || 'TBD'}`
                         : isOpen
-                        ? `Closes: ${ipo.closeDate}`
+                        ? `Closes: ${ipo.closeDate || 'TBD'}`
                         : isListed
-                        ? `Listed: ${ipo.listingDate}`
+                        ? `Listed: ${ipo.listingDate && ipo.listingDate !== 'TBD' ? ipo.listingDate : (ipo.closeDate ? `Listed (${ipo.closeDate})` : 'Listed on Exchange')}`
                         : `Closed: ${ipo.closeDate || 'Recent Offering'}`}
                     </span>
                     {isOpen && ipo.remainingTime && (
@@ -377,7 +377,17 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         {isListed ? 'Current Price (LTP)' : 'Price Band'}
                       </span>
                       <span className="font-mono text-sm font-extrabold text-white mt-0.5 block truncate">
-                        {isListed ? `₹${ipo.currentPrice?.toFixed(2)}` : ipo.priceBand}
+                        {isListed ? (
+                          ipo.currentPrice !== undefined && ipo.currentPrice !== null ? (
+                            `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          ) : ipo.listingPrice ? (
+                            `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          ) : (
+                            ipo.priceBand || '—'
+                          )
+                        ) : (
+                          ipo.priceBand || '—'
+                        )}
                       </span>
                     </div>
 
@@ -392,10 +402,23 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                       {isListed ? (
                         <span
                           className={`font-mono text-sm font-bold mt-0.5 block ${
-                            (ipo.dayChange || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            (ipo.dayChange || 0) > 0
+                              ? 'text-emerald-400'
+                              : (ipo.dayChange || 0) < 0
+                              ? 'text-rose-400'
+                              : 'text-slate-400'
                           }`}
                         >
-                          {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange?.toFixed(2)} ({ipo.dayChangePercent}%)
+                          {ipo.dayChange !== undefined && ipo.dayChange !== null ? (
+                            <>
+                              {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange.toFixed(2)}{' '}
+                              <span className="text-xs font-normal">
+                                ({(ipo.dayChangePercent || 0) >= 0 ? '+' : ''}{ipo.dayChangePercent ?? 0}%)
+                              </span>
+                            </>
+                          ) : (
+                            '—'
+                          )}
                         </span>
                       ) : (
                         <span className="font-mono text-sm font-bold text-cyan-300 mt-0.5 block">
@@ -413,13 +436,21 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <div>
                           <span className="text-slate-400 block text-[10px]">Issue Price</span>
                           <span className="font-mono font-bold text-slate-200">
-                            ₹{ipo.issuePrice || ipo.priceLow || 450}
+                            {ipo.issuePrice
+                              ? `₹${ipo.issuePrice.toLocaleString('en-IN')}`
+                              : ipo.priceHigh
+                              ? `₹${ipo.priceHigh.toLocaleString('en-IN')}`
+                              : ipo.priceBand || '—'}
                           </span>
                         </div>
                         <div>
                           <span className="text-slate-400 block text-[10px]">Listing Price</span>
                           <span className="font-mono font-bold text-slate-200">
-                            ₹{ipo.listingPrice || ipo.currentPrice || 500}
+                            {ipo.listingPrice
+                              ? `₹${ipo.listingPrice.toLocaleString('en-IN')}`
+                              : ipo.currentPrice
+                              ? `₹${ipo.currentPrice.toLocaleString('en-IN')}`
+                              : '—'}
                           </span>
                         </div>
                       </div>
@@ -430,7 +461,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           Traded Volume
                         </span>
                         <span className="font-mono font-semibold text-slate-300">
-                          {(ipo.volume || 854200).toLocaleString('en-IN')} shares
+                          {ipo.volume !== undefined && ipo.volume !== null && ipo.volume > 0
+                            ? `${ipo.volume.toLocaleString('en-IN')} shares`
+                            : '—'}
                         </span>
                       </div>
                     </div>
@@ -634,22 +667,46 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                       {activeTab === 'listed' ? (
                         <>
                           <td className="py-3.5 px-4 font-mono font-extrabold text-white text-sm">
-                            ₹{ipo.currentPrice?.toFixed(2)}
+                            {ipo.currentPrice !== undefined && ipo.currentPrice !== null
+                              ? `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : ipo.listingPrice
+                              ? `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : '—'}
                           </td>
                           <td className="py-3.5 px-4">
-                            <span
-                              className={`font-mono font-bold ${
-                                (ipo.dayChange || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                              }`}
-                            >
-                              {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange?.toFixed(2)} ({ipo.dayChangePercent}%)
-                            </span>
+                            {ipo.dayChange !== undefined && ipo.dayChange !== null ? (
+                              <span
+                                className={`font-mono font-bold ${
+                                  (ipo.dayChange || 0) > 0
+                                    ? 'text-emerald-400'
+                                    : (ipo.dayChange || 0) < 0
+                                    ? 'text-rose-400'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange.toFixed(2)} ({ipo.dayChangePercent ?? 0}%)
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
-                            ₹{ipo.issuePrice || ipo.priceLow || 450} / ₹{ipo.listingPrice || ipo.currentPrice || 500}
+                            {ipo.issuePrice
+                              ? `₹${ipo.issuePrice.toLocaleString('en-IN')}`
+                              : ipo.priceHigh
+                              ? `₹${ipo.priceHigh.toLocaleString('en-IN')}`
+                              : '—'}{' '}
+                            /{' '}
+                            {ipo.listingPrice
+                              ? `₹${ipo.listingPrice.toLocaleString('en-IN')}`
+                              : ipo.currentPrice
+                              ? `₹${ipo.currentPrice.toLocaleString('en-IN')}`
+                              : '—'}
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
-                            {(ipo.volume || 854200).toLocaleString('en-IN')}
+                            {ipo.volume !== undefined && ipo.volume !== null && ipo.volume > 0
+                              ? ipo.volume.toLocaleString('en-IN')
+                              : '—'}
                           </td>
                         </>
                       ) : activeTab === 'closed' ? (

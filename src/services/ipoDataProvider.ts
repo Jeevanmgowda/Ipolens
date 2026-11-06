@@ -33,15 +33,54 @@ export class NSEIPOProvider implements IPODataProvider {
       ]);
       const allUpstox = [...openRaw, ...upcRaw, ...closedRaw, ...listedRawUpstox];
       if (allUpstox.length > 0) {
+        // Collect instrument keys for all listed Upstox IPOs to batch-fetch real-time quotes
+        const listedKeys: string[] = [];
+        allUpstox.forEach((u) => {
+          if (u.status === 'listed') {
+            if (u.isin) {
+              listedKeys.push(`NSE_EQ|${u.isin}`, `BSE_EQ|${u.isin}`);
+            }
+            if (u.symbol) {
+              listedKeys.push(`NSE_EQ|${u.symbol}`, `BSE_EQ|${u.symbol}`);
+            }
+          }
+        });
+
+        const quotesMap = listedKeys.length > 0 ? await UpstoxIpoService.getMarketQuotes(listedKeys) : {};
+
         upstoxIpos = await Promise.all(
           allUpstox.map(async (u) => {
-            const gmp = await IpoAggregatorService.getGmpForSymbol(
-              u.symbol || '',
-              u.priceBandMax || 100,
-              u.issueType || 'regular'
-            );
-            const maxPrice = u.priceBandMax || 100;
-            const gmpPercent = maxPrice > 0 ? Number(((gmp / maxPrice) * 100).toFixed(2)) : 0;
+            const isListed = u.status === 'listed';
+            const isinKeyNse = u.isin ? `NSE_EQ|${u.isin}` : '';
+            const isinKeyBse = u.isin ? `BSE_EQ|${u.isin}` : '';
+            const symKeyNse = u.symbol ? `NSE_EQ|${u.symbol}` : '';
+            const symKeyBse = u.symbol ? `BSE_EQ|${u.symbol}` : '';
+
+            const quote = quotesMap[u.symbol || '']
+              || (isinKeyNse ? quotesMap[isinKeyNse] : undefined)
+              || (isinKeyBse ? quotesMap[isinKeyBse] : undefined)
+              || (symKeyNse ? quotesMap[symKeyNse] : undefined)
+              || (symKeyBse ? quotesMap[symKeyBse] : undefined);
+
+            const issuePriceNum = u.cutOffPrice || u.priceBandMax || u.priceBandMin || 100;
+            const listingPriceNum = u.listingPrice || quote?.open || issuePriceNum;
+            const currentPriceNum = quote?.last_price ?? (isListed ? listingPriceNum : undefined);
+            const dayChangeNum = quote?.net_change ?? (isListed ? 0 : undefined);
+            const dayChangePercentNum = quote?.day_change_percent ?? (isListed ? 0 : undefined);
+            const volumeNum = quote?.volume ?? (isListed ? 0 : undefined);
+
+            const gmp = isListed && currentPriceNum
+              ? Math.round(currentPriceNum - issuePriceNum)
+              : await IpoAggregatorService.getGmpForSymbol(
+                  u.symbol || '',
+                  u.priceBandMax || 100,
+                  u.issueType || 'regular'
+                );
+            const maxPrice = u.priceBandMax || issuePriceNum;
+            const gmpPercent = isListed && currentPriceNum && issuePriceNum > 0
+              ? Number((((currentPriceNum - issuePriceNum) / issuePriceNum) * 100).toFixed(2))
+              : (maxPrice > 0 ? Number(((gmp / maxPrice) * 100).toFixed(2)) : 0);
+
             const statusStr: 'Upcoming' | 'Open' | 'Closed' | 'Listed' =
               u.status === 'open'
                 ? 'Open'
@@ -50,6 +89,12 @@ export class NSEIPOProvider implements IPODataProvider {
                 : u.status === 'listed'
                 ? 'Listed'
                 : 'Closed';
+
+            const formattedDates = {
+              open: u.openDate || 'TBD',
+              close: u.closeDate || 'TBD',
+              listing: u.listingDate || (isListed ? 'Recent Listing' : 'TBD'),
+            };
 
             return {
               id: u.id || `${(u.symbol || 'ipo').toLowerCase()}-ipo`,
@@ -65,18 +110,24 @@ export class NSEIPOProvider implements IPODataProvider {
               priceHigh: u.priceBandMax || 100,
               lotSize: u.lotSize || 14,
               issueSize: u.issueSizeInCrores ? `₹${u.issueSizeInCrores} Cr` : '—',
-              openDate: u.openDate || 'TBD',
-              closeDate: u.closeDate || 'TBD',
-              allotmentDate: u.listingDate || u.closeDate || 'TBD',
-              listingDate: u.listingDate || 'TBD',
-              expectedListingDate: u.listingDate || 'TBD',
-              registrar: u.registrar || 'Link Intime India Pvt Ltd',
+              openDate: formattedDates.open,
+              closeDate: formattedDates.close,
+              allotmentDate: formattedDates.listing || formattedDates.close,
+              listingDate: formattedDates.listing,
+              expectedListingDate: formattedDates.listing,
+              registrar: u.registrar || 'Official Registrar',
               gmp,
               gmpPercent,
               currentSubscription: u.subscriptionTotal || 0,
               retailSubscription: u.subscriptionRetail || 0,
               niiSubscription: u.subscriptionHni || 0,
               qibSubscription: u.subscriptionQib || 0,
+              issuePrice: issuePriceNum,
+              listingPrice: listingPriceNum,
+              currentPrice: currentPriceNum,
+              dayChange: dayChangeNum,
+              dayChangePercent: dayChangePercentNum,
+              volume: volumeNum,
               marketStatus: 'OPEN',
             };
           })
@@ -102,9 +153,6 @@ export class NSEIPOProvider implements IPODataProvider {
       seenSymbols.add(symUpper);
 
       const isActuallyListed = Boolean(
-        raw.isListed ||
-        raw.status === 'Listed' ||
-        (raw.listingPrice && raw.listingPrice !== 'TBD' && raw.listingPrice !== '₹0' && !raw.listingPrice.includes('TBD')) ||
         LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
         listedRaw.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase())
       );
@@ -157,7 +205,7 @@ export class NSEIPOProvider implements IPODataProvider {
       const currentPriceVal = (listedMatch as any)?.currentPrice || listingPriceVal;
       const dayChangeVal = (listedMatch as any)?.dayChange || 0;
       const dayChangePercentVal = (listedMatch as any)?.dayChangePercent || 0;
-      const volumeVal = (listedMatch as any)?.volume || 750000;
+      const volumeVal = (listedMatch as any)?.volume || 0;
 
       const isDebt = raw.series === 'DEBT';
       const gmp = isDebt ? 0 : (raw.gmpEstimate || 0);
@@ -191,8 +239,8 @@ export class NSEIPOProvider implements IPODataProvider {
         issueSize: issueSizeFormatted,
         openDate: raw.issueStartDate || 'TBD',
         closeDate: raw.issueEndDate || 'TBD',
-        allotmentDate: 'TBD',
-        listingDate: 'TBD',
+        allotmentDate: isActuallyListed ? 'Allotted' : (raw.issueEndDate || 'TBD'),
+        listingDate: isActuallyListed ? (listedMatch?.listingDate || 'Listed on Exchange') : 'TBD',
         expectedListingDate: raw.issueEndDate ? 'T+3 Trading Days' : 'TBD',
         registrar: raw.registrarName || 'Link Intime India Pvt Ltd',
         registrarUrl: raw.registrarUrl,
@@ -220,12 +268,15 @@ export class NSEIPOProvider implements IPODataProvider {
       const existing = items.find((i) => i.symbol === l.symbol.toUpperCase());
       if (existing) {
         existing.status = 'Listed';
-        existing.currentPrice = l.currentPrice;
-        existing.dayChange = l.dayChange;
-        existing.dayChangePercent = l.dayChangePercent;
-        existing.volume = l.volume;
-        existing.listingPrice = l.listingPrice;
-        existing.issuePrice = l.issuePrice;
+        if (l.currentPrice !== undefined && l.currentPrice !== null) existing.currentPrice = l.currentPrice;
+        if (l.dayChange !== undefined && l.dayChange !== null) existing.dayChange = l.dayChange;
+        if (l.dayChangePercent !== undefined && l.dayChangePercent !== null) existing.dayChangePercent = l.dayChangePercent;
+        if (l.volume !== undefined && l.volume !== null && l.volume > 0) existing.volume = l.volume;
+        if (l.listingPrice) existing.listingPrice = l.listingPrice;
+        if (l.issuePrice) existing.issuePrice = l.issuePrice;
+        if (l.listingDate && (!existing.listingDate || existing.listingDate === 'TBD' || existing.listingDate === 'Recent Listing')) {
+          existing.listingDate = l.listingDate;
+        }
         continue;
       }
 

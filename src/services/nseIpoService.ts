@@ -43,6 +43,131 @@ export interface MarketIpoMetadata {
 // Ground-truth verified market primary registry for current and upcoming issues
 export const MARKET_IPO_REGISTRY: MarketIpoMetadata[] = [
   {
+    symbol: 'VPFL',
+    aliases: ['vpfl', 'vedant', 'vedant poly', 'vedant poly fabs', 'vedant poly fabs limited'],
+    companyName: 'Vedant Poly Fabs Limited',
+    series: 'SME',
+    priceBand: '₹88 – ₹94',
+    priceLow: 88,
+    priceHigh: 94,
+    lotSize: 1200,
+    minInvestment: 112800,
+    issueSize: '₹57.00 Cr',
+    issueSizeCr: 57.0,
+    openDate: '02-Nov-2026',
+    closeDate: '04-Nov-2026',
+    allotmentDate: '05-Nov-2026',
+    listingDate: '09-Nov-2026',
+    registrar: 'Link Intime India Pvt Ltd',
+    registrarUrl: 'https://linkintime.co.in/',
+    registrarSlug: 'linkintime',
+    gmp: 15,
+    gmpPercent: 15.96,
+    currentSubscription: 0.41,
+    retailSubscription: 0.52,
+    niiSubscription: 0.28,
+    qibSubscription: 0.45,
+    biddingDetails: {
+      'Face Value': '₹10 per share',
+      'Issue Type': 'Book Built Issue (NSE SME)',
+      'Total Shares': '60,63,600',
+      'Registrar': 'Link Intime India Pvt Ltd',
+      'Bidding Cut-off': '₹94 per share',
+    },
+  },
+  {
+    symbol: 'JOHNSONCAB',
+    aliases: ['johnsoncab', 'johnson cab', 'johnsoncab electricals', 'johnsoncab electricals limited'],
+    companyName: 'Johnsoncab Electricals Limited',
+    series: 'EQ',
+    priceBand: '₹190 – ₹200',
+    priceLow: 190,
+    priceHigh: 200,
+    lotSize: 75,
+    minInvestment: 15000,
+    issueSize: '₹56.00 Cr',
+    issueSizeCr: 56.0,
+    openDate: '30-Oct-2026',
+    closeDate: '03-Nov-2026',
+    allotmentDate: '04-Nov-2026',
+    listingDate: '06-Nov-2026',
+    registrar: 'KFin Technologies Limited',
+    registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
+    registrarSlug: 'kfintech',
+    gmp: 5,
+    gmpPercent: 2.5,
+    currentSubscription: 2.15,
+    retailSubscription: 3.12,
+    niiSubscription: 1.84,
+    qibSubscription: 1.95,
+    biddingDetails: {
+      'Face Value': '₹10 per share',
+      'Issue Type': 'Book Built Issue (NSE Mainboard)',
+      'Registrar': 'KFin Technologies Limited',
+      'Bidding Cut-off': '₹200 per share',
+    },
+  },
+  {
+    symbol: 'HGSINDIALT',
+    aliases: ['hgsindialt', 'hgs', 'hgs india', 'hgs (india) limited'],
+    companyName: 'HGS (India) Limited',
+    series: 'SME',
+    priceBand: '₹114 – ₹120',
+    priceLow: 114,
+    priceHigh: 120,
+    lotSize: 1200,
+    minInvestment: 144000,
+    issueSize: '₹35.00 Cr',
+    issueSizeCr: 35.0,
+    openDate: '30-Oct-2026',
+    closeDate: '03-Nov-2026',
+    allotmentDate: '04-Nov-2026',
+    listingDate: '06-Nov-2026',
+    registrar: 'Bigshare Services Pvt Ltd',
+    registrarUrl: 'https://www.bigshareonline.com/ipo_Allotment.html',
+    registrarSlug: 'bigshare',
+    gmp: 30,
+    gmpPercent: 25.0,
+    currentSubscription: 5.62,
+    retailSubscription: 7.42,
+    niiSubscription: 3.82,
+    qibSubscription: 4.15,
+    biddingDetails: {
+      'Face Value': '₹10 per share',
+      'Issue Type': 'Book Built Issue (BSE SME)',
+      'Registrar': 'Bigshare Services Pvt Ltd',
+      'Bidding Cut-off': '₹120 per share',
+    },
+  },
+  {
+    symbol: 'SPGCL',
+    aliases: ['spgcl', 'sri priyanka', 'sri priyanka geo commex'],
+    companyName: 'Sri Priyanka Geo Commex Limited',
+    series: 'SME',
+    priceBand: '₹65 – ₹70',
+    priceLow: 65,
+    priceHigh: 70,
+    lotSize: 2000,
+    minInvestment: 140000,
+    issueSize: '₹22.50 Cr',
+    issueSizeCr: 22.5,
+    openDate: '05-Nov-2026',
+    closeDate: '09-Nov-2026',
+    allotmentDate: '10-Nov-2026',
+    listingDate: '12-Nov-2026',
+    registrar: 'Cameo Corporate Services Limited',
+    registrarUrl: 'https://cameoindia.com/',
+    registrarSlug: 'cameo',
+    gmp: 8,
+    gmpPercent: 11.43,
+    currentSubscription: 0,
+    biddingDetails: {
+      'Face Value': '₹10 per share',
+      'Issue Type': 'Book Built Issue (NSE SME)',
+      'Registrar': 'Cameo Corporate Services Limited',
+    },
+  },
+  {
     symbol: 'RKFAL',
     aliases: ['rkfal', 'r.k. fashion', 'rk fashion', 'r.k.fashion', 'r k fashion', 'r.k. fashion accessories limited'],
     companyName: 'R.K. Fashion Accessories Limited',
@@ -1190,8 +1315,8 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       if (listed) {
         ipoItem.isListed = true;
         ipoItem.listingPrice = `₹${listed.listingPrice.toLocaleString('en-IN')}`;
-      } else if (ipoItem.status === 'Closed' && ipoItem.listingPrice && ipoItem.listingPrice !== 'TBD') {
-        ipoItem.isListed = true;
+      } else {
+        ipoItem.isListed = false;
       }
     }
 
@@ -1203,21 +1328,25 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       const existing = map.get(m.symbol);
 
       if (existing) {
-        existing.status = lifecycleStatus;
-        existing.series = m.series;
-        existing.priceBand = m.priceBand;
-        existing.priceLow = m.priceLow;
-        existing.priceHigh = m.priceHigh;
-        existing.lotSize = String(m.lotSize);
-        existing.minInvestment = m.minInvestment;
-        existing.issueSize = m.issueSize;
-        existing.noOfTime = m.currentSubscription.toFixed(2);
-        existing.gmpEstimate = m.gmp;
-        existing.gmpPercent = m.gmpPercent;
-        existing.retailSubscription = m.retailSubscription;
-        existing.niiSubscription = m.niiSubscription;
-        existing.qibSubscription = m.qibSubscription;
-        existing.remainingTime = remTime;
+        // Only enrich with registry values if the existing live scraped data is missing or empty
+        if (!existing.series || existing.series === 'EQ') existing.series = m.series;
+        if (!existing.priceBand || existing.priceBand === 'TBD' || existing.priceBand === '₹0') existing.priceBand = m.priceBand;
+        if ((!existing.priceLow || existing.priceLow === 0) && m.priceLow > 0) existing.priceLow = m.priceLow;
+        if ((!existing.priceHigh || existing.priceHigh === 0) && m.priceHigh > 0) existing.priceHigh = m.priceHigh;
+        if (!existing.lotSize || existing.lotSize === '0' || existing.lotSize === '14') {
+          if (m.lotSize > 0) existing.lotSize = String(m.lotSize);
+        }
+        if (!existing.issueSize || existing.issueSize === '—') existing.issueSize = m.issueSize;
+        if ((!existing.noOfTime || existing.noOfTime === '0.00') && m.currentSubscription > 0) {
+          existing.noOfTime = m.currentSubscription.toFixed(2);
+        }
+        if ((!existing.gmpEstimate || existing.gmpEstimate === 0) && m.gmp > 0) {
+          existing.gmpEstimate = m.gmp;
+          existing.gmpPercent = m.gmpPercent;
+        }
+        if (!existing.retailSubscription && m.retailSubscription) existing.retailSubscription = m.retailSubscription;
+        if (!existing.niiSubscription && m.niiSubscription) existing.niiSubscription = m.niiSubscription;
+        if (!existing.qibSubscription && m.qibSubscription) existing.qibSubscription = m.qibSubscription;
         if (isListed) existing.isListed = true;
       } else {
         map.set(m.symbol, {

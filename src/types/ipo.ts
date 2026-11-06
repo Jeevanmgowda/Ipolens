@@ -21,6 +21,14 @@ export interface UnifiedIPO {
   subscriptionQib?: number;
   registrar?: string;
   instrumentKey?: string; // e.g. NSE_EQ|INE... for listed stocks
+  isin?: string;
+  cutOffPrice?: number;
+  listingPrice?: number;
+  issuePrice?: number;
+  currentPrice?: number;
+  dayChange?: number;
+  dayChangePercent?: number;
+  volume?: number;
   // Hybrid GMP Layer
   gmp: number;
   expectedListingGainPct: number; // Formula: (gmp / priceBandMax) * 100
