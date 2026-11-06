@@ -111,28 +111,26 @@ export const LiveMarketHeader: React.FC<LiveMarketHeaderProps> = ({
             <span className="text-slate-200 font-bold">{lastUpdated || 'Just now'}</span>
           </div>
 
-          {/* Upstox Live Session Link / Status */}
-          <a
-            href="/api/auth/upstox"
+          {/* Data Feed Telemetry Indicator */}
+          <div
             title={
               upstoxStatus?.valid
-                ? `Upstox API Active (${upstoxStatus.user || 'Trader'}). Click to re-authenticate or switch account.`
-                : 'Connect or refresh daily Upstox Developer token'
+                ? `Upstox Direct Token Active (${upstoxStatus.user || 'Trader'}).`
+                : 'Live Exchange Feed active (NSE/BSE Public Telemetry). Upstox token optional.'
             }
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
               upstoxStatus?.valid
-                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25 hover:bg-emerald-500/20'
-                : 'bg-amber-500/10 text-amber-300 border-amber-500/25 hover:bg-amber-500/20'
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
+                : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/25'
             }`}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                upstoxStatus?.valid ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                upstoxStatus?.valid ? 'bg-emerald-400' : 'bg-cyan-400 animate-pulse'
               }`}
             />
-            <span>{upstoxStatus?.valid ? 'Upstox Live' : 'Connect Upstox'}</span>
-            <ExternalLink className="w-3 h-3 opacity-60" />
-          </a>
+            <span>{upstoxStatus?.valid ? 'Upstox Token Feed' : 'NSE Live Feed'}</span>
+          </div>
 
           {/* Sync Refresh Button */}
           <button
