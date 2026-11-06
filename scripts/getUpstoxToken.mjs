@@ -1,38 +1,68 @@
 #!/usr/bin/env node
 
 /**
- * IPOLENS — Upstox Access Token Helper
+ * IPOLENS — Upstox Access Token Helper & Zero-Human-Interaction Headless Refresher
+ * 
+ * Features:
+ *   1. Automated Headless Mode (Zero human interaction):
+ *      When UPSTOX_MOBILE, UPSTOX_PIN, and UPSTOX_TOTP_KEY are present:
+ *      - Computes standard RFC 6238 HMAC-SHA1 6-digit TOTP in milliseconds.
+ *      - If Puppeteer is installed (`npm i -D puppeteer`), runs a completely invisible
+ *        Chromium background session to authorize and capture the token in <5 seconds.
+ *      - Directly saves fresh UPSTOX_ACCESS_TOKEN into .env.local and toggles live market mode.
+ * 
+ *   2. Semi-Automated 1-Click Browser Interceptor Mode:
+ *      - Opens the Upstox authorization dialog.
+ *      - Starts a temporary local HTTP server on the redirect port (if available) to
+ *        automatically intercept the returned `?code=` without requiring manual copy-pasting.
+ * 
+ *   3. Interactive CLI Fallback:
+ *      - Allows pasting the code or redirect URL directly into the terminal prompt.
  * 
  * Usage:
- *   node scripts/getUpstoxToken.mjs
+ *   npm run upstox:token
+ *   or: node scripts/getUpstoxToken.mjs
  */
 
 import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
+import crypto from 'crypto';
+import http from 'http';
 
 const envPath = path.resolve(process.cwd(), '.env.local');
 
 let clientId = process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '';
 let clientSecret = process.env.UPSTOX_CLIENT_SECRET || process.env.UPSTOX_API_SECRET || '';
 let redirectUri = process.env.UPSTOX_REDIRECT_URI || 'http://localhost:3000/api/auth/callback/upstox';
+let userMobile = process.env.UPSTOX_MOBILE || '';
+let userPin = process.env.UPSTOX_PIN || '';
+let totpKey = process.env.UPSTOX_TOTP_KEY || process.env.UPSTOX_TOTP_SECRET || '';
 
+// Load variables from .env.local if present
 if (fs.existsSync(envPath)) {
   const content = fs.readFileSync(envPath, 'utf8');
   const idMatch = content.match(/UPSTOX_(?:CLIENT_ID|API_KEY)=([^\r\n]+)/);
   const secMatch = content.match(/UPSTOX_(?:CLIENT_SECRET|API_SECRET)=([^\r\n]+)/);
   const uriMatch = content.match(/UPSTOX_REDIRECT_URI=([^\r\n]+)/);
-  if (idMatch && idMatch[1] && !idMatch[1].startsWith('your_')) clientId = idMatch[1].trim();
-  if (secMatch && secMatch[1] && !secMatch[1].startsWith('your_')) clientSecret = secMatch[1].trim();
-  if (uriMatch && uriMatch[1] && !uriMatch[1].startsWith('your_')) redirectUri = uriMatch[1].trim();
+  const mobMatch = content.match(/UPSTOX_MOBILE=([^\r\n]+)/);
+  const pinMatch = content.match(/UPSTOX_PIN=([^\r\n]+)/);
+  const totpMatch = content.match(/UPSTOX_(?:TOTP_KEY|TOTP_SECRET)=([^\r\n]+)/);
+
+  if (idMatch && idMatch[1] && !idMatch[1].startsWith('your_')) clientId = idMatch[1].replace(/["']/g, '').trim();
+  if (secMatch && secMatch[1] && !secMatch[1].startsWith('your_')) clientSecret = secMatch[1].replace(/["']/g, '').trim();
+  if (uriMatch && uriMatch[1] && !uriMatch[1].startsWith('your_')) redirectUri = uriMatch[1].replace(/["']/g, '').trim();
+  if (mobMatch && mobMatch[1] && !mobMatch[1].startsWith('your_')) userMobile = mobMatch[1].replace(/["']/g, '').trim();
+  if (pinMatch && pinMatch[1] && !pinMatch[1].startsWith('your_')) userPin = pinMatch[1].replace(/["']/g, '').trim();
+  if (totpMatch && totpMatch[1] && !totpMatch[1].startsWith('your_')) totpKey = totpMatch[1].replace(/["']/g, '').trim();
 }
 
-console.log('\n======================================================');
-console.log('       IPOLENS — Upstox V3 API Token Generator        ');
-console.log('======================================================\n');
+console.log('\n================================================================');
+console.log('       IPOLENS — Upstox Access Token Refresher (Zero Interaction) ');
+console.log('================================================================\n');
 
 if (!clientId || !clientSecret) {
-  console.log('⚠️  Please add your UPSTOX_CLIENT_ID and UPSTOX_CLIENT_SECRET to .env.local first:');
+  console.log('⚠️  Please add UPSTOX_CLIENT_ID and UPSTOX_CLIENT_SECRET to .env.local first:');
   console.log('   UPSTOX_CLIENT_ID=your_api_key_here');
   console.log('   UPSTOX_CLIENT_SECRET=your_api_secret_here\n');
   console.log('Get them from https://developer.upstox.com/ (Apps -> Create App)');
@@ -40,84 +70,295 @@ if (!clientId || !clientSecret) {
   process.exit(1);
 }
 
-const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+/**
+ * Generates an RFC 6238 standard TOTP (6-digit, 30-sec time step) from Base32 secret
+ */
+function generateTotp(base32Secret) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const char of base32Secret.toUpperCase().replace(/[\s=]/g, '')) {
+    const val = alphabet.indexOf(char);
+    if (val === -1) continue;
+    bits += val.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(parseInt(bits.substring(i, i + 8), 2));
+  }
+  const key = Buffer.from(bytes);
+  const counter = Math.floor(Date.now() / 1000 / 30);
+  const counterBuf = Buffer.alloc(8);
+  counterBuf.writeBigInt64BE(BigInt(counter));
 
-console.log('1. Open this URL in your browser to log in to Upstox:\n');
-console.log(`\x1b[36m${authUrl}\x1b[0m\n`);
-console.log('2. Log in with your mobile number, OTP, and 6-digit PIN.');
-console.log('3. Upstox will redirect your browser to:');
-console.log(`   ${redirectUri}?code=YOUR_CODE_HERE\n`);
+  const hmac = crypto.createHmac('sha1', key).update(counterBuf).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code = (
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff)
+  ) % 1000000;
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+  return code.toString().padStart(6, '0');
+}
 
-rl.question('Paste the authorization "code" parameter (or the full redirect URL) here: ', async (input) => {
-  rl.close();
-
-  let code = input.trim();
-  if (code.includes('code=')) {
-    try {
-      const parsed = new URL(code.startsWith('http') ? code : `http://dummy.com/${code}`);
-      code = parsed.searchParams.get('code') || code;
-    } catch {
-      const match = code.match(/code=([^&]+)/);
-      if (match) code = match[1];
-    }
+/**
+ * Persists updated token into .env.local
+ */
+function saveTokenToEnv(token, userIdentifier = '') {
+  if (!fs.existsSync(envPath)) {
+    fs.writeFileSync(envPath, `UPSTOX_ACCESS_TOKEN=${token}\n`, 'utf8');
+    return;
   }
 
-  if (!code) {
-    console.error('❌ Error: No authorization code provided.');
-    process.exit(1);
+  let envContent = fs.readFileSync(envPath, 'utf8');
+  if (envContent.includes('UPSTOX_ACCESS_TOKEN=')) {
+    envContent = envContent.replace(/UPSTOX_ACCESS_TOKEN=.*/, `UPSTOX_ACCESS_TOKEN=${token}`);
+  } else {
+    envContent += `\nUPSTOX_ACCESS_TOKEN=${token}\n`;
   }
 
+  if (envContent.includes('USE_MOCK_MARKET_DATA=true')) {
+    envContent = envContent.replace('USE_MOCK_MARKET_DATA=true', 'USE_MOCK_MARKET_DATA=false');
+  }
+
+  fs.writeFileSync(envPath, envContent, 'utf8');
+  console.log(`\n🎉 Success! Updated .env.local with fresh access token.`);
+  if (userIdentifier) console.log(`   Connected Account: ${userIdentifier}`);
+  console.log(`   USE_MOCK_MARKET_DATA set to false for live market streaming.`);
+}
+
+/**
+ * Exchanges authorization code for daily access token
+ */
+async function exchangeCodeForToken(code) {
   console.log('\nExchanging authorization code for daily access token...');
+  const res = await fetch('https://api.upstox.com/v2/login/authorization/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }),
+  });
 
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Upstox API Error (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  const token = data.access_token;
+  saveTokenToEnv(token, data.user_name || data.user_id);
+  return token;
+}
+
+/**
+ * Mode 1: Automated Headless Refresh using Puppeteer (Zero Human Interaction)
+ */
+async function runHeadlessPuppeteer() {
+  console.log('⚡ Zero-Human-Interaction Mode: Detected mobile, PIN, and TOTP key.');
+  console.log('🤖 Launching invisible headless browser worker...');
+
+  let puppeteer;
   try {
-    const res = await fetch('https://api.upstox.com/v2/login/authorization/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-      },
-      body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-      }),
+    puppeteer = (await import('puppeteer')).default;
+  } catch {
+    console.log('ℹ️  Puppeteer is not yet installed.');
+    console.log('👉 To enable 100% headless zero-click background refresh, run:');
+    console.log('   npm install --save-dev puppeteer\n');
+    return false;
+  }
+
+  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
 
-    if (!res.ok) {
-      const err = await res.text();
-      console.error(`❌ Upstox API Error (${res.status}):`, err);
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+
+    console.log('   Navigating to Upstox authorization portal...');
+    await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // Step 1: Input Mobile Number
+    console.log('   Entering registered mobile number...');
+    const mobileSelector = 'input[type="tel"], input#mobileNum, input[name="mobileNo"], input[placeholder*="mobile" i]';
+    await page.waitForSelector(mobileSelector, { timeout: 15000 });
+    await page.type(mobileSelector, userMobile, { delay: 40 });
+    await page.keyboard.press('Enter');
+
+    // Step 2: Input TOTP
+    console.log('   Computing RFC 6238 TOTP...');
+    const totpCode = generateTotp(totpKey);
+    console.log(`   Generated TOTP: ${totpCode}`);
+
+    const otpSelector = 'input[autocomplete="one-time-code"], input#otpNum, input[name="otp"], input[placeholder*="otp" i]';
+    await page.waitForSelector(otpSelector, { timeout: 15000 });
+    await page.type(otpSelector, totpCode, { delay: 40 });
+    await page.keyboard.press('Enter');
+
+    // Step 3: Input PIN
+    console.log('   Entering account PIN...');
+    const pinSelector = 'input[type="password"], input#pinCode, input[name="pin"], input[placeholder*="pin" i]';
+    await page.waitForSelector(pinSelector, { timeout: 15000 });
+    await page.type(pinSelector, userPin, { delay: 40 });
+    await page.keyboard.press('Enter');
+
+    // Step 4: Intercept Redirect Code
+    console.log('   Awaiting OAuth code redirection...');
+    let authCode = null;
+
+    // Check URL changes
+    for (let i = 0; i < 20; i++) {
+      const currentUrl = page.url();
+      if (currentUrl.includes('code=')) {
+        const parsed = new URL(currentUrl);
+        authCode = parsed.searchParams.get('code');
+        break;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    await browser.close();
+
+    if (authCode) {
+      console.log(`   Captured OAuth Authorization Code!`);
+      await exchangeCodeForToken(authCode);
+      console.log('\n✅ Zero-Interaction Refresh Complete! Market feed is ready.\n');
+      process.exit(0);
+    } else {
+      console.warn('⚠️ Could not automatically capture authorization code from page redirection.');
+      return false;
+    }
+  } catch (err) {
+    if (browser) await browser.close();
+    console.warn(`⚠️ Headless browser automation error: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Mode 2: Semi-Automated Local Interceptor Server
+ * Listens on the redirect port so clicking the auth link in browser completes
+ * the token exchange without copying and pasting codes.
+ */
+function startLocalCallbackServer(onCodeReceived) {
+  try {
+    const parsedRedirect = new URL(redirectUri);
+    const port = parseInt(parsedRedirect.port || '3000', 10);
+    const pathName = parsedRedirect.pathname;
+
+    const server = http.createServer(async (req, res) => {
+      try {
+        const reqUrl = new URL(req.url, `http://${req.headers.host}`);
+        if (reqUrl.pathname === pathName) {
+          const code = reqUrl.searchParams.get('code');
+          if (code) {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(`
+              <html>
+                <body style="background: #0b101b; color: #10b981; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+                  <div style="background: #131b2e; border: 1px solid #10b981; border-radius: 12px; padding: 32px; text-align: center;">
+                    <h2>✅ Upstox Token Refreshed Successfully!</h2>
+                    <p style="color: #94a3b8;">IPOLENS .env.local has been updated. You can close this browser tab.</p>
+                  </div>
+                </body>
+              </html>
+            `);
+            server.close();
+            await onCodeReceived(code);
+            process.exit(0);
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors for random probes
+      }
+    });
+
+    server.on('error', () => {
+      // Port in use (e.g. Next.js server already running), fall back cleanly
+    });
+
+    server.listen(port);
+  } catch (e) {
+    // URL parse error or port binding error
+  }
+}
+
+/**
+ * Mode 3: Interactive Prompt Mode (Fallback)
+ */
+function runInteractiveMode() {
+  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+  console.log('1. Open this URL in your browser to authorize Upstox:\n');
+  console.log(`\x1b[36m${authUrl}\x1b[0m\n`);
+  console.log('2. Log in with your mobile number, OTP, and 6-digit PIN.');
+  console.log('3. Upstox will redirect your browser to:');
+  console.log(`   ${redirectUri}?code=YOUR_CODE_HERE\n`);
+
+  // Start background callback listener
+  startLocalCallbackServer(async (code) => {
+    try {
+      await exchangeCodeForToken(code);
+    } catch (err) {
+      console.error('❌ Request failed:', err.message);
+    }
+  });
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  rl.question('Paste the authorization "code" parameter (or full redirect URL) here: ', async (input) => {
+    rl.close();
+
+    let code = input.trim();
+    if (code.includes('code=')) {
+      try {
+        const parsed = new URL(code.startsWith('http') ? code : `http://dummy.com/${code}`);
+        code = parsed.searchParams.get('code') || code;
+      } catch {
+        const match = code.match(/code=([^&]+)/);
+        if (match) code = match[1];
+      }
+    }
+
+    if (!code) {
+      console.error('❌ Error: No authorization code provided.');
       process.exit(1);
     }
 
-    const data = await res.json();
-    const token = data.access_token;
-
-    console.log('\n✅ Access Token Generated Successfully!');
-    console.log(`User: ${data.user_name || data.user_id}`);
-    console.log('\nToken:');
-    console.log(`\x1b[32m${token}\x1b[0m\n`);
-
-    if (fs.existsSync(envPath)) {
-      let envContent = fs.readFileSync(envPath, 'utf8');
-      if (envContent.includes('UPSTOX_ACCESS_TOKEN=')) {
-        envContent = envContent.replace(/UPSTOX_ACCESS_TOKEN=.*/, `UPSTOX_ACCESS_TOKEN=${token}`);
-      } else {
-        envContent += `\nUPSTOX_ACCESS_TOKEN=${token}\n`;
-      }
-      if (envContent.includes('USE_MOCK_MARKET_DATA=true')) {
-        envContent = envContent.replace('USE_MOCK_MARKET_DATA=true', 'USE_MOCK_MARKET_DATA=false');
-      }
-      fs.writeFileSync(envPath, envContent, 'utf8');
-      console.log('🎉 Updated .env.local: Set UPSTOX_ACCESS_TOKEN and enabled USE_MOCK_MARKET_DATA=false!');
+    try {
+      await exchangeCodeForToken(code);
+    } catch (err) {
+      console.error('❌ Request failed:', err.message);
     }
-  } catch (err) {
-    console.error('❌ Request failed:', err.message);
+  });
+}
+
+// Main execution flow
+async function main() {
+  if (userMobile && userPin && totpKey) {
+    const success = await runHeadlessPuppeteer();
+    if (!success) {
+      runInteractiveMode();
+    }
+  } else {
+    runInteractiveMode();
   }
-});
+}
+
+main();
