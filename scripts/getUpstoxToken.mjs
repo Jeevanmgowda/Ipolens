@@ -25,6 +25,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import readline from 'readline';
 import crypto from 'crypto';
 import http from 'http';
@@ -40,6 +41,22 @@ let userPin = process.env.UPSTOX_PIN || '';
 let totpKey = process.env.UPSTOX_TOTP_KEY || process.env.UPSTOX_TOTP_SECRET || '';
 
 // Load variables from .env.local if present
+function parseEnvVal(val) {
+  if (!val) return '';
+  let str = val.trim();
+  if (str.startsWith('"')) {
+    const end = str.indexOf('"', 1);
+    if (end !== -1) str = str.substring(1, end);
+  } else if (str.startsWith("'")) {
+    const end = str.indexOf("'", 1);
+    if (end !== -1) str = str.substring(1, end);
+  } else {
+    const hash = str.indexOf('#');
+    if (hash !== -1) str = str.substring(0, hash).trim();
+  }
+  return str.replace(/["']/g, '').trim();
+}
+
 if (fs.existsSync(envPath)) {
   const content = fs.readFileSync(envPath, 'utf8');
   const idMatch = content.match(/UPSTOX_(?:CLIENT_ID|API_KEY)=([^\r\n]+)/);
@@ -49,12 +66,12 @@ if (fs.existsSync(envPath)) {
   const pinMatch = content.match(/UPSTOX_PIN=([^\r\n]+)/);
   const totpMatch = content.match(/UPSTOX_(?:TOTP_KEY|TOTP_SECRET)=([^\r\n]+)/);
 
-  if (idMatch && idMatch[1] && !idMatch[1].startsWith('your_')) clientId = idMatch[1].replace(/["']/g, '').trim();
-  if (secMatch && secMatch[1] && !secMatch[1].startsWith('your_')) clientSecret = secMatch[1].replace(/["']/g, '').trim();
-  if (uriMatch && uriMatch[1] && !uriMatch[1].startsWith('your_')) redirectUri = uriMatch[1].replace(/["']/g, '').trim();
-  if (mobMatch && mobMatch[1] && !mobMatch[1].startsWith('your_')) userMobile = mobMatch[1].replace(/["']/g, '').trim();
-  if (pinMatch && pinMatch[1] && !pinMatch[1].startsWith('your_')) userPin = pinMatch[1].replace(/["']/g, '').trim();
-  if (totpMatch && totpMatch[1] && !totpMatch[1].startsWith('your_')) totpKey = totpMatch[1].replace(/["']/g, '').trim();
+  if (idMatch && idMatch[1]) { const v = parseEnvVal(idMatch[1]); if (v && !v.startsWith('your_')) clientId = v; }
+  if (secMatch && secMatch[1]) { const v = parseEnvVal(secMatch[1]); if (v && !v.startsWith('your_')) clientSecret = v; }
+  if (uriMatch && uriMatch[1]) { const v = parseEnvVal(uriMatch[1]); if (v && !v.startsWith('your_')) redirectUri = v; }
+  if (mobMatch && mobMatch[1]) { const v = parseEnvVal(mobMatch[1]); if (v && !v.startsWith('your_')) userMobile = v; }
+  if (pinMatch && pinMatch[1]) { const v = parseEnvVal(pinMatch[1]); if (v && !v.startsWith('your_')) userPin = v; }
+  if (totpMatch && totpMatch[1]) { const v = parseEnvVal(totpMatch[1]); if (v && !v.startsWith('your_')) totpKey = v; }
 }
 
 console.log('\n================================================================');
@@ -171,8 +188,10 @@ async function runHeadlessPuppeteer() {
   }
 
   // Pre-check if Chrome executable actually exists on disk so we never hang 30s
+  let execPath = '';
   try {
-    const execPath = puppeteer.executablePath();
+    const rawPath = puppeteer.executablePath ? await puppeteer.executablePath() : '';
+    execPath = typeof rawPath === 'string' ? rawPath : '';
     if (!execPath || !fs.existsSync(execPath)) {
       console.log('ℹ️  Puppeteer Chrome browser binary is not yet downloaded.');
       console.log('👉 To enable 100% background headless automation, run:');
@@ -192,10 +211,13 @@ async function runHeadlessPuppeteer() {
   const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   let browser;
+  const uniqueProfileDir = path.join(os.tmpdir(), `upstox_prof_${Date.now()}`);
   try {
     browser = await puppeteer.launch({
+      executablePath: execPath,
+      userDataDir: uniqueProfileDir,
       headless: 'new',
-      timeout: 10000,
+      timeout: 20000,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     });
 
@@ -203,37 +225,51 @@ async function runHeadlessPuppeteer() {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
     console.log('   Navigating to Upstox authorization portal...');
-    await page.goto(authUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.goto(authUrl, { waitUntil: 'networkidle2', timeout: 25000 });
 
     // Step 1: Input Mobile Number
     console.log('   Entering registered mobile number...');
-    const mobileSelector = 'input[type="tel"], input#mobileNum, input[name="mobileNo"], input[placeholder*="mobile" i]';
-    await page.waitForSelector(mobileSelector, { timeout: 10000 });
-    await page.type(mobileSelector, userMobile, { delay: 40 });
-    await page.keyboard.press('Enter');
+    await page.waitForSelector('#mobileNum', { timeout: 15000 });
+    await page.type('#mobileNum', userMobile, { delay: 60 });
+    
+    // Wait for Get OTP button to be enabled before clicking
+    await page.waitForFunction(() => {
+      const btn = document.querySelector('#getOtp');
+      return btn && !btn.disabled;
+    }, { timeout: 10000 });
+    await page.click('#getOtp');
 
     // Step 2: Input TOTP
-    console.log('   Computing RFC 6238 TOTP...');
+    console.log('   Awaiting 2FA prompt & computing RFC 6238 TOTP...');
+    await page.waitForSelector('#otpNum', { timeout: 15000 });
     const totpCode = generateTotp(totpKey);
-    console.log(`   Generated TOTP: ${totpCode}`);
+    console.log(`   Generated TOTP: ${totpCode} (RFC 6238 HMAC-SHA1)`);
+    await page.type('#otpNum', totpCode, { delay: 60 });
 
-    const otpSelector = 'input[autocomplete="one-time-code"], input#otpNum, input[name="otp"], input[placeholder*="otp" i]';
-    await page.waitForSelector(otpSelector, { timeout: 10000 });
-    await page.type(otpSelector, totpCode, { delay: 40 });
-    await page.keyboard.press('Enter');
+    // Wait for Continue button to be enabled
+    await page.waitForFunction(() => {
+      const btn = document.querySelector('#continueBtn');
+      return btn && !btn.disabled;
+    }, { timeout: 10000 });
+    await page.click('#continueBtn');
 
     // Step 3: Input PIN
     console.log('   Entering account PIN...');
-    const pinSelector = 'input[type="password"], input#pinCode, input[name="pin"], input[placeholder*="pin" i]';
-    await page.waitForSelector(pinSelector, { timeout: 10000 });
-    await page.type(pinSelector, userPin, { delay: 40 });
-    await page.keyboard.press('Enter');
+    await page.waitForSelector('#pinCode', { timeout: 15000 });
+    await page.type('#pinCode', userPin, { delay: 60 });
+
+    // Wait for PIN Continue button to be enabled
+    await page.waitForFunction(() => {
+      const btn = document.querySelector('#pinContinueBtn');
+      return btn && !btn.disabled;
+    }, { timeout: 10000 });
+    await page.click('#pinContinueBtn');
 
     // Step 4: Intercept Redirect Code
     console.log('   Awaiting OAuth code redirection...');
     let authCode = null;
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       const currentUrl = page.url();
       if (currentUrl.includes('code=')) {
         const parsed = new URL(currentUrl);
@@ -247,9 +283,51 @@ async function runHeadlessPuppeteer() {
 
     if (authCode) {
       console.log(`   Captured OAuth Authorization Code!`);
-      await exchangeCodeForToken(authCode);
-      console.log('✅ Zero-Interaction Refresh Complete! Market feed is ready.\n');
-      process.exit(0);
+      
+      // Check if .env.local was already updated (e.g. by Next.js callback route running on port 3000)
+      try {
+        if (fs.existsSync(envPath)) {
+          const curEnv = fs.readFileSync(envPath, 'utf8');
+          const tMatch = curEnv.match(/UPSTOX_ACCESS_TOKEN=([^\r\n]+)/);
+          if (tMatch && tMatch[1]) {
+            const parts = tMatch[1].trim().split('.');
+            if (parts.length === 3) {
+              const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+              const ageSec = Math.floor(Date.now() / 1000) - payload.iat;
+              if (ageSec >= 0 && ageSec < 90) {
+                console.log(`\n🎉 Success! Fresh access token active in .env.local.`);
+                console.log(`   Connected Account: ${payload.sub}`);
+                console.log(`   Token Issued At (iat): ${payload.iat}`);
+                console.log('✅ Zero-Interaction Refresh Complete! Market feed is ready.\n');
+                process.exit(0);
+              }
+            }
+          }
+        }
+      } catch (e) {}
+
+      try {
+        await exchangeCodeForToken(authCode);
+        console.log('✅ Zero-Interaction Refresh Complete! Market feed is ready.\n');
+        process.exit(0);
+      } catch (err) {
+        // If error is code already used (e.g. consumed by Next.js server), verify token in .env.local
+        if (err.message.includes('UDAPI100057') && fs.existsSync(envPath)) {
+          const curEnv = fs.readFileSync(envPath, 'utf8');
+          const tMatch = curEnv.match(/UPSTOX_ACCESS_TOKEN=([^\r\n]+)/);
+          if (tMatch && tMatch[1]) {
+            const parts = tMatch[1].trim().split('.');
+            if (parts.length === 3) {
+              const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+              console.log(`\n🎉 Success! Fresh access token active in .env.local.`);
+              console.log(`   Connected Account: ${payload.sub}`);
+              console.log('✅ Zero-Interaction Refresh Complete! Market feed is ready.\n');
+              process.exit(0);
+            }
+          }
+        }
+        throw err;
+      }
     } else {
       console.warn('⚠️ Could not automatically capture authorization code from page redirection.');
       return false;
