@@ -65,8 +65,8 @@ ${drhpSummary}`;
       if (parsed.verdict && parsed.confidenceScore !== undefined) {
         return parsed as IpoInsightResponse;
       }
-    } catch (aiErr) {
-      console.warn('Gemini Flash DRHP analysis notice, using deterministic fallback:', aiErr);
+    } catch (aiErr: any) {
+      console.warn('[ProspectusAnalyzer] Gemini Flash DRHP analysis notice, using deterministic fallback:', aiErr?.message || 'offline');
     }
   }
 

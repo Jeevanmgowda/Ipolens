@@ -33,6 +33,49 @@ export const isPostgresConfigured = Boolean(
 let dbClient: ReturnType<typeof drizzle<typeof schema>> | null = null;
 let sqlConnection: ReturnType<typeof postgres> | null = null;
 
+let isDbCircuitOpen = false;
+let dbCircuitCooldownUntil = 0;
+let lastDbWarningTime = 0;
+
+export function isDatabaseActive(): boolean {
+  if (!isPostgresConfigured || dbClient === null) return false;
+  if (isDbCircuitOpen) {
+    if (Date.now() < dbCircuitCooldownUntil) return false;
+    isDbCircuitOpen = false;
+  }
+  return true;
+}
+
+export function reportDatabaseFailure(operation: string, err: any): void {
+  const isNetworkTimeout =
+    err?.code === 'CONNECT_TIMEOUT' ||
+    err?.code === 'ETIMEDOUT' ||
+    err?.code === 'ENOTFOUND' ||
+    err?.code === 'ECONNREFUSED' ||
+    err?.cause?.code === 'CONNECT_TIMEOUT' ||
+    err?.cause?.code === 'ENOTFOUND' ||
+    err?.cause?.code === 'ECONNREFUSED' ||
+    err?.cause?.code === 'ETIMEDOUT' ||
+    err?.message?.includes('CONNECT_TIMEOUT') ||
+    err?.message?.includes('ENOTFOUND') ||
+    err?.message?.includes('ETIMEDOUT');
+
+  if (isNetworkTimeout) {
+    isDbCircuitOpen = true;
+    dbCircuitCooldownUntil = Date.now() + 60_000;
+
+    const now = Date.now();
+    if (now - lastDbWarningTime > 60_000) {
+      console.warn(
+        `[Database] PostgreSQL connection unreachable (${err?.cause?.code || err?.code || 'TIMEOUT'}). Activating in-memory store fallback for 60s.`
+      );
+      lastDbWarningTime = now;
+    }
+  } else {
+    console.warn(`[Database] ${operation} notice:`, err?.message || err);
+  }
+}
+
 if (isPostgresConfigured) {
   try {
     sqlConnection = postgres(connectionString, {
@@ -46,9 +89,6 @@ if (isPostgresConfigured) {
   } catch (error) {
     console.warn('[Database] Notice: PostgreSQL connection initialization warning:', error);
   }
-} else {
-  // Graceful standalone notice (no hard crashes during local builds or tests)
-  // console.log('[Database] Running in standalone / memory-cached mode. Set DATABASE_URL to enable PostgreSQL persistence.');
 }
 
 export const db = dbClient;

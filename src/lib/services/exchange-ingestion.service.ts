@@ -122,8 +122,8 @@ export class ExchangeIngestionService {
       this.cachedCookie = cookieHeader;
       this.cookieExpiry = now + 10 * 60 * 1000; // 10 minutes cache
       return cookieHeader;
-    } catch (err) {
-      console.warn('NSE cookie handshake notice:', err);
+    } catch (err: any) {
+      console.warn('[ExchangeIngestion] NSE cookie handshake notice:', err?.message || 'offline');
       return '';
     }
   }
@@ -190,8 +190,8 @@ export class ExchangeIngestionService {
         await redis.set(`subscription:${cleanSymbol}`, JSON.stringify(snapshot), 'EX', 300);
         return snapshot;
       }
-    } catch (err) {
-      console.warn(`Error querying bid info for ${cleanSymbol}:`, err);
+    } catch (err: any) {
+      console.warn(`[ExchangeIngestion] Bid telemetry query notice for ${cleanSymbol}:`, err?.message || 'offline');
     }
 
     // 3. Fallback to known market benchmarks or baseline model

@@ -103,7 +103,8 @@ export class MarketChartService {
             'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
           },
-          next: { revalidate: 30 },
+          signal: AbortSignal.timeout(2500),
+          cache: 'no-store',
         }
       );
 
@@ -139,11 +140,16 @@ export class MarketChartService {
           if (candles.length > 0) return candles;
         }
       }
-    } catch (fallbackErr) {
-      console.warn('Exchange gateway fallback error:', fallbackErr);
+    } catch (fallbackErr: any) {
+      console.warn('[MarketChartService] Exchange gateway fallback notice:', fallbackErr?.message || 'offline');
     }
 
-    // 3. Deterministic market candle baseline for verified tokens when live gateways timeout
+    // 3. Do not generate synthetic demo charts when exchange gateways are unreachable unless in mock mode
+    if (process.env.NODE_ENV !== 'test' && process.env.USE_MOCK_MARKET_DATA !== 'true') {
+      return [];
+    }
+
+    // Deterministic market candle baseline for mock mode testing only
     const basePrice = mapping?.symbol === 'BAJAJHFL' ? 132.5 : mapping?.symbol === 'SWIGGY' ? 390 : 100;
     const now = Date.now();
     const fallbackCandles: CandleData[] = [];

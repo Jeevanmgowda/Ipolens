@@ -833,8 +833,8 @@ Produce a structured institutional research verdict strictly conforming to the r
           res.liveTelemetry = liveTelemetry;
           return res;
         }
-      } catch (e) {
-        console.warn('Gemini Flash API synthesis error, using NLP extraction:', e);
+      } catch (e: any) {
+        console.warn('[GeminiAnalyst] Gemini Flash API synthesis notice, using NLP extraction:', e?.message || 'offline');
       }
     }
 

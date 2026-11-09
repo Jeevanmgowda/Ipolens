@@ -81,7 +81,9 @@ export class IpoAggregatorService {
       const nseList = await fetchLiveNseIpos();
       nseIpos = nseList
         .filter((i) => {
-          if (status === 'listed') return Boolean(i.isListed);
+          const isListed = Boolean(i.isListed || i.status === 'Listed');
+          if (status === 'listed') return isListed;
+          if (isListed) return false;
           const isClosed = i.status === 'Closed' || i.remainingTime === 'Bidding Closed';
           if (isClosed) return status === 'closed';
           const s = i.status === 'Active' ? 'open' : 'upcoming';

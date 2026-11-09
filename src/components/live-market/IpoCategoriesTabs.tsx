@@ -36,7 +36,8 @@ interface IpoCategoriesTabsProps {
 }
 
 export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
-  if (ipo.status === 'Listed') return 'listed';
+  // The IPO API has already resolved listing dates and registry matches on the server.
+  if (ipo.status === 'Listed' || (ipo.remainingTime || '').toLowerCase().includes('listed')) return 'listed';
   const rem = (ipo.remainingTime || '').toLowerCase();
   if (rem.includes('bidding closed') || rem.includes('closed') || ipo.status === 'Closed') {
     return 'closed';

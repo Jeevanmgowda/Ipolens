@@ -467,9 +467,11 @@ export class UpstoxIpoService {
 
       const mapped: Partial<UnifiedIPO>[] = liveList
         .filter((item) => {
+          const isListed = Boolean(item.isListed || item.status === 'Listed');
           if (status === 'listed') {
-            return Boolean(item.isListed);
+            return isListed;
           }
+          if (isListed) return false;
           const isClosed = item.status === 'Closed' || item.remainingTime === 'Bidding Closed';
           if (isClosed) return status === 'closed';
           const itemStatus = item.status === 'Active' ? 'open' : 'upcoming';
@@ -521,10 +523,12 @@ export class UpstoxIpoService {
           }));
           return issueType ? listedMapped.filter((i) => i.issueType === issueType) : listedMapped;
         } else {
-          const { MARKET_IPO_REGISTRY } = await import('@/services/nseIpoService');
+          const { MARKET_IPO_REGISTRY, isListingDatePast, isBiddingClosed, isBiddingStarted } = await import('@/services/nseIpoService');
           const regMapped: Partial<UnifiedIPO>[] = MARKET_IPO_REGISTRY.map((m) => {
-            const isClosed = m.closeDate ? new Date(m.closeDate).getTime() < Date.now() : false;
-            const itemStatus: 'upcoming' | 'open' | 'closed' | 'listed' = isClosed ? 'closed' : (new Date(m.openDate).getTime() <= Date.now() ? 'open' : 'upcoming');
+            const isListed = isListingDatePast(m.listingDate);
+            const isClosed = isBiddingClosed(m.closeDate);
+            const itemStatus: 'upcoming' | 'open' | 'closed' | 'listed' =
+              isListed ? 'listed' : isClosed ? 'closed' : isBiddingStarted(m.openDate) ? 'open' : 'upcoming';
             return {
               id: `${m.symbol.toLowerCase()}-ipo`,
               symbol: m.symbol.toUpperCase(),

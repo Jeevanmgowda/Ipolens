@@ -450,9 +450,16 @@ export const LiveIpoChartModal: React.FC<LiveIpoChartModalProps> = ({
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="text-center p-12 text-slate-400 text-xs space-y-2">
-                    <p className="font-semibold text-slate-300">Primary Market Issue</p>
-                    <p>Exchange tick points will stream here once listed on secondary market. Switch to TradingView Live above to view the NIFTY 50 benchmark.</p>
+                  <div className="h-[420px] flex flex-col items-center justify-center text-center p-6 gap-3">
+                    <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-slate-400">
+                      <BarChart2 className="w-8 h-8 text-slate-500" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-slate-300">Exchange Chart Unavailable</p>
+                      <p className="text-xs text-slate-500 max-w-sm">
+                        Live historical candles for {cleanSymbol} are not currently published by the exchange feed. Switch to TradingView Live above to view the market benchmark.
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

@@ -281,7 +281,8 @@ export class YahooFinanceProvider implements MarketDataProvider {
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json',
           },
-          next: { revalidate: 10 },
+          signal: AbortSignal.timeout(2500),
+          cache: 'no-store',
         }
       );
 
@@ -344,7 +345,8 @@ export class YahooFinanceProvider implements MarketDataProvider {
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json',
           },
-          next: { revalidate: 30 },
+          signal: AbortSignal.timeout(2500),
+          cache: 'no-store',
         }
       );
 

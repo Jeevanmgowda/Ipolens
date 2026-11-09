@@ -41,6 +41,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # agents & local tooling
 .claude/
 

@@ -5,7 +5,7 @@ import {
   GmpTrendResponse,
   MarketAlertItem,
 } from '@/types/liveMarket';
-import { IPODataProvider, NSEIPOProvider, MockIPOProvider } from './ipoDataProvider';
+import { IPODataProvider, NSEIPOProvider, MockIPOProvider, isIpoListed } from './ipoDataProvider';
 import { MarketService } from './marketService';
 import { GmpService } from './gmpService';
 import { SubscriptionService } from './subscriptionService';
@@ -34,10 +34,10 @@ export class IpoService {
     const all = await provider.getAllIpos();
     this.latestIposCache = all;
 
-    const upcoming = all.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
-    const open = all.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
-    const closingSoon = all.filter((i) => i.status === 'Open' && i.isClosingSoon && i.remainingTime !== 'Bidding Closed');
-    const listed = all.filter((i) => i.status === 'Listed');
+    const listed = all.filter((i) => isIpoListed(i));
+    const upcoming = all.filter((i) => !isIpoListed(i) && i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
+    const open = all.filter((i) => !isIpoListed(i) && i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
+    const closingSoon = all.filter((i) => !isIpoListed(i) && i.status === 'Open' && i.isClosingSoon && i.remainingTime !== 'Bidding Closed');
 
     // Top Gainer among listed IPOs
     const validGainers = listed.filter((i) => i.currentPrice && i.dayChangePercent !== undefined);

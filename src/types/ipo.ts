@@ -73,6 +73,8 @@ export interface LiveIpoSummary {
   registrarUrl?: string;
   isListed?: boolean;
   listingPrice?: string;
+  listingDate?: string;
+  expectedListingDate?: string;
 }
 
 export interface BidCategoryDetail {

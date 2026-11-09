@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { db, isPostgresConfigured, schema } from '@/db';
+import { db, isDatabaseActive, reportDatabaseFailure, schema } from '@/db';
 import { eq, and, gt } from 'drizzle-orm';
 import { registeredUsersStore } from '@/services/authStore';
 import { User } from '@/types/auth';
@@ -36,7 +36,7 @@ export async function createSession(
   const createdAt = new Date();
 
   // Save to PostgreSQL if configured
-  if (isPostgresConfigured && db) {
+  if (isDatabaseActive() && db) {
     try {
       await db.insert(schema.sessionsTable).values({
         id: token,
@@ -45,7 +45,7 @@ export async function createSession(
         createdAt,
       });
     } catch (err) {
-      console.warn('[Session] Warning saving session to DB, using cache:', err);
+      reportDatabaseFailure('saving session to DB', err);
     }
   }
 
@@ -78,7 +78,7 @@ export async function validateSession(token: string): Promise<string | null> {
   }
 
   // Check database if configured
-  if (isPostgresConfigured && db) {
+  if (isDatabaseActive() && db) {
     try {
       const rows = await db
         .select()
@@ -103,7 +103,7 @@ export async function validateSession(token: string): Promise<string | null> {
         return row.userId;
       }
     } catch (err) {
-      console.warn('[Session] Warning querying session from DB:', err);
+      reportDatabaseFailure('querying session from DB', err);
     }
   }
 
@@ -118,7 +118,7 @@ export async function validateSession(token: string): Promise<string | null> {
         if (inStore) return simulatedUserId;
 
         // Or verify against PostgreSQL usersTable if active
-        if (isPostgresConfigured && db) {
+        if (isDatabaseActive() && db) {
           try {
             const rows = await db
               .select({ id: schema.usersTable.id })
@@ -126,8 +126,8 @@ export async function validateSession(token: string): Promise<string | null> {
               .where(eq(schema.usersTable.id, simulatedUserId))
               .limit(1);
             if (rows.length > 0) return rows[0].id;
-          } catch {
-            // DB query failed or user does not exist
+          } catch (err) {
+            reportDatabaseFailure('verifying user from DB', err);
           }
         }
       }
@@ -144,12 +144,12 @@ export async function validateSession(token: string): Promise<string | null> {
 export async function destroySession(token: string): Promise<boolean> {
   inMemorySessions.delete(token);
 
-  if (isPostgresConfigured && db) {
+  if (isDatabaseActive() && db) {
     try {
       await db.delete(schema.sessionsTable).where(eq(schema.sessionsTable.id, token));
       return true;
     } catch (err) {
-      console.warn('[Session] Error deleting session from DB:', err);
+      reportDatabaseFailure('deleting session from DB', err);
     }
   }
   return true;
@@ -193,7 +193,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
     return safeUser as User;
   }
 
-  if (isPostgresConfigured && db) {
+  if (isDatabaseActive() && db) {
     try {
       const rows = await db
         .select()
@@ -215,7 +215,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
         };
       }
     } catch (err) {
-      console.warn('[Session] Error querying user profile from DB:', err);
+      reportDatabaseFailure('querying user profile from DB', err);
     }
   }
 

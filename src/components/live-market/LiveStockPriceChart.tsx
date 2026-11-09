@@ -160,6 +160,22 @@ const CandlestickView: React.FC<CandlestickViewProps> = ({ candles, quote, timef
     setMousePos(null);
   };
 
+  if (displayCandles.length === 0) {
+    return (
+      <div className="h-96 flex flex-col items-center justify-center gap-3 text-center p-6">
+        <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-slate-400">
+          <BarChart2 className="w-8 h-8 text-slate-500" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-slate-300">Exchange Chart Unavailable</p>
+          <p className="text-xs text-slate-500 max-w-sm">
+            Live historical candlestick data is not currently published by the exchange feed.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={containerRef} className="relative w-full select-none">
       {/* Real-time floating HUD inspection panel */}
@@ -721,6 +737,18 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
           <div className="h-96 flex flex-col items-center justify-center gap-2.5">
             <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
             <span className="text-xs text-slate-400 font-mono">Fetching live Upstox NSE exchange candles...</span>
+          </div>
+        ) : candles.length === 0 ? (
+          <div className="h-96 flex flex-col items-center justify-center gap-3 text-center p-6">
+            <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-slate-400">
+              <BarChart2 className="w-8 h-8 text-slate-500" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-slate-300">Exchange Chart Unavailable</p>
+              <p className="text-xs text-slate-500 max-w-sm">
+                Live historical candlestick data for {cleanSymbol} is not currently published by the exchange feed.
+              </p>
+            </div>
           </div>
         ) : chartType === 'candle' ? (
           /* Upstox Real-Time Candlestick + Volume Chart */

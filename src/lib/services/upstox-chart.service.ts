@@ -132,6 +132,8 @@ export class UpstoxChartService {
           'Accept': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
+        signal: AbortSignal.timeout(3000),
+        cache: 'no-store',
       });
 
       if (!res.ok) {
@@ -143,6 +145,8 @@ export class UpstoxChartService {
               'Accept': 'application/json',
               'Authorization': `Bearer ${token}`,
             },
+            signal: AbortSignal.timeout(3000),
+            cache: 'no-store',
           });
           if (retryRes.ok) {
             const retryJson = await retryRes.json();
@@ -257,13 +261,15 @@ export class UpstoxChartService {
             'Accept': 'application/json',
           },
           signal: AbortSignal.timeout(3000),
-          next: { revalidate: 30 },
+          cache: 'no-store',
         }
       );
 
       if (!res.ok) {
         console.warn(`[UpstoxChartService] Yahoo Finance returned HTTP ${res.status} for ${ticker}`);
-        return this.buildFallbackCandles(symbol, interval);
+        return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
+          ? this.buildFallbackCandles(symbol, interval)
+          : [];
       }
 
       const json = await res.json();
@@ -303,10 +309,14 @@ export class UpstoxChartService {
       }
 
       if (candles.length > 0) return candles;
-      return this.buildFallbackCandles(symbol, interval);
+      return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
+        ? this.buildFallbackCandles(symbol, interval)
+        : [];
     } catch (err: any) {
       console.warn(`[UpstoxChartService] Yahoo Finance candle fetch error for ${ticker}:`, err.message);
-      return this.buildFallbackCandles(symbol, interval);
+      return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
+        ? this.buildFallbackCandles(symbol, interval)
+        : [];
     }
   }
 

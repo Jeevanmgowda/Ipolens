@@ -1,4 +1,4 @@
-import { db, isPostgresConfigured, schema } from '@/db';
+import { db, isPostgresConfigured, isDatabaseActive, reportDatabaseFailure, schema } from '@/db';
 import { eq, desc, and } from 'drizzle-orm';
 import { FamilyPanProfile, IpoApplication } from '@/types/pan';
 import { HoldingItem } from '@/types/portfolio';
@@ -19,12 +19,16 @@ const inMemoryNotifications = new Map<string, Array<any>>();
 // Memory holdings fallback with per-user isolation
 const inMemoryHoldings = new Map<string, HoldingItem[]>();
 
+function handleDbError(operation: string, err: any): void {
+  reportDatabaseFailure(operation, err);
+}
+
 export class DbRepositoryService {
   /**
    * Status check for PostgreSQL persistence
    */
   static isDatabaseActive(): boolean {
-    return isPostgresConfigured && db !== null;
+    return isDatabaseActive();
   }
 
   // ==========================================
@@ -51,7 +55,7 @@ export class DbRepositoryService {
           createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
         }));
       } catch (err) {
-        console.warn('[DB Repository] Error querying family_pans, falling back to memory store:', err);
+        handleDbError('querying family_pans', err);
       }
     }
 
@@ -87,7 +91,7 @@ export class DbRepositoryService {
           createdAt: new Date(secureProfile.createdAt || Date.now()),
         });
       } catch (err) {
-        console.warn('[DB Repository] Error inserting family_pan, synced to memory store:', err);
+        handleDbError('inserting family_pan', err);
       }
     }
 
@@ -114,7 +118,7 @@ export class DbRepositoryService {
           await db.delete(schema.familyPansTable).where(eq(schema.familyPansTable.id, id));
         }
       } catch (err) {
-        console.warn('[DB Repository] Error deleting family_pan from DB:', err);
+        handleDbError('deleting family_pan', err);
       }
     }
 
@@ -166,7 +170,7 @@ export class DbRepositoryService {
           appliedAt: r.appliedAt ? r.appliedAt.toISOString() : new Date().toISOString(),
         }));
       } catch (err) {
-        console.warn('[DB Repository] Error querying ipo_applications, falling back to memory store:', err);
+        handleDbError('querying ipo_applications', err);
       }
     }
 
@@ -199,7 +203,7 @@ export class DbRepositoryService {
           appliedAt: new Date(app.appliedAt || Date.now()),
         });
       } catch (err) {
-        console.warn('[DB Repository] Error inserting ipo_application:', err);
+        handleDbError('inserting ipo_application', err);
       }
     }
 
@@ -229,7 +233,7 @@ export class DbRepositoryService {
           })
           .where(eq(schema.ipoApplicationsTable.id, id));
       } catch (err) {
-        console.warn('[DB Repository] Error updating ipo_application in DB:', err);
+        handleDbError('updating ipo_application status', err);
       }
     }
 
@@ -279,7 +283,7 @@ export class DbRepositoryService {
           });
         }
       } catch (err) {
-        console.warn('[DB Repository] Error querying portfolio_holdings, falling back to memory store:', err);
+        handleDbError('querying portfolio_holdings', err);
       }
     }
 
@@ -316,7 +320,7 @@ export class DbRepositoryService {
             });
         }
       } catch (err) {
-        console.warn('[DB Repository] Error saving holdings to DB:', err);
+        handleDbError('saving holdings to DB', err);
       }
     }
 
@@ -343,7 +347,7 @@ export class DbRepositoryService {
             )
           );
       } catch (err) {
-        console.warn('[DB Repository] Error deleting holding from DB:', err);
+        handleDbError('deleting holding from DB', err);
       }
     }
 
@@ -364,7 +368,7 @@ export class DbRepositoryService {
           .delete(schema.portfolioHoldingsTable)
           .where(eq(schema.portfolioHoldingsTable.userId, userId));
       } catch (err) {
-        console.warn('[DB Repository] Error clearing holdings from DB:', err);
+        handleDbError('clearing holdings from DB', err);
       }
     }
 
@@ -391,7 +395,7 @@ export class DbRepositoryService {
         });
         return true;
       } catch (err) {
-        console.warn('[DB Repository] Error caching exchange snapshot to DB:', err);
+        handleDbError('caching exchange snapshot', err);
       }
     }
     return false;
@@ -419,7 +423,7 @@ export class DbRepositoryService {
           return rows[0].data;
         }
       } catch (err) {
-        console.warn('[DB Repository] Error reading exchange snapshot from DB:', err);
+        handleDbError('reading exchange snapshot', err);
       }
     }
     return null;
@@ -452,7 +456,7 @@ export class DbRepositoryService {
         });
         return true;
       } catch (err) {
-        console.warn('[DB Repository] Error persisting subscription telemetry:', err);
+        handleDbError('persisting subscription telemetry', err);
       }
     }
     return false;
@@ -477,7 +481,7 @@ export class DbRepositoryService {
         });
         return true;
       } catch (err) {
-        console.warn('[DB Repository] Error persisting GMP history:', err);
+        handleDbError('persisting GMP history', err);
       }
     }
     return false;
@@ -532,7 +536,7 @@ export class DbRepositoryService {
           });
         return true;
       } catch (err) {
-        console.warn('[DB Repository] Error saving market quote:', err);
+        handleDbError('saving market quote', err);
       }
     }
     return false;
@@ -565,7 +569,7 @@ export class DbRepositoryService {
         await db.insert(schema.marketOhlcTable).values(values);
         return true;
       } catch (err) {
-        console.warn('[DB Repository] Error persisting OHLC candles:', err);
+        handleDbError('persisting OHLC candles', err);
       }
     }
     return false;
@@ -586,7 +590,7 @@ export class DbRepositoryService {
 
         return rows.map((r) => r.symbol);
       } catch (err) {
-        console.warn('[DB Repository] Error querying watchlist:', err);
+        handleDbError('querying watchlist', err);
       }
     }
 
@@ -638,7 +642,7 @@ export class DbRepositoryService {
           return { watchlisted: true, symbol: sym };
         }
       } catch (err) {
-        console.warn('[DB Repository] Error toggling watchlist in DB:', err);
+        handleDbError('toggling watchlist in DB', err);
       }
     }
 
@@ -675,7 +679,7 @@ export class DbRepositoryService {
           .orderBy(desc(schema.notificationsTable.createdAt))
           .limit(50);
       } catch (err) {
-        console.warn('[DB Repository] Error reading notifications:', err);
+        handleDbError('reading notifications', err);
       }
     }
 
@@ -737,7 +741,7 @@ export class DbRepositoryService {
       try {
         await db.insert(schema.notificationsTable).values(notif as any);
       } catch (err) {
-        console.warn('[DB Repository] Error inserting notification to DB:', err);
+        handleDbError('inserting notification to DB', err);
       }
     }
 
@@ -755,7 +759,7 @@ export class DbRepositoryService {
           .set({ read: true })
           .where(and(eq(schema.notificationsTable.id, id), eq(schema.notificationsTable.userId, userId)));
       } catch (err) {
-        console.warn('[DB Repository] Error marking notification read:', err);
+        handleDbError('marking notification read', err);
       }
     }
 
@@ -781,7 +785,7 @@ export class DbRepositoryService {
         await db.delete(schema.notificationsTable).where(eq(schema.notificationsTable.userId, userId));
         await db.delete(schema.sessionsTable).where(eq(schema.sessionsTable.userId, userId));
       } catch (err) {
-        console.warn('[DB Repository] Error purging user data from DB:', err);
+        handleDbError('purging user data from DB', err);
       }
     }
 

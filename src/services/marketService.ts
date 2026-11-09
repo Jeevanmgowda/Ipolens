@@ -88,8 +88,11 @@ export class MarketService {
       const provider = this.getProvider();
       return await provider.getOhlc(clean, timeframe);
     } catch (err: any) {
-      console.warn(`[MarketService] Provider OHLC error for ${clean}, using mock generator:`, err.message);
-      return this.mockProvider.getOhlc(clean, timeframe);
+      if (this.isMockMode()) {
+        return this.mockProvider.getOhlc(clean, timeframe);
+      }
+      console.warn(`[MarketService] Provider OHLC error for ${clean}, chart unavailable:`, err.message);
+      return [];
     }
   }
 }

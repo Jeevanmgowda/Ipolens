@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
     const accessToken = data.access_token;
     const userName = data.user_name || data.user_id || 'Upstox Trader';
     const userId = data.user_id || 'N/A';
+    const maskedToken = accessToken ? `${accessToken.substring(0, 8)}...••••••••...${accessToken.slice(-4)}` : '••••••••';
 
     // Auto-update .env.local if running in local environment
     let envSaved = false;
@@ -148,11 +149,10 @@ export async function GET(req: NextRequest) {
             </div>
           </div>
 
-          <label style="font-size: 12px; color: #94a3b8; font-weight: 500; display: block; margin-bottom: 6px;">Generated Access Token:</label>
-          <div class="token-box" id="tokenBox">${accessToken}</div>
+          <label style="font-size: 12px; color: #94a3b8; font-weight: 500; display: block; margin-bottom: 6px;">Generated Access Token Status:</label>
+          <div class="token-box" id="tokenBox">${maskedToken}</div>
 
           <div class="btn-group">
-            <button class="btn" onclick="copyToken()">📋 Copy Token</button>
             <a href="/" class="btn" style="background: #10b981;">🚀 Go to Live IPO Radar</a>
           </div>
 

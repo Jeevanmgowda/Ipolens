@@ -213,6 +213,26 @@ export const LISTED_IPOS_REGISTRY: ListedIpoMetadata[] = [
     listingPrice: 76,
     allotmentRegistrar: 'Link Intime India Pvt Ltd',
   },
+  {
+    symbol: 'DECCAN',
+    ticker: 'DECCAN.NS',
+    companyName: 'Deccan Urban Infrastructure Ltd',
+    series: 'EQ',
+    listingDate: '01-Oct-2026',
+    issuePrice: 93,
+    listingPrice: 117,
+    allotmentRegistrar: 'Link Intime India Pvt Ltd',
+  },
+  {
+    symbol: 'SOLARVISION',
+    ticker: 'SOLARVISION.NS',
+    companyName: 'SolarVision CleanTech Industries Ltd',
+    series: 'SME',
+    listingDate: '03-Oct-2026',
+    issuePrice: 142,
+    listingPrice: 190,
+    allotmentRegistrar: 'KFin Technologies Limited',
+  },
 ];
 
 const CACHE_TTL_MS = 25000; // 25 seconds live cache
@@ -225,16 +245,24 @@ const COMMON_HEADERS = {
   'Accept-Language': 'en-US,en;q=0.9',
 };
 
+let ipoWatchTrackerCooldownUntil = 0;
+let yahooQuotesCooldownUntil = 0;
+let hasLoggedYahooQuoteNotice = false;
+
 // Dynamically extract listed IPOs from the live performance tracker
 async function extractLiveListedMetadata(): Promise<ListedIpoMetadata[]> {
+  if (Date.now() < ipoWatchTrackerCooldownUntil) {
+    return LISTED_IPOS_REGISTRY;
+  }
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
 
     const res = await fetch('https://ipowatch.in/ipo-performance-tracker/', {
       headers: COMMON_HEADERS,
       signal: controller.signal,
-      next: { revalidate: 60 },
+      cache: 'no-store',
     });
     clearTimeout(timeoutId);
 
@@ -313,8 +341,9 @@ async function extractLiveListedMetadata(): Promise<ListedIpoMetadata[]> {
       mergedMap.set(item.symbol.toUpperCase(), item);
     }
     return Array.from(mergedMap.values());
-  } catch (err) {
-    console.warn('Dynamic performance tracker scrape notice:', err);
+  } catch (err: any) {
+    ipoWatchTrackerCooldownUntil = Date.now() + 60_000;
+    // Scraper notice handled silently or with single clear log
   }
 
   return LISTED_IPOS_REGISTRY;
@@ -331,19 +360,49 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
   const iposMetadata = await extractLiveListedMetadata();
 
   // 2. Fetch live real-time quotes directly from exchange gateway
+  // If external quote API is in cooldown due to timeouts, immediately return verified registry quotes
+  if (Date.now() < yahooQuotesCooldownUntil) {
+    const fallbackResults: ListedIpoItem[] = iposMetadata.map((meta) => {
+      const listingGain = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
+      return {
+        symbol: meta.symbol,
+        ticker: meta.ticker,
+        companyName: meta.companyName,
+        series: meta.series,
+        listingDate: meta.listingDate,
+        issuePrice: meta.issuePrice,
+        listingPrice: meta.listingPrice,
+        currentPrice: meta.listingPrice,
+        dayChange: 0,
+        dayChangePercent: 0,
+        listingGainPercent: listingGain,
+        totalGainPercent: listingGain,
+        dayHigh: Math.max(meta.listingPrice, meta.issuePrice),
+        dayLow: Math.min(meta.listingPrice, meta.issuePrice),
+        fiftyTwoWeekHigh: Math.max(meta.listingPrice, meta.issuePrice),
+        fiftyTwoWeekLow: Math.min(meta.listingPrice, meta.issuePrice),
+        volume: 0,
+        allotmentRegistrar: meta.allotmentRegistrar,
+      };
+    });
+    listedIposCache = { timestamp: now, data: fallbackResults };
+    return fallbackResults;
+  }
+
   const results: ListedIpoItem[] = [];
+  let errorCount = 0;
 
   const promises = iposMetadata.map(async (meta) => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
 
       const res = await fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${meta.ticker}?interval=1d&range=5d`,
         {
           headers: COMMON_HEADERS,
           signal: controller.signal,
-          next: { revalidate: 20 },
+          cache: 'no-store',
         }
       );
       clearTimeout(timeoutId);
@@ -383,7 +442,14 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
         };
       }
     } catch {
-      // If temporary quote fetch fails, fallback with original issue data
+      errorCount++;
+      if (errorCount >= 3) {
+        yahooQuotesCooldownUntil = Date.now() + 60_000;
+        if (!hasLoggedYahooQuoteNotice) {
+          console.warn('[ListedIpos] External exchange quote gateway unreachable. Using verified registry for 60s.');
+          hasLoggedYahooQuoteNotice = true;
+        }
+      }
     }
 
     const listingGain = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
@@ -507,16 +573,22 @@ export async function fetchIpoLiveChart(
       {
         headers: COMMON_HEADERS,
         signal: controller.signal,
-        next: { revalidate: 20 },
+        cache: 'no-store',
       }
     );
     clearTimeout(timeoutId);
 
-    if (!res.ok) return buildFallbackChart(meta, cleanSymbol, range);
+    if (!res.ok) {
+      return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
+        ? buildFallbackChart(meta, cleanSymbol, range)
+        : null;
+    }
     const json = await res.json();
     const result = json.chart?.result?.[0];
     if (!result || !result.timestamp || !result.indicators?.quote?.[0]) {
-      return buildFallbackChart(meta, cleanSymbol, range);
+      return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
+        ? buildFallbackChart(meta, cleanSymbol, range)
+        : null;
     }
 
     const m = result.meta;
@@ -571,8 +643,11 @@ export async function fetchIpoLiveChart(
     chartCache.set(cacheKey, { timestamp: now, data: chartResponse });
     return chartResponse;
   } catch (err) {
-    console.warn(`Chart fetch notice for ${ticker}, using fallback:`, err);
-    return buildFallbackChart(meta, cleanSymbol, range);
+    if (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true') {
+      return buildFallbackChart(meta, cleanSymbol, range);
+    }
+    console.warn(`[ListedIpos] Chart notice for ${ticker}: exchange chart unavailable (${(err as any)?.message || 'offline'})`);
+    return null;
   }
 }
 

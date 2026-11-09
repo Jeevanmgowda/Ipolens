@@ -1,8 +1,52 @@
 import { LiveMarketIpoItem } from '@/types/liveMarket';
-import { fetchLiveNseIpos, calculateRemainingTime, isBiddingClosed } from './nseIpoService';
+import {
+  fetchLiveNseIpos,
+  calculateRemainingTime,
+  isBiddingClosed,
+  isListingDatePast,
+  findMarketMetadata,
+} from './nseIpoService';
 import { fetchLiveListedIpos, LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { UpstoxIpoService } from '@/lib/services/upstox-ipo.service';
+
+/**
+ * Universal evaluator to determine if an IPO is officially listed on the secondary market.
+ * Moves IPOs whose listing dates have arrived or passed from closed/past into the listed category.
+ */
+export function isIpoListed(ipo: {
+  symbol?: string;
+  companyName?: string;
+  status?: string;
+  isListed?: boolean;
+  listingDate?: string;
+  expectedListingDate?: string;
+  remainingTime?: string;
+  listingPrice?: number | string;
+  currentPrice?: number;
+  dayChange?: number;
+}): boolean {
+  if (ipo.status === 'Listed' || ipo.isListed === true) return true;
+  const rem = (ipo.remainingTime || '').toLowerCase();
+  if (rem.includes('listed')) return true;
+
+  const sym = (ipo.symbol || '').toUpperCase().trim();
+  if (sym && LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === sym)) {
+    return true;
+  }
+
+  // If it has actual trading price / listing price from secondary market
+  if (
+    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined) ||
+    (typeof ipo.listingPrice === 'number' && ipo.listingPrice > 0 && ipo.status !== 'Upcoming' && ipo.status !== 'Open')
+  ) {
+    if (rem.includes('listed') || (ipo.listingDate && isListingDatePast(ipo.listingDate))) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 export interface IPODataProvider {
   name: string;
@@ -152,7 +196,10 @@ export class NSEIPOProvider implements IPODataProvider {
       if (seenSymbols.has(symUpper)) continue;
       seenSymbols.add(symUpper);
 
+      const meta = findMarketMetadata(raw.symbol) || findMarketMetadata(raw.companyName);
       const isActuallyListed = Boolean(
+        raw.isListed ||
+        raw.status === 'Listed' ||
         LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
         listedRaw.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase())
       );
@@ -200,12 +247,12 @@ export class NSEIPOProvider implements IPODataProvider {
       const listedMatch = listedRaw.find((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
         LISTED_IPOS_REGISTRY.find((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase());
       const parsedListPrice = parseFloat(raw.listingPrice?.replace(/[^0-9.]/g, '') || '') || priceHigh;
-      const issuePriceVal = listedMatch?.issuePrice || priceHigh;
-      const listingPriceVal = listedMatch?.listingPrice || parsedListPrice;
-      const currentPriceVal = (listedMatch as any)?.currentPrice || listingPriceVal;
-      const dayChangeVal = (listedMatch as any)?.dayChange || 0;
-      const dayChangePercentVal = (listedMatch as any)?.dayChangePercent || 0;
-      const volumeVal = (listedMatch as any)?.volume || 0;
+      const issuePriceVal = isActuallyListed ? (listedMatch?.issuePrice || priceHigh) : priceHigh;
+      const listingPriceVal = isActuallyListed ? (listedMatch?.listingPrice || parsedListPrice) : undefined;
+      const currentPriceVal = isActuallyListed ? ((listedMatch as any)?.currentPrice || listingPriceVal) : undefined;
+      const dayChangeVal = isActuallyListed ? ((listedMatch as any)?.dayChange || 0) : undefined;
+      const dayChangePercentVal = isActuallyListed ? ((listedMatch as any)?.dayChangePercent || 0) : undefined;
+      const volumeVal = isActuallyListed ? ((listedMatch as any)?.volume || 0) : undefined;
 
       const isDebt = raw.series === 'DEBT';
       const gmp = isDebt ? 0 : (raw.gmpEstimate || 0);
@@ -240,8 +287,8 @@ export class NSEIPOProvider implements IPODataProvider {
         openDate: raw.issueStartDate || 'TBD',
         closeDate: raw.issueEndDate || 'TBD',
         allotmentDate: isActuallyListed ? 'Allotted' : (raw.issueEndDate || 'TBD'),
-        listingDate: isActuallyListed ? (listedMatch?.listingDate || 'Listed on Exchange') : 'TBD',
-        expectedListingDate: raw.issueEndDate ? 'T+3 Trading Days' : 'TBD',
+        listingDate: isActuallyListed ? (listedMatch?.listingDate || meta?.listingDate || 'Listed on Exchange') : (meta?.listingDate || 'TBD'),
+        expectedListingDate: isActuallyListed ? 'Listed on Exchange' : (meta?.listingDate || (raw.issueEndDate ? 'T+3 Trading Days' : 'TBD')),
         registrar: raw.registrarName || 'Link Intime India Pvt Ltd',
         registrarUrl: raw.registrarUrl,
         gmp,
@@ -320,22 +367,22 @@ export class NSEIPOProvider implements IPODataProvider {
 
   async getUpcomingIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
+    return all.filter((i) => !isIpoListed(i) && i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getOpenIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
+    return all.filter((i) => !isIpoListed(i) && i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getClosedIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Closed' || (i.status !== 'Listed' && i.remainingTime === 'Bidding Closed'));
+    return all.filter((i) => !isIpoListed(i) && (i.status === 'Closed' || i.remainingTime === 'Bidding Closed'));
   }
 
   async getListedIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Listed');
+    return all.filter((i) => isIpoListed(i));
   }
 
   async getIpoDetails(idOrSymbol: string): Promise<LiveMarketIpoItem | null> {
@@ -461,12 +508,40 @@ export class MockIPOProvider implements IPODataProvider {
       niiSubscription: 0,
       qibSubscription: 0,
     },
-    // 3. CLOSED IPOs (Bidding Closed, Awaiting Allotment & Listing)
+    // 3. CLOSED IPOs (Bidding Closed, Awaiting Allotment & Listing on Exchange)
+    {
+      id: 'sagility-india',
+      symbol: 'SAGILITY',
+      companyName: 'Sagility India Limited',
+      status: 'Closed',
+      series: 'EQ',
+      priceBand: '₹28 – ₹30',
+      priceLow: 28,
+      priceHigh: 30,
+      lotSize: 500,
+      issueSize: '₹2,106 Cr',
+      openDate: '05 Nov 2026',
+      closeDate: '07 Nov 2026',
+      allotmentDate: '10 Nov 2026',
+      listingDate: '12 Nov 2026',
+      expectedListingDate: '12 Nov 2026',
+      registrar: 'Link Intime India Pvt Ltd',
+      registrarUrl: 'https://linkintime.co.in',
+      gmp: 0.3,
+      gmpPercent: 1.0,
+      currentSubscription: 3.20,
+      retailSubscription: 4.15,
+      niiSubscription: 1.93,
+      qibSubscription: 3.52,
+      employeeSubscription: 3.75,
+      remainingTime: 'Bidding Closed',
+    },
+    // 4. LISTED IPOs (Listed on Secondary Market)
     {
       id: 'deccan-infra',
       symbol: 'DECCAN',
       companyName: 'Deccan Urban Infrastructure Ltd',
-      status: 'Closed',
+      status: 'Listed',
       series: 'EQ',
       priceBand: '₹88 – ₹93',
       priceLow: 88,
@@ -477,8 +552,15 @@ export class MockIPOProvider implements IPODataProvider {
       closeDate: '24 Sep 2026',
       allotmentDate: '27 Sep 2026',
       listingDate: '01 Oct 2026',
+      expectedListingDate: '01 Oct 2026',
       registrar: 'Link Intime India Pvt Ltd',
       registrarUrl: 'https://linkintime.co.in',
+      issuePrice: 93,
+      listingPrice: 117,
+      currentPrice: 124.50,
+      dayChange: 7.50,
+      dayChangePercent: 6.41,
+      volume: 480000,
       gmp: 24,
       gmpPercent: 25.80,
       currentSubscription: 38.45,
@@ -486,12 +568,14 @@ export class MockIPOProvider implements IPODataProvider {
       niiSubscription: 42.10,
       qibSubscription: 54.80,
       employeeSubscription: 2.10,
+      remainingTime: 'Listed on Exchange',
+      marketStatus: 'OPEN',
     },
     {
       id: 'solarvision-tech',
       symbol: 'SOLARVISION',
       companyName: 'SolarVision CleanTech Industries Ltd',
-      status: 'Closed',
+      status: 'Listed',
       series: 'SME',
       priceBand: '₹135 – ₹142',
       priceLow: 135,
@@ -502,8 +586,15 @@ export class MockIPOProvider implements IPODataProvider {
       closeDate: '25 Sep 2026',
       allotmentDate: '28 Sep 2026',
       listingDate: '03 Oct 2026',
+      expectedListingDate: '03 Oct 2026',
       registrar: 'KFin Technologies Limited',
       registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
+      issuePrice: 142,
+      listingPrice: 190,
+      currentPrice: 198.20,
+      dayChange: 8.20,
+      dayChangePercent: 4.32,
+      volume: 210000,
       gmp: 48,
       gmpPercent: 33.80,
       currentSubscription: 52.10,
@@ -511,8 +602,9 @@ export class MockIPOProvider implements IPODataProvider {
       niiSubscription: 64.20,
       qibSubscription: 60.50,
       employeeSubscription: 4.20,
+      remainingTime: 'Listed on Exchange',
+      marketStatus: 'OPEN',
     },
-    // 4. LISTED IPOs
     {
       id: 'waaree-energies',
       symbol: 'WAAREE',
@@ -727,7 +819,13 @@ export class MockIPOProvider implements IPODataProvider {
 
   async getAllIpos(): Promise<LiveMarketIpoItem[]> {
     return this.mockIpos.map((ipo) => {
-      if (ipo.status === 'Listed') return ipo;
+      if (isIpoListed(ipo)) {
+        return {
+          ...ipo,
+          status: 'Listed' as const,
+          remainingTime: 'Listed on Exchange',
+        };
+      }
       const isClosed = isBiddingClosed(ipo.closeDate) || ipo.remainingTime === 'Bidding Closed';
       if (isClosed) {
         return {
@@ -742,22 +840,22 @@ export class MockIPOProvider implements IPODataProvider {
 
   async getUpcomingIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
+    return all.filter((i) => !isIpoListed(i) && i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getOpenIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
+    return all.filter((i) => !isIpoListed(i) && i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
   }
 
   async getClosedIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Closed' || (i.status !== 'Listed' && i.remainingTime === 'Bidding Closed'));
+    return all.filter((i) => !isIpoListed(i) && (i.status === 'Closed' || i.remainingTime === 'Bidding Closed'));
   }
 
   async getListedIpos(): Promise<LiveMarketIpoItem[]> {
     const all = await this.getAllIpos();
-    return all.filter((i) => i.status === 'Listed');
+    return all.filter((i) => isIpoListed(i));
   }
 
   async getIpoDetails(idOrSymbol: string): Promise<LiveMarketIpoItem | null> {

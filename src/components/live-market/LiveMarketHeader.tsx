@@ -36,14 +36,6 @@ export const LiveMarketHeader: React.FC<LiveMarketHeaderProps> = ({
 }) => {
   const [showAlertsDropdown, setShowAlertsDropdown] = useState<boolean>(false);
   const [alertList, setAlertList] = useState<MarketAlertItem[]>(alerts);
-  const [upstoxStatus, setUpstoxStatus] = useState<{ configured: boolean; valid: boolean; user?: string } | null>(null);
-
-  useEffect(() => {
-    fetch('/api/auth/upstox/status')
-      .then((r) => r.json())
-      .then((d) => setUpstoxStatus(d))
-      .catch(() => setUpstoxStatus(null));
-  }, [lastUpdated]);
 
   const unreadCount = alertList.filter((a) => !a.read).length;
 
@@ -109,27 +101,6 @@ export const LiveMarketHeader: React.FC<LiveMarketHeaderProps> = ({
             <Clock className="w-3.5 h-3.5 text-cyan-400" />
             <span>Last updated:</span>
             <span className="text-slate-200 font-bold">{lastUpdated || 'Just now'}</span>
-          </div>
-
-          {/* Data Feed Telemetry Indicator */}
-          <div
-            title={
-              upstoxStatus?.valid
-                ? `Upstox Direct Token Active (${upstoxStatus.user || 'Trader'}).`
-                : 'Live Exchange Feed active (NSE/BSE Public Telemetry). Upstox token optional.'
-            }
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-              upstoxStatus?.valid
-                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
-                : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/25'
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                upstoxStatus?.valid ? 'bg-emerald-400' : 'bg-cyan-400 animate-pulse'
-              }`}
-            />
-            <span>{upstoxStatus?.valid ? 'Upstox Token Feed' : 'NSE Live Feed'}</span>
           </div>
 
           {/* Sync Refresh Button */}

@@ -170,7 +170,39 @@ Drizzle ORM schema has been extended in `src/db/schema.ts` with:
 
 ---
 
-### 11. Troubleshooting
+### 11. Multi-Exchange Python Scraper Pipeline
+
+The application includes an automated Python scraper pipeline under `scripts/scraper/` that merges primary market data from NSE India, BSE India, and InvestorGain GMP:
+
+```text
+  scripts/scraper/
+  ├── nse.py              # NSE official session cookie handshake & issue fetcher
+  ├── bse.py              # BSE India API fetcher (Mainboard & SME issues)
+  ├── gmp.py              # InvestorGain unofficial live GMP and subscription fetcher
+  ├── common.py           # Retry with exponential backoff & name normalization
+  ├── merge.py            # Deduplicates and compiles feeds into data/ipos.json
+  └── requirements.txt    # Python dependencies (requests)
+```
+
+#### Running the Scraper:
+- Run the full pipeline:
+  ```bash
+  npm run scrape
+  ```
+- Run individual scrapers:
+  ```bash
+  npm run scrape:nse
+  npm run scrape:bse
+  npm run scrape:gmp
+  ```
+
+#### Scraper API Endpoints:
+- `GET /api/scraper/sync` — Inspect status, record count, lifecycle distribution, and feed freshness.
+- `POST /api/scraper/sync` — Execute scraper worker on demand to generate fresh `data/ipos.json`.
+
+---
+
+### 12. Troubleshooting
 
 - **Server-Sent Events / WebSocket connection dropped:**
   The frontend chart displays `🔴 DISCONNECTED` and triggers exponential backoff reconnection. Check your network or refresh with the Sync button.

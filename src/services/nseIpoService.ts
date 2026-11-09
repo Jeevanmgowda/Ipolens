@@ -712,13 +712,31 @@ export function isBiddingStarted(openDateStr: string): boolean {
   return false;
 }
 
+// Helper to determine if an IPO listing date has arrived or passed
+export function isListingDatePast(dateStr?: string | null): boolean {
+  if (!dateStr || dateStr === 'TBD' || dateStr === '—' || dateStr === '-' || dateStr.toLowerCase().includes('t+3')) {
+    return false;
+  }
+  const lower = dateStr.toLowerCase();
+  if (lower.includes('listed') || lower.includes('past')) {
+    return true;
+  }
+  const ms = parseIpoDateMs(dateStr, false);
+  if (ms !== null && ms > 0) {
+    return Date.now() >= ms;
+  }
+  return false;
+}
+
 // Deterministically resolves the lifecycle status of any IPO based on dates
 export function resolveIpoLifecycleStatus(
   openDateStr: string,
   closeDateStr: string,
-  isExplicitListed = false
+  isExplicitListed = false,
+  listingDateStr?: string
 ): IpoStatus {
   if (isExplicitListed) return 'Listed';
+  if (listingDateStr && isListingDatePast(listingDateStr)) return 'Listed';
   if (isBiddingClosed(closeDateStr)) return 'Closed';
   if (isBiddingStarted(openDateStr)) return 'Active';
   return 'Forthcoming';
@@ -808,15 +826,20 @@ const COMMON_HEADERS = {
 
 // Cached session cookie for NSE India
 let nseCookieCache: { cookie: string; timestamp: number } | null = null;
+let nseConnectionCooldownUntil = 0;
+let ipoGmpScrapeCooldownUntil = 0;
 
 async function getOrRefreshNseCookie(): Promise<string> {
   const now = Date.now();
   if (nseCookieCache && now - nseCookieCache.timestamp < 10 * 60 * 1000) {
     return nseCookieCache.cookie;
   }
+  if (now < nseConnectionCooldownUntil) {
+    return nseCookieCache?.cookie || '';
+  }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
 
   try {
     const res = await fetch('https://www.nseindia.com', {
@@ -841,15 +864,20 @@ async function getOrRefreshNseCookie(): Promise<string> {
       nseCookieCache = { cookie: cookieStr, timestamp: now };
     }
     return cookieStr;
-  } catch (err) {
+  } catch {
     clearTimeout(timeoutId);
+    nseConnectionCooldownUntil = Date.now() + 60000;
     return nseCookieCache?.cookie || '';
   }
 }
 
 async function fetchNseEndpoint(url: string, cookie: string): Promise<any[]> {
+  if (Date.now() < nseConnectionCooldownUntil) {
+    return [];
+  }
+
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
 
   try {
     const res = await fetch(url, {
@@ -860,7 +888,7 @@ async function fetchNseEndpoint(url: string, cookie: string): Promise<any[]> {
         Cookie: cookie,
       },
       signal: controller.signal,
-      next: { revalidate: 20 },
+      cache: 'no-store',
     });
     clearTimeout(timeoutId);
 
@@ -869,8 +897,9 @@ async function fetchNseEndpoint(url: string, cookie: string): Promise<any[]> {
       return Array.isArray(json) ? json : [];
     }
     return [];
-  } catch (err) {
+  } catch {
     clearTimeout(timeoutId);
+    nseConnectionCooldownUntil = Date.now() + 60000;
     return [];
   }
 }
@@ -938,19 +967,25 @@ export async function extractLiveMarketFeed(): Promise<{
   if (marketFeedCache && now - marketFeedCache.timestamp < 30000) {
     return marketFeedCache.data;
   }
+  if (now < ipoGmpScrapeCooldownUntil) {
+    return marketFeedCache?.data || { activeAndUpcoming: [], closed: [] };
+  }
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
 
     const res = await fetch('https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/', {
       headers: COMMON_HEADERS,
       signal: controller.signal,
-      next: { revalidate: 30 },
+      cache: 'no-store',
     });
     clearTimeout(timeoutId);
 
-    if (!res.ok) return marketFeedCache?.data || { activeAndUpcoming: [], closed: [] };
+    if (!res.ok) {
+      ipoGmpScrapeCooldownUntil = Date.now() + 60000;
+      return marketFeedCache?.data || { activeAndUpcoming: [], closed: [] };
+    }
     const html = await res.text();
     const tables = html.match(/<table[^>]*>([\s\S]*?)<\/table>/g) || [];
 
@@ -993,7 +1028,8 @@ export async function extractLiveMarketFeed(): Promise<{
     const result = { activeAndUpcoming, closed };
     marketFeedCache = { timestamp: now, data: result };
     return result;
-  } catch (err) {
+  } catch {
+    ipoGmpScrapeCooldownUntil = Date.now() + 60000;
     return marketFeedCache?.data || { activeAndUpcoming: [], closed: [] };
   }
 }
@@ -1302,6 +1338,70 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       });
     }
 
+    // 5.5 Ingest offline/background scraped feed (scripts/scraper/merge.py -> data/ipos.json)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const path = require('path');
+      const rootFeed = path.resolve(process.cwd(), 'data', 'ipos.json');
+      const scriptFeed = path.resolve(process.cwd(), 'scripts', 'data', 'ipos.json');
+      const feedPath = fs.existsSync(rootFeed) ? rootFeed : (fs.existsSync(scriptFeed) ? scriptFeed : null);
+      if (feedPath) {
+        const rawFeed = fs.readFileSync(feedPath, 'utf-8');
+        const parsedFeed = JSON.parse(rawFeed);
+        const feedList = Array.isArray(parsedFeed.ipos) ? parsedFeed.ipos : [];
+        for (const item of feedList) {
+          const sym = item.symbol ? String(item.symbol).toUpperCase() : deriveTicker(item.companyName || '');
+          if (!sym) continue;
+          const existing = map.get(sym);
+          if (existing) {
+            if ((!existing.gmpEstimate || existing.gmpEstimate === 0) && item.gmp?.value) {
+              existing.gmpEstimate = item.gmp.value;
+              const pHigh = existing.priceHigh || 100;
+              existing.gmpPercent = item.gmp.percent || (pHigh > 0 ? Math.round(((existing.gmpEstimate || 0) / pHigh) * 100) : 0);
+            }
+            if (!existing.noOfTime && item.subscriptionTimes) {
+              existing.noOfTime = item.subscriptionTimes;
+            }
+          } else {
+            const registrar = getRegistrarInfo(sym, item.companyName || '');
+            const pBand = item.priceBand || { min: 100, max: 100 };
+            const pStr = pBand.min === pBand.max ? `₹${pBand.min}` : `₹${pBand.min} – ₹${pBand.max}`;
+            const isSme = item.platform === 'SME' || item.series === 'SME';
+            const openDate = item.openDate || '';
+            const closeDate = item.closeDate || '';
+            const status = resolveIpoLifecycleStatus(openDate, closeDate, false);
+            map.set(sym, {
+              symbol: sym,
+              companyName: item.companyName || sym,
+              series: isSme ? 'SME' : 'EQ',
+              status,
+              issueStartDate: openDate,
+              issueEndDate: closeDate,
+              listingDate: item.listingDate,
+              expectedListingDate: item.listingDate,
+              issuePrice: pStr,
+              priceBand: pStr,
+              priceLow: pBand.min,
+              priceHigh: pBand.max,
+              lotSize: String(item.lotSize || (isSme ? 1200 : 14)),
+              issueSize: item.issueSize || '',
+              noOfTime: item.subscriptionTimes || '0.00',
+              isBse: item.exchanges?.includes('BSE') ? 'Y' : 'N',
+              gmpEstimate: item.gmp?.value || 0,
+              gmpPercent: item.gmp?.percent || 0,
+              remainingTime: calculateRemainingTime(closeDate),
+              registrarName: registrar.name,
+              registrarUrl: registrar.url,
+            });
+          }
+        }
+      }
+    } catch {
+      // Disk feed enrichment optional
+    }
+
     // 6. Enrich all IPO items with listed trading status from registry
     for (const ipoItem of map.values()) {
       const sym = ipoItem.symbol.toUpperCase();
@@ -1314,6 +1414,8 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       );
       if (listed) {
         ipoItem.isListed = true;
+        ipoItem.status = 'Listed';
+        ipoItem.remainingTime = 'Listed on Exchange';
         ipoItem.listingPrice = `₹${listed.listingPrice.toLocaleString('en-IN')}`;
       } else {
         ipoItem.isListed = false;
@@ -1323,7 +1425,7 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
     // 7. Enrich and sync verified items from MARKET_IPO_REGISTRY
     for (const m of MARKET_IPO_REGISTRY) {
       const isListed = LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === m.symbol.toUpperCase());
-      const lifecycleStatus = resolveIpoLifecycleStatus(m.openDate, m.closeDate, isListed);
+      const lifecycleStatus = isListed ? 'Listed' : resolveIpoLifecycleStatus(m.openDate, m.closeDate, isListed);
       const remTime = isListed ? 'Listed on Exchange' : calculateRemainingTime(m.closeDate);
       const existing = map.get(m.symbol);
 
@@ -1347,7 +1449,15 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
         if (!existing.retailSubscription && m.retailSubscription) existing.retailSubscription = m.retailSubscription;
         if (!existing.niiSubscription && m.niiSubscription) existing.niiSubscription = m.niiSubscription;
         if (!existing.qibSubscription && m.qibSubscription) existing.qibSubscription = m.qibSubscription;
-        if (isListed) existing.isListed = true;
+        if (m.listingDate) existing.listingDate = m.listingDate;
+        if (isListed) {
+          existing.isListed = true;
+          existing.status = 'Listed';
+          existing.remainingTime = 'Listed on Exchange';
+          if (!existing.listingPrice && m.priceHigh) {
+            existing.listingPrice = `₹${(m.priceHigh + (m.gmp || 0)).toLocaleString('en-IN')}`;
+          }
+        }
       } else {
         map.set(m.symbol, {
           symbol: m.symbol,
@@ -1356,6 +1466,8 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
           status: lifecycleStatus,
           issueStartDate: m.openDate,
           issueEndDate: m.closeDate,
+          listingDate: m.listingDate,
+          expectedListingDate: m.listingDate,
           issuePrice: m.priceBand,
           priceBand: m.priceBand,
           priceLow: m.priceLow,
@@ -1373,11 +1485,12 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
           registrarName: m.registrar,
           registrarUrl: m.registrarUrl,
           isListed,
+          listingPrice: isListed && m.priceHigh ? `₹${(m.priceHigh + (m.gmp || 0)).toLocaleString('en-IN')}` : undefined,
         });
       }
     }
 
-    // 8. Universal Safety Pass: Guarantee no IPO whose bidding is closed is ever marked Active or Forthcoming
+    // 8. Universal Safety Pass: Guarantee listed IPOs are moved out of closed/past to listed
     for (const ipoItem of map.values()) {
       const isListed = Boolean(
         ipoItem.isListed ||
@@ -1388,9 +1501,7 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       if (isListed) {
         ipoItem.isListed = true;
         ipoItem.status = 'Listed';
-        if (!ipoItem.remainingTime || ipoItem.remainingTime === 'Bidding Closed') {
-          ipoItem.remainingTime = 'Listed on Exchange';
-        }
+        ipoItem.remainingTime = 'Listed on Exchange';
       } else {
         const closed = isBiddingClosed(ipoItem.issueEndDate) || ipoItem.remainingTime === 'Bidding Closed' || ipoItem.status === 'Closed';
         if (closed) {
@@ -1415,8 +1526,8 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       liveIposCache = { timestamp: now, data: liveList };
       return liveList;
     }
-  } catch (err) {
-    console.error('Error during real-time live IPO extraction:', err);
+  } catch (err: any) {
+    console.warn('[NseIpoService] Real-time live IPO extraction notice:', err?.message || 'fallback active');
   }
 
   return liveIposCache?.data || [];
@@ -1453,7 +1564,7 @@ export async function fetchLiveIpoDetail(symbol: string): Promise<LiveIpoDetail 
             Cookie: cookie,
           },
           signal: controller.signal,
-          next: { revalidate: 20 },
+          cache: 'no-store',
         }
       );
       clearTimeout(timeoutId);
