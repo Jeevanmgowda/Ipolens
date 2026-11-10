@@ -1,7 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { DrhpAnalysisResult, AnalystVerdict, QaInteraction } from '@/types/ai';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  DrhpAnalysisResult,
+  AnalystVerdict,
+  QaInteraction,
+  RetrievedChunk,
+  DrhpSectionOverview,
+  ForensicRiskCategory,
+} from '@/types/ai';
+import { getEffectiveIpoStatus } from '@/components/live-market/IpoCategoriesTabs';
+import { LiveMarketIpoItem, IpoCategoryTab } from '@/types/liveMarket';
 import {
   Sparkles,
   TrendingUp,
@@ -11,30 +20,28 @@ import {
   XCircle,
   HelpCircle,
   Clock,
-  Building2,
   Search,
-  Layers,
   Copy,
   Check,
   FileText,
   Zap,
   RefreshCw,
-  SlidersHorizontal,
   ChevronDown,
   ChevronUp,
   Upload,
   FileUp,
-  File,
   MessageSquare,
   Send,
-  CornerDownRight,
   BookOpen,
-  Percent,
   Briefcase,
   Scale,
   Radio,
   ArrowLeft,
   ExternalLink,
+  ChevronRight,
+  Database,
+  BarChart3,
+  Layers,
 } from 'lucide-react';
 
 interface AiResearchViewProps {
@@ -43,25 +50,17 @@ interface AiResearchViewProps {
   onBackToRadar?: () => void;
 }
 
-interface LiveIpoChip {
-  symbol: string;
-  companyName: string;
-  status: string;
-  gmp?: number;
-  gmpPercent?: number;
-  currentSubscription?: number;
-  priceBand?: string;
-  series?: string;
-  issueSizeCr?: number;
-  registrar?: string;
-  registrarUrl?: string;
-  openDate?: string;
-  closeDate?: string;
-  lotSize?: number;
-  minInvestment?: number;
-}
-
 type InputMode = 'live' | 'upload' | 'paste';
+type TabView = 'overview' | 'copilot' | 'forensic' | 'chapters' | 'financials';
+
+const QUICK_QUESTIONS = [
+  'Objects of the Offer & Capex Allocation',
+  'Promoter Holding & Post-IPO Dilution',
+  'Top 5 Customer Revenue Concentration',
+  'Outstanding Litigations & Tax Proceedings',
+  'Total Debt & Financial Leverage Profile',
+  'Anchor Investor 30/90-Day Lock-in Schedule',
+];
 
 export const AiResearchView: React.FC<AiResearchViewProps> = ({
   initialSymbol = 'JIOPLAT',
@@ -69,6 +68,7 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
   onBackToRadar,
 }) => {
   const [inputMode, setInputMode] = useState<InputMode>('live');
+  const [activeTab, setActiveTab] = useState<TabView>('overview');
   const [symbol, setSymbol] = useState<string>(initialSymbol);
   const [companyName, setCompanyName] = useState<string>(initialCompanyName);
   const [customDrhpText, setCustomDrhpText] = useState<string>('');
@@ -79,27 +79,65 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
-  const [liveIpos, setLiveIpos] = useState<LiveIpoChip[]>([]);
+  const [liveIpos, setLiveIpos] = useState<LiveMarketIpoItem[]>([]);
+  const [radarCategory, setRadarCategory] = useState<IpoCategoryTab>('open');
+  const [seriesFilter, setSeriesFilter] = useState<'all' | 'EQ' | 'SME'>('all');
 
   // Q&A Copilot State
   const [questionInput, setQuestionInput] = useState<string>('');
   const [isAskingQuestion, setIsAskingQuestion] = useState<boolean>(false);
   const [qaHistory, setQaHistory] = useState<QaInteraction[]>([]);
   const [qaError, setQaError] = useState<string | null>(null);
+  const [expandedChunks, setExpandedChunks] = useState<Record<number, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Exact same category counting logic as in IpoCategoriesTabs
+  const counts = useMemo(() => {
+    let upcoming = 0;
+    let open = 0;
+    let closed = 0;
+    let listed = 0;
+    for (const ipo of liveIpos) {
+      const eff = getEffectiveIpoStatus(ipo);
+      if (eff === 'open') open++;
+      else if (eff === 'upcoming') upcoming++;
+      else if (eff === 'closed') closed++;
+      else if (eff === 'listed') listed++;
+    }
+    return { upcoming, open, closed, listed };
+  }, [liveIpos]);
+
+  // Exact same category and series filtering as in IpoCategoriesTabs
+  const categorizedIpos = useMemo(() => {
+    return liveIpos
+      .filter((ipo) => {
+        const eff = getEffectiveIpoStatus(ipo);
+        if (eff !== radarCategory) return false;
+        if (seriesFilter !== 'all' && ipo.series !== seriesFilter) return false;
+        return true;
+      })
+      .sort((a, b) => (b.gmpPercent || 0) - (a.gmpPercent || 0));
+  }, [liveIpos, radarCategory, seriesFilter]);
 
   // Fetch live IPOs directly from Live IPO Radar (Open, Upcoming, Closed, Listed)
   useEffect(() => {
     async function loadLiveRadarIpos() {
       try {
-        const [openRes, upcomingRes, closedRes, listedRes] = await Promise.allSettled([
+        const [liveMarketRes, openRes, upcomingRes, closedRes, listedRes] = await Promise.allSettled([
+          fetch('/api/live-market'),
           fetch('/api/ipos/open'),
           fetch('/api/ipos/upcoming'),
           fetch('/api/ipos/closed'),
           fetch('/api/ipos/listed'),
         ]);
 
-        const allRadarItems: any[] = [];
+        const allRadarItems: LiveMarketIpoItem[] = [];
+        if (liveMarketRes.status === 'fulfilled') {
+          const lm = await liveMarketRes.value.json();
+          if (lm.success && Array.isArray(lm.data?.ipos)) {
+            allRadarItems.push(...lm.data.ipos);
+          }
+        }
         if (openRes.status === 'fulfilled') {
           const j = await openRes.value.json();
           if (j.success && Array.isArray(j.data)) allRadarItems.push(...j.data);
@@ -118,58 +156,46 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
         }
 
         if (allRadarItems.length > 0) {
-          const mappedChips: LiveIpoChip[] = allRadarItems
-            .filter((item: any) => item.series !== 'DEBT')
-            .map((item: any) => ({
-              symbol: item.symbol,
-              companyName: item.companyName,
-              status: item.status,
-              gmp: item.gmp,
-              gmpPercent: item.gmpPercent,
-              currentSubscription: item.currentSubscription,
-              priceBand: item.priceBand || item.priceRange,
-              series: item.series,
-              issueSizeCr: item.issueSizeCr,
-              registrar: item.registrar,
-              registrarUrl: item.registrarUrl,
-              openDate: item.openDate,
-              closeDate: item.closeDate,
-              lotSize: item.lotSize,
-              minInvestment: item.minInvestment,
-            }));
-          setLiveIpos(mappedChips);
-          return;
+          // Deduplicate by symbol and filter out DEBT
+          const uniqueMap = new Map<string, LiveMarketIpoItem>();
+          allRadarItems
+            .filter((item) => item.series !== 'DEBT')
+            .forEach((item) => {
+              if (!uniqueMap.has(item.symbol.toUpperCase())) {
+                uniqueMap.set(item.symbol.toUpperCase(), item);
+              }
+            });
+          setLiveIpos(Array.from(uniqueMap.values()));
         }
       } catch (err) {
-        console.warn('Error loading Live IPO Radar feed:', err);
+        console.warn('Failed to load live IPO radar issues:', err);
       }
-
-      // Default Live Radar equity issues
-      setLiveIpos([
-        { symbol: 'JIOPLAT', companyName: 'Jio Platforms Limited', status: 'Open', gmp: 185, gmpPercent: 24, issueSizeCr: 50000, priceBand: 'TBD' },
-        { symbol: 'SWIGGY', companyName: 'Swiggy Limited', status: 'Upcoming', gmp: 25, gmpPercent: 6.4, issueSizeCr: 11327, priceBand: '₹371 – ₹390' },
-        { symbol: 'HYUNDAI', companyName: 'Hyundai Motor India Limited', status: 'Closed', gmp: 0, gmpPercent: 0, issueSizeCr: 27870, priceBand: '₹1,865 – ₹1,960' },
-        { symbol: 'BAJAJHFL', companyName: 'Bajaj Housing Finance Limited', status: 'Closed', gmp: 65, gmpPercent: 92.8, issueSizeCr: 6560, priceBand: '₹66 – ₹70' },
-        { symbol: 'HDFP', companyName: 'HD Fire Protect Limited', status: 'Closed', gmp: 60, gmpPercent: 22.1, issueSizeCr: 285, priceBand: '₹258 – ₹271' },
-        { symbol: 'ACMEIND', companyName: 'Acme India Industries Limited', status: 'Closed', gmp: 65, gmpPercent: 33.1, currentSubscription: 124.23, issueSizeCr: 28.8, priceBand: '₹186 – ₹196' },
-        { symbol: 'TATATECH', companyName: 'Tata Technologies Limited', status: 'Closed', gmp: 400, gmpPercent: 80, issueSizeCr: 3042, priceBand: '₹475 – ₹500' },
-        { symbol: 'NTPCGREEN', companyName: 'NTPC Green Energy Limited', status: 'Upcoming', gmp: 18, gmpPercent: 16.6, issueSizeCr: 10000, priceBand: '₹102 – ₹108' },
-      ]);
     }
 
     loadLiveRadarIpos();
   }, []);
 
-  const fetchAnalysis = async (symToFetch: string, nameToFetch?: string, customText?: string) => {
+  // Auto-fetch analysis on mount or when initialSymbol changes
+  useEffect(() => {
+    if (initialSymbol) {
+      setSymbol(initialSymbol);
+      if (initialCompanyName) setCompanyName(initialCompanyName);
+      fetchAnalysis(initialSymbol, initialCompanyName);
+    }
+  }, [initialSymbol, initialCompanyName]);
+
+  const fetchAnalysis = async (sym: string, name?: string, customText?: string) => {
     setLoading(true);
     setError(null);
+    const symToFetch = (sym || symbol).trim().toUpperCase();
+    const nameToFetch = name || companyName;
 
-    // Resolve matching telemetry from Live IPO Radar feed
-    const radarMatch = liveIpos.find((chip) => {
-      const sA = chip.symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const sB = symToFetch.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      return sA === sB || (sA === 'JIOPLAT' && (sB === 'JPL' || sB === 'JIO')) || chip.companyName.toLowerCase().includes(symToFetch.toLowerCase());
-    });
+    // Match with Live IPO Radar issues to enrich
+    const radarMatch = liveIpos.find(
+      (c) =>
+        c.symbol.toUpperCase() === symToFetch ||
+        c.companyName.toLowerCase().includes(nameToFetch.toLowerCase())
+    );
 
     try {
       const res = await fetch('/api/analysis', {
@@ -184,7 +210,7 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
 
       const json = await res.json();
       if (json.success && json.data) {
-        const enriched = { ...json.data };
+        const enriched: DrhpAnalysisResult = { ...json.data };
         // Hydrate from Live IPO Radar when available
         if (radarMatch) {
           enriched.liveTelemetry = {
@@ -200,7 +226,10 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
             expectedListingGainPct: radarMatch.gmpPercent ?? enriched.liveTelemetry?.expectedListingGainPct,
             registrarName: radarMatch.registrar || enriched.liveTelemetry?.registrarName,
             registrarUrl: radarMatch.registrarUrl || enriched.liveTelemetry?.registrarUrl,
-            issueDates: radarMatch.openDate && radarMatch.closeDate ? `${radarMatch.openDate} – ${radarMatch.closeDate}` : enriched.liveTelemetry?.issueDates,
+            issueDates:
+              radarMatch.openDate && radarMatch.closeDate
+                ? `${radarMatch.openDate} – ${radarMatch.closeDate}`
+                : enriched.liveTelemetry?.issueDates,
             series: radarMatch.series || enriched.liveTelemetry?.series,
           };
           if (radarMatch.issueSizeCr) {
@@ -264,11 +293,11 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
     }
   };
 
-  const handleAskQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!questionInput.trim() || isAskingQuestion) return;
+  const handleAskQuestion = async (e?: React.FormEvent, customQ?: string) => {
+    if (e) e.preventDefault();
+    const queryToAsk = (customQ || questionInput).trim();
+    if (!queryToAsk) return;
 
-    const q = questionInput.trim();
     setIsAskingQuestion(true);
     setQaError(null);
 
@@ -277,18 +306,27 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'ask_question',
-          symbol: result?.symbol || symbol || 'NSE',
-          companyName: result?.companyName || companyName,
+          symbol: symbol.trim().toUpperCase(),
+          question: queryToAsk,
           drhpText: customDrhpText || undefined,
-          question: q,
         }),
       });
 
       const json = await res.json();
       if (json.success && json.data) {
-        setQaHistory((prev) => [...prev, json.data]);
+        setQaHistory((prev) => [
+          ...prev,
+          {
+            question: queryToAsk,
+            answer: json.data.answer,
+            pageCitations: json.data.pageCitations || [],
+            retrievedChunks: json.data.retrievedChunks || [],
+            notFound: json.data.notFound,
+          },
+        ]);
         setQuestionInput('');
+        // Expand chunks of newest question automatically
+        setExpandedChunks((prev) => ({ ...prev, [qaHistory.length]: true }));
       } else {
         setQaError(json.error || 'Failed to retrieve answer from prospectus copilot');
       }
@@ -299,21 +337,7 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
     }
   };
 
-  useEffect(() => {
-    if (initialSymbol) {
-      setSymbol(initialSymbol);
-      setCompanyName(initialCompanyName || initialSymbol);
-      fetchAnalysis(initialSymbol, initialCompanyName);
-    }
-  }, [initialSymbol, initialCompanyName]);
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!symbol.trim()) return;
-    fetchAnalysis(symbol.trim().toUpperCase(), companyName.trim() || undefined, customDrhpText.trim() || undefined);
-  };
-
-  const handleQuickSelect = (chip: LiveIpoChip) => {
+  const handleQuickSelect = (chip: LiveMarketIpoItem) => {
     setSymbol(chip.symbol);
     setCompanyName(chip.companyName);
     setCustomDrhpText('');
@@ -321,17 +345,21 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
     fetchAnalysis(chip.symbol, chip.companyName);
   };
 
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!symbol.trim()) return;
+    fetchAnalysis(symbol.trim().toUpperCase(), companyName.trim() || undefined, customDrhpText.trim() || undefined);
+  };
+
   const handleCopyReport = () => {
     if (!result) return;
     const text =
       `📊 IPOLENS AI DRHP Report: ${result.companyName} (${result.symbol})\n` +
-      `Verdict: ${result.verdict.toUpperCase()} (Confidence: ${result.confidenceScore}%)\n` +
-      `Rationale: ${result.verdictReason}\n\n` +
-      `Key Strengths:\n${result.topStrengths.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n` +
-      `Critical Risks:\n${result.topRisks.map((r, i) => `${i + 1}. ${r}`).join('\n')}\n\n` +
-      `Financials: Revenue CAGR: ${result.financials.revenueCagr}, EBITDA: ${result.financials.ebitdaMargin}, P/E: ${result.financials.peRatio}\n` +
-      `Moat: ${result.businessMoat}\n\n` +
-      `Source: ${result.source}`;
+      `Verdict: ${result.verdict} | Conviction: ${result.confidenceScore}%\n` +
+      `Executive Summary: ${result.verdictReason}\n` +
+      `Business Moat: ${result.businessMoat}\n` +
+      `Financials: 3-Yr CAGR ${result.financials.revenueCagr} | EBITDA ${result.financials.ebitdaMargin} | Debt/Equity ${result.financials.debtToEquity}\n` +
+      `Grounded in SEBI DRHP filing via IPOLENS RAG Pipeline.`;
 
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -341,19 +369,19 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
   const loadSampleDrhp = (type: 'tech' | 'fintech' | 'manufacturing') => {
     if (type === 'tech') {
       setSymbol('TECHCORP');
-      setCompanyName('TechCorp Cloud Infrastructure Ltd');
+      setCompanyName('TechCorp Infrastructure Limited');
       setCustomDrhpText(
         'Draft Red Herring Prospectus extract:\nTechCorp delivers mission-critical enterprise Kubernetes infrastructure and AI cloud platforms across 14 countries. Total revenue grew at 42.5% CAGR from FY22 (₹280 Cr) to FY24 (₹570 Cr). EBITDA margin expanded from 18% to 26.5% with positive free cash flows. Working capital cycle is negative 18 days. The company has zero bank debt. Top 5 customers account for 38% of total revenue.'
       );
     } else if (type === 'fintech') {
       setSymbol('FINPAY');
-      setCompanyName('FinPay Digital Payments Ltd');
+      setCompanyName('FinPay Technologies Limited');
       setCustomDrhpText(
         'Draft Red Herring Prospectus extract:\nFinPay is a digital payment aggregator and UPI terminal provider for tier-2/3 retail merchants. Payment volume reached ₹1.2 lakh crore in FY24. Revenue grew 65% YoY but operating EBITDA remains negative (-6.2%) due to customer acquisition cashbacks. Net cash on balance sheet is ₹850 Cr. Regulatory risk: subject to RBI Payment Aggregator licensing guidelines.'
       );
     } else {
       setSymbol('AEROPREC');
-      setCompanyName('AeroPrecision Aerospace Components Ltd');
+      setCompanyName('AeroPrecision Aerospace Limited');
       setCustomDrhpText(
         'Draft Red Herring Prospectus extract:\nAeroPrecision is a tier-1 supplier of titanium machined assemblies for global defense and commercial aerospace aircraft. Order book stands at ₹1,450 Cr (3.8x FY24 revenue). Operating margin is steady at 19.4% with RoCE of 21.2%. Debt-to-equity ratio is 0.45. Key risk: long lead times for specialized imported alloys and customer qualification cycles exceeding 18 months.'
       );
@@ -362,15 +390,15 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header & Engine Status */}
-      <div className="p-6 rounded-2xl bg-slate-900/70 border border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
-        <div>
-          <div className="flex flex-wrap items-center gap-2 mb-1.5">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-purple-400 animate-pulse" />
-              GOOGLE GEMINI 3.8 FLASH ENGINE ACTIVE
+      {/* Top Banner & Header matching Dark Institutional Dashboard */}
+      <div className="p-6 rounded-2xl glass-card border border-white/10 relative overflow-hidden bg-gradient-to-r from-slate-950 via-purple-950/20 to-slate-950 shadow-2xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1.5">
+              <Zap className="w-3 h-3 text-purple-400" />
+              GOOGLE GEMINI 3.0 FLASH ENGINE ACTIVE
             </span>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-mono">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5">
               <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
               LIVE IPO RADAR TELEMETRY SYNCED
             </span>
@@ -383,98 +411,192 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                 <span>Back to Live Radar</span>
               </button>
             )}
-            <span className="text-[11px] text-slate-400 font-mono">SEBI Institutional Forensic Pipeline</span>
           </div>
-          <h3 className="text-xl font-extrabold text-white tracking-tight">
-            AI DRHP Prospectus Forensic Analyst
-          </h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-xl">
-            Automated institutional deep-dive analysis of Draft Red Herring Prospectus filings powered by real-time primary market telemetry from Live IPO Radar.
-          </p>
+          <span className="text-[11px] text-slate-400 font-mono">SEBI Institutional Forensic Pipeline</span>
         </div>
 
-        {/* Input Mode Selector */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950 border border-white/10 text-xs">
-          <button
-            onClick={() => setInputMode('live')}
-            className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-              inputMode === 'live'
-                ? 'bg-purple-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Live Radar Ticker</span>
-          </button>
-          <button
-            onClick={() => setInputMode('upload')}
-            className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-              inputMode === 'upload'
-                ? 'bg-purple-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Upload DRHP</span>
-          </button>
-          <button
-            onClick={() => setInputMode('paste')}
-            className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-              inputMode === 'paste'
-                ? 'bg-purple-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Paste Text</span>
-          </button>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              AI DRHP Prospectus Forensic Analyst
+            </h2>
+            <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+              Automated institutional deep dive analysis of Draft Red Herring Prospectus filings powered by real time
+              primary market telemetry from Live IPO Radar.
+            </p>
+          </div>
+
+          {/* Input Mode Selector */}
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950 border border-white/10 text-xs shrink-0">
+            <button
+              onClick={() => setInputMode('live')}
+              className={`px-3 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                inputMode === 'live'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Live Radar Ticker</span>
+            </button>
+            <button
+              onClick={() => setInputMode('upload')}
+              className={`px-3 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                inputMode === 'upload'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload DRHP</span>
+            </button>
+            <button
+              onClick={() => setInputMode('paste')}
+              className={`px-3 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                inputMode === 'paste'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Paste Text</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Input Mode 1: Live Ticker & Search */}
+      {/* Input Mode 1: Live Ticker & Search with Ticker Cloud */}
       {inputMode === 'live' && (
-        <div className="space-y-3">
-          {liveIpos.length > 0 && (
-            <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-slate-400 font-medium text-[11px] flex items-center gap-1 mr-1">
-                <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                Live IPO Radar Issues:
-              </span>
-              {liveIpos.map((chip) => {
-                const isOpen = chip.status === 'Open' || chip.status === 'Active';
-                const isUpcoming = chip.status === 'Upcoming' || chip.status === 'Forthcoming';
-                return (
+        <div className="space-y-4">
+          {/* Categorized IPO Lists strictly matching IpoCategoriesTabs */}
+          <div className="p-4 rounded-2xl bg-[#0b101d] border border-white/10 space-y-3.5 shadow-xl">
+            {/* Category Tabs & Series Filters Bar */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-white/5 pb-3">
+              {/* Main 4 Category Tabs */}
+              <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-900/90 border border-white/5">
+                {[
+                  { id: 'open', label: 'Open for Bidding', count: counts.open, live: true },
+                  { id: 'upcoming', label: 'Upcoming', count: counts.upcoming },
+                  { id: 'closed', label: 'Closed / Past', count: counts.closed },
+                  { id: 'listed', label: 'Listed Market', count: counts.listed },
+                ].map((tab) => (
                   <button
-                    key={chip.symbol}
-                    onClick={() => handleQuickSelect(chip)}
-                    className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold cursor-pointer transition flex items-center gap-1.5 ${
-                      symbol === chip.symbol
-                        ? 'bg-purple-500/30 text-purple-200 border border-purple-500/50 shadow-sm'
-                        : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5'
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setRadarCategory(tab.id as IpoCategoryTab)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-2 ${
+                      radarCategory === tab.id
+                        ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-md shadow-cyan-500/25'
+                        : 'text-slate-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <span>{chip.symbol}</span>
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        isOpen
-                          ? 'bg-emerald-400 animate-pulse'
-                          : isUpcoming
-                          ? 'bg-cyan-400'
-                          : 'bg-slate-500'
-                      }`}
-                      title={`Radar Status: ${chip.status}`}
-                    />
-                    {chip.gmp !== undefined && chip.gmp > 0 && (
-                      <span className="text-[10px] text-emerald-400 font-sans font-semibold">
-                        +{chip.gmpPercent ? `${chip.gmpPercent.toFixed(0)}%` : `₹${chip.gmp}`}
-                      </span>
+                    {tab.live && (
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          radarCategory === tab.id ? 'bg-slate-950 animate-ping' : 'bg-emerald-400 animate-pulse'
+                        }`}
+                      />
                     )}
+                    <span>{tab.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                        radarCategory === tab.id ? 'bg-slate-950/20 text-slate-950' : 'bg-white/5 text-slate-400'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
                   </button>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
 
+              {/* Series Filter: All, Mainboard, SME */}
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-white/10 text-xs">
+                {(['all', 'EQ', 'SME'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSeriesFilter(s)}
+                    className={`px-2.5 py-1 rounded-lg font-mono text-[11px] transition cursor-pointer ${
+                      seriesFilter === s ? 'bg-purple-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {s === 'all' ? 'All Series' : s === 'EQ' ? 'Mainboard' : 'SME'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Categorized Chips Grid */}
+            {categorizedIpos.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-500 font-mono">
+                No IPOs currently in {radarCategory} category matching {seriesFilter === 'all' ? 'selected' : seriesFilter} series.
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-1.5 max-h-48 overflow-y-auto pr-1">
+                {categorizedIpos.map((chip) => {
+                  const isSelected = symbol === chip.symbol;
+                  const effStatus = getEffectiveIpoStatus(chip);
+                  const isListed = effStatus === 'listed';
+                  const isOpen = effStatus === 'open';
+                  const isUpcoming = effStatus === 'upcoming';
+                  const gmpVal = chip.gmp ?? 0;
+                  const gmpPct = chip.gmpPercent ?? 0;
+                  const dayChangePct = chip.dayChangePercent;
+
+                  return (
+                    <button
+                      key={chip.symbol}
+                      type="button"
+                      onClick={() => handleQuickSelect(chip)}
+                      className={`px-2.5 py-1.5 rounded-lg font-mono text-[11px] font-bold cursor-pointer transition flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-purple-600 text-white border border-purple-400 shadow-md shadow-purple-600/40 ring-1 ring-purple-400'
+                          : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-white/5 hover:border-purple-500/30'
+                      }`}
+                      title={`${chip.companyName} (${chip.series || 'EQ'}) • Click to analyze DRHP`}
+                    >
+                      <span>{chip.symbol}</span>
+                      {chip.series === 'SME' && (
+                        <span className="px-1 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          SME
+                        </span>
+                      )}
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isOpen
+                            ? 'bg-emerald-400 animate-pulse'
+                            : isUpcoming
+                            ? 'bg-blue-400'
+                            : isListed
+                            ? 'bg-cyan-400'
+                            : 'bg-slate-500'
+                        }`}
+                      />
+                      {isListed && dayChangePct !== undefined ? (
+                        <span
+                          className={`text-[10px] font-sans font-semibold ${
+                            isSelected ? 'text-white' : dayChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {dayChangePct >= 0 ? '+' : ''}{dayChangePct}%
+                        </span>
+                      ) : gmpPct > 0 ? (
+                        <span className={`text-[10px] font-sans font-semibold ${isSelected ? 'text-white' : 'text-emerald-400'}`}>
+                          +{gmpPct.toFixed(0)}%
+                        </span>
+                      ) : gmpVal > 0 ? (
+                        <span className={`text-[10px] font-sans font-semibold ${isSelected ? 'text-white' : 'text-emerald-400'}`}>
+                          +₹{gmpVal}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Search & Analyze DRHP Action Bar */}
           <form onSubmit={handleSearchSubmit} className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -483,14 +605,14 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                 placeholder="Search Live IPO Radar ticker or company name (e.g. JIOPLAT, SWIGGY, HYUNDAI, BAJAJHFL, HDFP, ACMEIND)..."
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-purple-500 transition"
+                className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-purple-500 transition"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading || !symbol.trim()}
-              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5 shadow-md shadow-purple-600/25"
+              className="px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-purple-600/30"
             >
               <Sparkles className="w-4 h-4" />
               <span>{loading ? 'Analyzing...' : 'Analyze DRHP'}</span>
@@ -522,24 +644,19 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
               accept=".pdf,.txt"
               className="hidden"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(file);
+                const f = e.target.files?.[0];
+                if (f) handleFileUpload(f);
               }}
             />
-            <div className="p-3 rounded-full bg-purple-500/10 group-hover:bg-purple-500/20 text-purple-400 mb-3 transition">
+            <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-110 transition mb-3">
               <Upload className="w-6 h-6" />
             </div>
-            <p className="text-xs font-bold text-white">
+            <p className="text-sm font-semibold text-white">
               {uploadedFile ? uploadedFile.name : 'Click to select or drag & drop DRHP PDF'}
             </p>
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Supports official SEBI DRHP PDFs and text extracts up to 25 MB.
             </p>
-            {uploadedFile && (
-              <span className="mt-2 text-[10px] text-purple-300 font-mono bg-purple-500/20 px-2.5 py-0.5 rounded-full border border-purple-500/30">
-                {(uploadedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready for Ingestion
-              </span>
-            )}
           </div>
 
           {fileError && (
@@ -551,104 +668,88 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
         </div>
       )}
 
-      {/* Input Mode 3: Custom Text / Excerpt Input */}
+      {/* Input Mode 3: Direct Excerpt Input */}
       {inputMode === 'paste' && (
-        <div className="p-5 rounded-2xl bg-purple-950/20 border border-purple-500/30 space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="p-6 rounded-2xl bg-slate-900/60 border border-white/10 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+              Direct DRHP Excerpt Input
+            </h4>
             <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-purple-400" />
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                Direct DRHP Excerpt Input
-              </h4>
-            </div>
-
-            <div className="flex items-center gap-2 text-[11px]">
-              <span className="text-slate-400">Load sample:</span>
+              <span className="text-[10px] text-slate-400">Load Benchmark DRHP:</span>
               <button
                 type="button"
                 onClick={() => loadSampleDrhp('tech')}
-                className="px-2 py-0.5 rounded bg-white/5 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20 cursor-pointer"
+                className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 hover:bg-white/10 text-cyan-300 border border-white/10"
               >
-                Tech Cloud
+                Tech
               </button>
               <button
                 type="button"
                 onClick={() => loadSampleDrhp('fintech')}
-                className="px-2 py-0.5 rounded bg-white/5 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20 cursor-pointer"
+                className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 hover:bg-white/10 text-purple-300 border border-white/10"
               >
-                FinTech
+                Fintech
               </button>
               <button
                 type="button"
                 onClick={() => loadSampleDrhp('manufacturing')}
-                className="px-2 py-0.5 rounded bg-white/5 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20 cursor-pointer"
+                className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 hover:bg-white/10 text-amber-300 border border-white/10"
               >
-                Aerospace
+                Defense
               </button>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
-                Company Name
-              </label>
+              <label className="text-[10px] font-medium text-slate-400 block mb-1">Company / Issuer Name</label>
               <input
                 type="text"
-                placeholder="e.g. Acme Cloud Infrastructure Ltd"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                placeholder="e.g. Acme Solar Industries Limited"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500"
               />
             </div>
-
             <div>
-              <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
-                Proposed Ticker Symbol
-              </label>
+              <label className="text-[10px] font-medium text-slate-400 block mb-1">Ticker / Symbol</label>
               <input
                 type="text"
-                placeholder="e.g. ACME"
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-purple-500"
+                placeholder="e.g. ACMEIND"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 font-mono"
               />
             </div>
           </div>
 
-          <div>
-            <label className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
-              Prospectus Excerpt (Financials, Growth, Risks, Moat)
-            </label>
-            <textarea
-              rows={4}
-              placeholder="Paste raw text from the SEBI DRHP filing (e.g. revenue, margins, debt, customer concentration, competitive strengths)..."
-              value={customDrhpText}
-              onChange={(e) => setCustomDrhpText(e.target.value)}
-              className="w-full p-3 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-purple-500 resize-y"
-            />
-          </div>
+          <textarea
+            rows={5}
+            placeholder="Paste raw text from the SEBI DRHP filing (e.g. revenue, margins, debt, customer concentration, competitive strengths)..."
+            value={customDrhpText}
+            onChange={(e) => setCustomDrhpText(e.target.value)}
+            className="w-full p-3 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-purple-500 transition"
+          />
 
-          <div className="flex justify-end">
-            <button
-              onClick={() =>
-                fetchAnalysis(
-                  symbol.trim() || 'CUSTOM',
-                  companyName.trim() || undefined,
-                  customDrhpText.trim() || undefined
-                )
-              }
-              disabled={loading || !customDrhpText.trim()}
-              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-2 shadow-md shadow-purple-600/30"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{loading ? 'Synthesizing with Gemini 3.8...' : 'Run Gemini 3.8 Synthesis'}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() =>
+              fetchAnalysis(
+                symbol.trim().toUpperCase(),
+                companyName.trim() || undefined,
+                customDrhpText.trim() || undefined
+              )
+            }
+            disabled={loading || !customDrhpText.trim()}
+            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs cursor-pointer transition disabled:opacity-50"
+          >
+            {loading ? 'Analyzing with RAG...' : 'Index & Analyze DRHP'}
+          </button>
         </div>
       )}
 
-      {/* Loading Skeleton */}
+      {/* Loading State */}
       {loading && (
         <div className="p-12 text-center rounded-2xl bg-slate-900/40 border border-purple-500/20 space-y-4 shadow-xl">
           <div className="relative w-12 h-12 mx-auto">
@@ -656,9 +757,9 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
             <Sparkles className="w-5 h-5 text-purple-400 absolute inset-0 m-auto animate-pulse" />
           </div>
           <div>
-            <p className="text-sm font-bold text-white">Google Gemini 3.8 Flash Ingestion in Progress...</p>
+            <p className="text-sm font-bold text-white">Institutional RAG Engine Ingesting DRHP...</p>
             <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
-              Extracting balance sheet health, promoter integrity, peer valuations, anchor book quality, and regulatory watchouts.
+              Building semantic vector index, extracting balance sheet disclosures, promoter integrity, peer valuations, and SEBI regulatory risk matrix.
             </p>
           </div>
         </div>
@@ -672,7 +773,7 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
         </div>
       )}
 
-      {/* Analysis Result Card */}
+      {/* RAG-Powered DRHP Terminal UI */}
       {result && !loading && (
         <div className="space-y-6">
           {/* Executive Verdict Banner */}
@@ -687,8 +788,11 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                     <Sparkles className="w-3 h-3 text-purple-400" />
                     {result.source}
                   </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    RAG Model: Grounded
+                  </span>
                   {result.extractionQuality && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
                       Extraction: {result.extractionQuality}
                     </span>
                   )}
@@ -742,7 +846,7 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
             </p>
           </div>
 
-          {/* Real-time Live Market & Primary Telemetry Bar */}
+          {/* Deep Live IPO Radar Telemetry Integration Card */}
           {result.liveTelemetry && (
             <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900/90 via-purple-950/20 to-slate-900/90 border border-purple-500/30 space-y-3 shadow-xl">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
@@ -750,7 +854,7 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                     <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                    Live Exchange & Primary Telemetry
+                    Live IPO Radar Exchange Telemetry
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
                     NSE / BSE SEBI Telemetry
@@ -831,301 +935,504 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
             </div>
           )}
 
-          {/* Institutional Forensic Summary Bar */}
-          {(() => {
-            const totalIssueCr = result.issueStructure?.totalSizeCr || result.liveTelemetry?.issueSizeCr || 0;
-            const freshCr = result.issueStructure?.freshIssueCr ?? (totalIssueCr ? Math.round(totalIssueCr * 0.7) : 0);
-            const ofsCr = result.issueStructure?.ofsCr ?? (totalIssueCr ? Math.max(0, totalIssueCr - freshCr) : 0);
-            const freshPct = totalIssueCr > 0 ? Math.round((freshCr / totalIssueCr) * 100) : 100;
-            const ofsPct = totalIssueCr > 0 ? Math.round((ofsCr / totalIssueCr) * 100) : 0;
-
-            const isProfessionallyManaged = result.promotersShareholding?.preIpoPct === 0;
-            const hasPromoterInfo = result.promotersShareholding?.preIpoPct !== undefined;
-
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Issue Structure (Fresh vs OFS) */}
-                <div className="p-4 rounded-xl bg-slate-900/60 border border-white/10 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-400 flex items-center gap-1.5">
-                      <Briefcase className="w-3.5 h-3.5 text-cyan-400" />
-                      Issue Structure
-                    </span>
-                    <span className="font-mono font-bold text-white">
-                      {totalIssueCr > 0 ? `₹${totalIssueCr.toLocaleString('en-IN')} Cr Total` : 'Issue Size Pending'}
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
-                    <div
-                      style={{ width: `${freshPct}%` }}
-                      className="bg-emerald-500 h-full"
-                      title={`Fresh Issue: ₹${freshCr} Cr (${freshPct}%)`}
-                    />
-                    <div
-                      style={{ width: `${ofsPct}%` }}
-                      className="bg-amber-500 h-full"
-                      title={`Offer for Sale: ₹${ofsCr} Cr (${ofsPct}%)`}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] font-mono">
-                    <span className="text-emerald-400">
-                      Fresh: ₹{freshCr.toLocaleString('en-IN')} Cr ({freshPct}%)
-                    </span>
-                    <span className="text-amber-400">
-                      OFS: ₹{ofsCr.toLocaleString('en-IN')} Cr ({ofsPct}%)
-                    </span>
-                  </div>
-                </div>
-
-                {/* Promoter Dilution */}
-                <div className="p-4 rounded-xl bg-slate-900/60 border border-white/10 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-400 flex items-center gap-1.5">
-                      <Percent className="w-3.5 h-3.5 text-purple-400" />
-                      Promoter Stake Dilution
-                    </span>
-                    <span className="font-mono font-bold text-white">
-                      {isProfessionallyManaged
-                        ? 'Professionally Managed'
-                        : hasPromoterInfo
-                        ? `${result.promotersShareholding?.preIpoPct}% → ${result.promotersShareholding?.postIpoPct}%`
-                        : '78.5% → 58.2% (Est.)'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    {result.promotersShareholding?.promoterNames && result.promotersShareholding.promoterNames.length > 0
-                      ? `Promoter: ${result.promotersShareholding.promoterNames.join(', ')}`
-                      : 'Post-listing holding complies with SEBI 25% minimum public float rule.'}
-                  </p>
-                </div>
-
-                {/* Document Grounding Citations */}
-                <div className="p-4 rounded-xl bg-slate-900/60 border border-white/10 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-400 flex items-center gap-1.5">
-                      <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-                      Prospectus Grounding
-                    </span>
-                    <span className="font-mono text-[11px] text-cyan-300">
-                      {result.pageCount ? `${result.pageCount} Pages Verified` : 'SEBI Electronic Filing'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 truncate" title={result.documentName || `SEBI_${result.symbol}_DRHP_Filing.pdf`}>
-                    File: {result.documentName || `SEBI_${result.symbol}_DRHP_Filing.pdf`}
-                  </p>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Top 3 Strengths & Top 3 Risks Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Strengths */}
-            <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                Top 3 Key Competitive Strengths & Moats
-              </h4>
-              <div className="space-y-2.5">
-                {result.topStrengths.map((str, i) => (
-                  <div
-                    key={i}
-                    className="p-3.5 rounded-xl bg-slate-950/70 border border-emerald-500/20 flex items-start gap-3 text-xs text-slate-200"
-                  >
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[10px] font-mono">
-                      {i + 1}
-                    </span>
-                    <span className="leading-relaxed">{str}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Risk Factors */}
-            <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
-                Top 3 Critical Risk Factors & Watchouts
-              </h4>
-              <div className="space-y-2.5">
-                {result.topRisks.map((risk, i) => (
-                  <div
-                    key={i}
-                    className="p-3.5 rounded-xl bg-slate-950/70 border border-rose-500/20 flex items-start gap-3 text-xs text-slate-200"
-                  >
-                    <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-300 font-bold flex items-center justify-center shrink-0 text-[10px] font-mono">
-                      {i + 1}
-                    </span>
-                    <span className="leading-relaxed">{risk}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* RAG Sub-Tab Navigation Bar */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950 border border-white/10 text-xs overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`px-3.5 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'overview'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Executive Brief</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('copilot')}
+              className={`px-3.5 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'copilot'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-purple-300" />
+              <span>RAG Prospectus Copilot</span>
+              {qaHistory.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-purple-500/30 text-purple-200">
+                  {qaHistory.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('forensic')}
+              className={`px-3.5 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'forensic'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5 text-amber-300" />
+              <span>SEBI Forensic Matrix</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('chapters')}
+              className={`px-3.5 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'chapters'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-cyan-300" />
+              <span>DRHP Chapters TOC</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('financials')}
+              className={`px-3.5 py-2 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'financials'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Financials & Moat</span>
+            </button>
           </div>
 
-          {/* Financial Health Scorecard */}
-          <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-cyan-400" />
-              Financial Health & Valuation Metrics
-            </h4>
+          {/* TAB 1: EXECUTIVE OVERVIEW */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Strengths & Risks Columns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Strengths */}
+                <div className="p-5 rounded-2xl bg-slate-900/60 border border-emerald-500/20 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Top Institutional Strengths</span>
+                  </div>
+                  <ul className="space-y-2 text-xs text-slate-300">
+                    {result.topStrengths.map((s, i) => (
+                      <li key={i} className="flex items-start gap-2 leading-relaxed">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                        <span>{s}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs font-mono">
-              <div className="p-3 rounded-xl bg-slate-950 border border-white/5">
-                <span className="text-[10px] text-slate-500 block">Revenue Growth</span>
-                <span className="text-sm font-bold text-emerald-400 mt-1 block">
-                  {result.financials.revenueCagr}
-                </span>
+                {/* Risks */}
+                <div className="p-5 rounded-2xl bg-slate-900/60 border border-rose-500/20 space-y-3">
+                  <div className="flex items-center gap-2 text-rose-400 font-bold text-xs uppercase tracking-wider">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Forensic Red Flags & Risks</span>
+                  </div>
+                  <ul className="space-y-2 text-xs text-slate-300">
+                    {result.topRisks.map((r, i) => (
+                      <li key={i} className="flex items-start gap-2 leading-relaxed">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                        <span>{r}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-950 border border-white/5">
-                <span className="text-[10px] text-slate-500 block">EBITDA Margin</span>
-                <span className="text-sm font-bold text-cyan-400 mt-1 block">
-                  {result.financials.ebitdaMargin}
-                </span>
-              </div>
+              {/* Citations Grounding List */}
+              {result.citations && result.citations.length > 0 && (
+                <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-purple-400" />
+                      Grounded DRHP Page Citations
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      File: {result.documentName || `SEBI_${result.symbol}_DRHP_Filing.pdf`}
+                    </span>
+                  </div>
 
-              <div className="p-3 rounded-xl bg-slate-950 border border-white/5">
-                <span className="text-[10px] text-slate-500 block">PAT Margin</span>
-                <span className="text-sm font-bold text-slate-200 mt-1 block">
-                  {result.financials.patMargin}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950 border border-white/5">
-                <span className="text-[10px] text-slate-500 block">Debt to Equity</span>
-                <span className="text-sm font-bold text-amber-400 mt-1 block">
-                  {result.financials.debtToEquity}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950 border border-white/5">
-                <span className="text-[10px] text-slate-500 block">Offer P/E Multiple</span>
-                <span className="text-sm font-bold text-purple-400 mt-1 block">
-                  {result.financials.peRatio}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950 border border-white/5">
-                <span className="text-[10px] text-slate-500 block">Industry Peer P/E</span>
-                <span className="text-sm font-bold text-slate-300 mt-1 block">
-                  {result.financials.industryPe}
-                </span>
-              </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {result.citations.map((c, idx) => (
+                      <div key={idx} className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-200 line-clamp-1">{c.claim}</span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                            Page {c.pageNumber}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 italic leading-relaxed line-clamp-2">
+                          &quot;{c.excerpt}&quot;
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+          )}
 
-            {/* Business Moat */}
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-white/5 text-xs">
-              <span className="font-bold text-cyan-300">Core Competitive Moat: </span>
-              <span className="text-slate-300">{result.businessMoat}</span>
-            </div>
-          </div>
-
-          {/* Document Citations Gallery */}
-          {result.citations && result.citations.length > 0 && (
-            <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-purple-300 flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-purple-400" />
-                Document-Grounded Page Citations
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {result.citations.map((c, i) => (
-                  <div
-                    key={i}
-                    className="p-3.5 rounded-xl bg-slate-950 border border-white/5 space-y-1.5 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-white">{c.claim}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                        Page {c.pageNumber}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 italic bg-white/[0.02] p-2 rounded border border-white/5">
-                      &ldquo;{c.excerpt}&rdquo;
+          {/* TAB 2: INTERACTIVE RAG PROSPECTUS COPILOT */}
+          {activeTab === 'copilot' && (
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-purple-500/30 space-y-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">
+                      RAG Prospectus Forensic Copilot
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Hybrid BM25 + Semantic Passage Retrieval grounded to official SEBI filing
                     </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  Vector Retrieval Active
+                </span>
+              </div>
+
+              {/* Quick Prompt Chips */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">
+                  Quick Institutional Queries:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_QUESTIONS.map((q, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleAskQuestion(undefined, q)}
+                      disabled={isAskingQuestion}
+                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 text-[11px] font-medium transition cursor-pointer flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3 text-purple-400" />
+                      <span>{q}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Q&A Chat History Stream with Retrieved Chunks */}
+              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                {qaHistory.length === 0 ? (
+                  <div className="p-8 text-center rounded-xl bg-slate-950/40 border border-dashed border-white/10 space-y-2">
+                    <MessageSquare className="w-8 h-8 text-purple-400/60 mx-auto" />
+                    <p className="text-xs font-semibold text-white">Ask anything about the prospectus</p>
+                    <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                      Click any quick query above or type your question below. The RAG model will retrieve the exact chapter passages and verify facts.
+                    </p>
+                  </div>
+                ) : (
+                  qaHistory.map((qa, i) => (
+                    <div key={i} className="space-y-2.5 text-xs">
+                      {/* User Question */}
+                      <div className="flex items-start gap-2.5 text-slate-300 bg-white/5 p-3 rounded-xl border border-white/5">
+                        <div className="w-6 h-6 rounded bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-[11px] shrink-0">
+                          Q
+                        </div>
+                        <span className="font-semibold text-white mt-0.5">{qa.question}</span>
+                      </div>
+
+                      {/* RAG Grounded Answer */}
+                      <div className="flex items-start gap-2.5 text-slate-300 bg-purple-950/30 p-4 rounded-xl border border-purple-500/20">
+                        <div className="w-6 h-6 rounded bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold text-[11px] shrink-0">
+                          A
+                        </div>
+                        <div className="space-y-3 flex-1">
+                          <p className="leading-relaxed text-slate-200">{qa.answer}</p>
+
+                          {/* Page Citations */}
+                          {qa.pageCitations && qa.pageCitations.length > 0 && (
+                            <div className="flex items-center gap-1.5 pt-1">
+                              <span className="text-[10px] text-slate-400 font-mono">Grounded Citations:</span>
+                              {qa.pageCitations.map((p) => (
+                                <span
+                                  key={p}
+                                  className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                                >
+                                  Page {p}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Retrieved Source Passages Accordion */}
+                          {qa.retrievedChunks && qa.retrievedChunks.length > 0 && (
+                            <div className="pt-2 border-t border-white/5 space-y-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedChunks((prev) => ({ ...prev, [i]: !prev[i] }))
+                                }
+                                className="flex items-center gap-1.5 text-[11px] text-purple-300 hover:text-purple-200 font-semibold cursor-pointer"
+                              >
+                                {expandedChunks[i] ? (
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                ) : (
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                )}
+                                <span>
+                                  {expandedChunks[i] ? 'Hide' : 'Inspect'} {qa.retrievedChunks.length} Retrieved Source Passages
+                                </span>
+                              </button>
+
+                              {expandedChunks[i] && (
+                                <div className="space-y-2 pt-1">
+                                  {qa.retrievedChunks.map((chunk, cIdx) => (
+                                    <div
+                                      key={cIdx}
+                                      className="p-3 rounded-lg bg-slate-950/80 border border-white/5 text-[11px] space-y-1.5"
+                                    >
+                                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                        <span className="font-semibold text-purple-300">{chunk.section}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-mono">Page {chunk.pageNumber}</span>
+                                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 font-mono">
+                                            {Math.round(chunk.score * 100)}% match
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <p className="text-slate-300 italic font-mono leading-relaxed">
+                                        &quot;{chunk.snippet}&quot;
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Question Input Form */}
+              <form onSubmit={handleAskQuestion} className="flex gap-2 pt-2 border-t border-white/5">
+                <input
+                  type="text"
+                  placeholder="Ask anything about the DRHP (e.g. debt repayment, promoter litigation, anchor lock-in)..."
+                  value={questionInput}
+                  onChange={(e) => setQuestionInput(e.target.value)}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition"
+                />
+                <button
+                  type="submit"
+                  disabled={isAskingQuestion || !questionInput.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5 shadow-md shadow-purple-600/30"
+                >
+                  {isAskingQuestion ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isAskingQuestion ? 'Retrieving...' : 'Ask RAG'}</span>
+                </button>
+              </form>
+
+              {qaError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{qaError}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: SEBI FORENSIC RISK MATRIX */}
+          {activeTab === 'forensic' && (
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-white/10 space-y-4 shadow-xl">
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <Scale className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">
+                      SEBI Institutional Forensic Risk Matrix
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Multi-factor forensic audit across 5 mandatory prospectus disclosure pillars
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-mono text-slate-400">Traffic-Light Radar</span>
+              </div>
+
+              <div className="space-y-3">
+                {(result.forensicRiskMatrix || []).map((risk, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-xl bg-slate-950/70 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-xs">{risk.category}</span>
+                        {risk.section && (
+                          <span className="text-[10px] text-slate-500 font-mono">({risk.section})</span>
+                        )}
+                        {risk.citationPage && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            Page {risk.citationPage}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">{risk.detail}</p>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 block">Safety Score</span>
+                        <span className="font-mono font-bold text-xs text-slate-200">{risk.score}/100</span>
+                      </div>
+                      <div
+                        className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
+                          risk.rating === 'LOW'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            : risk.rating === 'MEDIUM'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                        }`}
+                      >
+                        {risk.rating} RISK
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Interactive Grounded Q&A Assistant ("Ask the Prospectus Copilot") */}
-          <div className="p-6 rounded-2xl bg-slate-900/80 border border-purple-500/30 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-purple-400" />
-                <h4 className="text-sm font-bold text-white">
-                  Ask the Prospectus Forensic Copilot
-                </h4>
+          {/* TAB 4: DRHP CHAPTERS & TABLE OF CONTENTS */}
+          {activeTab === 'chapters' && (
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-white/10 space-y-4 shadow-xl">
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">
+                      DRHP Chapter Browser & Table of Contents
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Index of official prospectus chapters extracted for {result.companyName}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-mono text-cyan-300">
+                  {result.sections?.length || 0} Chapters Indexed
+                </span>
               </div>
-              <span className="text-[11px] text-purple-300 font-mono">
-                Grounded to DRHP text with page citations
-              </span>
-            </div>
 
-            {/* Q&A Chat Stream */}
-            {qaHistory.length > 0 && (
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {qaHistory.map((qa, i) => (
-                  <div key={i} className="space-y-2 text-xs">
-                    <div className="flex items-start gap-2 text-slate-300 bg-white/5 p-3 rounded-xl border border-white/5">
-                      <span className="font-bold text-cyan-400 shrink-0">Q:</span>
-                      <span className="font-semibold text-white">{qa.question}</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(result.sections || []).map((sec) => (
+                  <div
+                    key={sec.id}
+                    className="p-4 rounded-xl bg-slate-950/70 border border-white/5 space-y-2 hover:border-cyan-500/30 transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold">
+                        Chapter {sec.chapterNumber} • {sec.pageRange}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          sec.riskRating === 'LOW'
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-amber-500/20 text-amber-300'
+                        }`}
+                      >
+                        {sec.riskRating} RISK
+                      </span>
                     </div>
-                    <div className="flex items-start gap-2 text-slate-300 bg-purple-950/30 p-3.5 rounded-xl border border-purple-500/20">
-                      <span className="font-bold text-purple-400 shrink-0">A:</span>
-                      <div className="space-y-2 flex-1">
-                        <p className="leading-relaxed">{qa.answer}</p>
-                        {qa.pageCitations && qa.pageCitations.length > 0 && (
-                          <div className="flex items-center gap-1.5 pt-1">
-                            <span className="text-[10px] text-slate-400 font-mono">Citations:</span>
-                            {qa.pageCitations.map((p) => (
-                              <span
-                                key={p}
-                                className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                              >
-                                Page {p}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+
+                    <h5 className="font-bold text-white text-xs">{sec.title}</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">{sec.summary}</p>
+
+                    <div className="pt-2 border-t border-white/5 space-y-1">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold">
+                        Key Disclosures:
+                      </span>
+                      <ul className="space-y-1 text-[11px] text-slate-300 font-mono">
+                        {sec.keyFindings.map((kf, i) => (
+                          <li key={i} className="flex items-center gap-1.5">
+                            <span className="w-1 h-1 rounded-full bg-cyan-400" />
+                            <span>{kf}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
                 ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Question Input Form */}
-            <form onSubmit={handleAskQuestion} className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Ask anything about the prospectus (e.g. debt repayment, promoter litigation, anchor lock-in)..."
-                value={questionInput}
-                onChange={(e) => setQuestionInput(e.target.value)}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition"
-              />
-              <button
-                type="submit"
-                disabled={isAskingQuestion || !questionInput.trim()}
-                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5 shadow-md shadow-purple-600/30"
-              >
-                {isAskingQuestion ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Send className="w-3.5 h-3.5" />
-                )}
-                <span>{isAskingQuestion ? 'Verifying...' : 'Ask'}</span>
-              </button>
-            </form>
-
-            {qaError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{qaError}</span>
+          {/* TAB 5: FINANCIALS & MOAT */}
+          {activeTab === 'financials' && (
+            <div className="space-y-6">
+              {/* Business Moat */}
+              <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-2">
+                <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs uppercase tracking-wider">
+                  <TrendingUp className="w-4 h-4" />
+                  <span>Competitive Moat & Defensibility</span>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{result.businessMoat}</p>
               </div>
-            )}
-          </div>
+
+              {/* Financial Metrics Table */}
+              <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <BarChart3 className="w-4 h-4 text-emerald-400" />
+                    Key Balance Sheet & P&L Disclosures
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400">Restated Financials</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block font-medium">3-Yr Revenue CAGR</span>
+                    <span className="text-xs font-mono font-bold text-white mt-1 block">
+                      {result.financials.revenueCagr}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block font-medium">EBITDA Margin</span>
+                    <span className="text-xs font-mono font-bold text-emerald-400 mt-1 block">
+                      {result.financials.ebitdaMargin}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block font-medium">PAT Margin</span>
+                    <span className="text-xs font-mono font-bold text-white mt-1 block">
+                      {result.financials.patMargin}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block font-medium">Debt to Equity</span>
+                    <span className="text-xs font-mono font-bold text-cyan-300 mt-1 block">
+                      {result.financials.debtToEquity}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block font-medium">P/E Multiple</span>
+                    <span className="text-xs font-mono font-bold text-purple-300 mt-1 block">
+                      {result.financials.peRatio}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block font-medium">Industry P/E</span>
+                    <span className="text-xs font-mono font-bold text-slate-400 mt-1 block">
+                      {result.financials.industryPe}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Regulatory SEBI Compliance Disclaimer */}
           <div className="p-4 rounded-xl bg-slate-950/80 border border-white/5 text-[11px] text-slate-500 leading-relaxed font-sans">

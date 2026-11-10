@@ -267,6 +267,7 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
         onOpenDetails={(ipo) => handleOpenDetails(ipo, 'overview')}
         onOpenGmpTrend={(ipo) => setSelectedIpoForGmp(ipo)}
         onOpenStockChart={(ipo) => setSelectedIpoForStockChart(ipo)}
+        onAnalyzeAi={onAnalyzeAi}
       />
 
       {/* EXTENDED IPO DETAILS MODAL (Overview, Subscription progress bars, embedded GMP & Stock Charts) */}

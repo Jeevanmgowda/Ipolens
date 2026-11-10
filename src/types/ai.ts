@@ -14,10 +14,55 @@ export interface CitationItem {
   excerpt: string;
 }
 
+export interface RagChunk {
+  id: string;
+  section: string;
+  pageNumber: number;
+  content: string;
+  keywords: string[];
+}
+
+export interface RetrievedChunk {
+  id: string;
+  section: string;
+  pageNumber: number;
+  snippet: string;
+  score: number;
+}
+
+export interface RagQueryResult {
+  question: string;
+  answer: string;
+  confidenceScore: number;
+  retrievedChunks: RetrievedChunk[];
+  pageCitations: number[];
+  notFound?: boolean;
+}
+
+export interface DrhpSectionOverview {
+  id: string;
+  title: string;
+  chapterNumber: number;
+  pageRange: string;
+  summary: string;
+  keyFindings: string[];
+  riskRating: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export interface ForensicRiskCategory {
+  category: string;
+  rating: 'LOW' | 'MEDIUM' | 'HIGH';
+  score: number; // 0 - 100 (higher = safer)
+  detail: string;
+  citationPage?: number;
+  section?: string;
+}
+
 export interface QaInteraction {
   question: string;
   answer: string;
   pageCitations: number[];
+  retrievedChunks?: RetrievedChunk[];
   notFound?: boolean;
 }
 
@@ -79,4 +124,7 @@ export interface DrhpAnalysisResult {
   citations?: CitationItem[];
   qaHistory?: QaInteraction[];
   liveTelemetry?: LiveIpoTelemetry;
+  ragIndexReady?: boolean;
+  sections?: DrhpSectionOverview[];
+  forensicRiskMatrix?: ForensicRiskCategory[];
 }
