@@ -22,7 +22,10 @@ import {
   CheckCircle2,
   Info,
   Flame,
+  Sparkles,
 } from 'lucide-react';
+import { AiStockPrediction } from '@/types/ai-prediction';
+import { AiStockPredictionPanel } from '../charts/AiStockPredictionPanel';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -69,7 +72,47 @@ export const LiveIpoChartModal: React.FC<LiveIpoChartModalProps> = ({
   const [hoveredPoint, setHoveredPoint] = useState<{ price: number; date: string } | null>(null);
   const [useBenchmark, setUseBenchmark] = useState<boolean>(false);
 
+  // AI Stock Trading & Prediction state
+  const [showAiPrediction, setShowAiPrediction] = useState<boolean>(true);
+  const [aiPrediction, setAiPrediction] = useState<AiStockPrediction | null>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+
   const cleanSymbol = (symbol || '').toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
+
+  // Fetch AI Trading Prediction
+  const fetchAiPrediction = async (pointsData = chartData?.points, currPrice = chartData?.currentPrice) => {
+    if (!symbol) return;
+    setAiLoading(true);
+    try {
+      const candles = (pointsData || []).map((p) => ({
+        time: p.date,
+        open: p.price,
+        high: p.price * 1.008,
+        low: p.price * 0.992,
+        close: p.price,
+        volume: p.volume || 1000,
+      }));
+      const res = await fetch('/api/market/ai-prediction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: cleanSymbol,
+          companyName: companyName || cleanSymbol,
+          timeframe: range,
+          currentPrice: currPrice || 100,
+          candles,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setAiPrediction(json.data);
+      }
+    } catch (err) {
+      console.error('Error fetching AI prediction in LiveIpoChartModal:', err);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const fetchChart = async (sym: string, r: string) => {
     setLoading(true);
@@ -79,9 +122,11 @@ export const LiveIpoChartModal: React.FC<LiveIpoChartModalProps> = ({
       const json = await res.json();
       if (json.success && json.data) {
         setChartData(json.data);
+        fetchAiPrediction(json.data.points, json.data.currentPrice);
       } else {
         // If symbol is unlisted, chartData is null
         setChartData(null);
+        fetchAiPrediction([], 100);
       }
     } catch (err: any) {
       setError(err.message || 'Error loading live chart');
@@ -209,6 +254,17 @@ export const LiveIpoChartModal: React.FC<LiveIpoChartModalProps> = ({
               >
                 <BarChart2 className="w-3.5 h-3.5" />
                 <span>Technical Stream</span>
+              </button>
+              <button
+                onClick={() => setShowAiPrediction(!showAiPrediction)}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                  showAiPrediction
+                    ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 text-white shadow-md shadow-purple-500/25 border border-purple-400/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-cyan-200 animate-pulse" />
+                <span>AI Predictor</span>
               </button>
             </div>
 
@@ -465,6 +521,17 @@ export const LiveIpoChartModal: React.FC<LiveIpoChartModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* AI Stock Trading & Prediction Model Panel */}
+          {showAiPrediction && (
+            <div className="p-4 sm:p-6 bg-slate-950/60 border-t border-white/5">
+              <AiStockPredictionPanel
+                prediction={aiPrediction}
+                loading={aiLoading}
+                onRefresh={() => fetchAiPrediction()}
+              />
+            </div>
+          )}
 
           {/* Performance Footer Grid */}
           <div className="p-4 sm:p-5 bg-slate-950/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">

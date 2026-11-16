@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { MarketQuoteData, MarketOhlcCandle } from '@/types/liveMarket';
 import { TradingViewChart } from '../radar/TradingViewChart';
+import { AiStockPrediction } from '@/types/ai-prediction';
+import { AiStockPredictionPanel } from '../charts/AiStockPredictionPanel';
 
 interface LiveStockPriceChartProps {
   symbol: string;
@@ -445,7 +447,40 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
   const [sseActive, setSseActive] = useState<boolean>(false);
   const [lastTickTime, setLastTickTime] = useState<string>('');
 
+  // AI Stock Trading & Prediction state
+  const [showAiPrediction, setShowAiPrediction] = useState<boolean>(true);
+  const [aiPrediction, setAiPrediction] = useState<AiStockPrediction | null>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+
   const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
+
+  // Fetch AI Trading Prediction
+  const fetchAiPrediction = async (currentCandles: MarketOhlcCandle[] = candles, force: boolean = false) => {
+    if (currentCandles.length === 0 && !force) return;
+    setAiLoading(true);
+    try {
+      const activePrice = quote?.ltp || (currentCandles.length > 0 ? currentCandles[currentCandles.length - 1].close : initialPrice || 100);
+      const res = await fetch('/api/market/ai-prediction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: cleanSymbol,
+          companyName: companyName || cleanSymbol,
+          timeframe,
+          currentPrice: activePrice,
+          candles: currentCandles,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setAiPrediction(json.data);
+      }
+    } catch (err) {
+      console.error('Error fetching AI prediction in LiveStockPriceChart:', err);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // 1. Fetch Quote & OHLC candles directly from Upstox API
   const fetchMarketData = async (sym: string, tf: string) => {
@@ -464,6 +499,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
       }
       if (ohlcJson.success && Array.isArray(ohlcJson.data)) {
         setCandles(ohlcJson.data);
+        fetchAiPrediction(ohlcJson.data);
       }
     } catch (err) {
       console.error('Error fetching stock price chart data:', err);
@@ -658,6 +694,18 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
               <Activity className="w-3.5 h-3.5" />
               <span>TradingView Live</span>
             </button>
+
+            <button
+              onClick={() => setShowAiPrediction(!showAiPrediction)}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                showAiPrediction
+                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 text-white shadow-md shadow-purple-500/25 border border-purple-400/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-cyan-200 animate-pulse" />
+              <span>AI Predictor</span>
+            </button>
           </div>
 
           <button
@@ -829,6 +877,15 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
           </div>
         )}
       </div>
+
+      {/* AI Stock Trading & Prediction Model Panel */}
+      {showAiPrediction && (
+        <AiStockPredictionPanel
+          prediction={aiPrediction}
+          loading={aiLoading}
+          onRefresh={() => fetchAiPrediction(candles, true)}
+        />
+      )}
     </div>
   );
 };

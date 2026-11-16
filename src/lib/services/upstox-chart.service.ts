@@ -321,7 +321,18 @@ export class UpstoxChartService {
   }
 
   private static buildFallbackCandles(symbol: string, interval: '1minute' | '30minute' | 'day'): CandleData[] {
-    const basePrice = symbol.toUpperCase().includes('SWIGGY') ? 390 : symbol.toUpperCase().includes('WAAREE') ? 2850 : 250;
+    const upperSym = symbol.toUpperCase();
+    const basePrice = upperSym.includes('SWIGGY')
+      ? 390
+      : upperSym.includes('WAAREE')
+      ? 2850
+      : upperSym.includes('JPL') || upperSym.includes('JIO')
+      ? 1402
+      : upperSym.includes('HYUNDAI')
+      ? 1820
+      : upperSym.includes('NTPC')
+      ? 108
+      : 250;
     const isIntraday = interval === '1minute' || interval === '30minute';
     const count = 30;
     const now = Date.now();

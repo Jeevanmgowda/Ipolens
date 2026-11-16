@@ -224,7 +224,12 @@ export class RegistrarScannerService {
 
     const allotmentValue = sharesAllotted * price;
     const totalBlocked = sharesApplied * price;
-    const refundAmount = totalBlocked - allotmentValue;
+    const refundAmount =
+      status === 'Not Allotted'
+        ? totalBlocked
+        : status === 'Allotted'
+        ? Math.max(0, totalBlocked - allotmentValue)
+        : 0;
 
     const panMasked =
       cleanPan.length >= 10
@@ -333,7 +338,12 @@ export class RegistrarScannerService {
 
     const allotmentValue = sharesAllotted * price;
     const totalBlocked = sharesApplied * price;
-    const refundAmount = totalBlocked - allotmentValue;
+    const refundAmount =
+      status === 'Not Allotted'
+        ? totalBlocked
+        : status === 'Allotted'
+        ? Math.max(0, totalBlocked - allotmentValue)
+        : 0;
 
     return {
       panId: profile.id,

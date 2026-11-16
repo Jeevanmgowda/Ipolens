@@ -19,9 +19,12 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Zap,
+  Sparkles,
 } from 'lucide-react';
 import { CandleData } from '@/types/ipo';
 import { TradingViewChart } from './radar/TradingViewChart';
+import { AiStockPrediction } from '@/types/ai-prediction';
+import { AiStockPredictionPanel } from './charts/AiStockPredictionPanel';
 
 interface NseLiveChartProps {
   instrumentKey: string;
@@ -54,6 +57,12 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 700, height });
 
+  // AI Stock Trading & Prediction state
+  const [showAiPrediction, setShowAiPrediction] = useState<boolean>(true);
+  const [aiPrediction, setAiPrediction] = useState<AiStockPrediction | null>(null);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [showOverlayLines, setShowOverlayLines] = useState<boolean>(true);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Resize handler
@@ -70,6 +79,34 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [height]);
+
+  // Fetch AI Trading Prediction
+  const fetchAiPrediction = async (currentCandles: CandleData[] = candles, force: boolean = false) => {
+    if (currentCandles.length === 0 && !force) return;
+    setAiLoading(true);
+    try {
+      const latestPrice = currentCandles.length > 0 ? currentCandles[currentCandles.length - 1].close : initialPrice || 100;
+      const res = await fetch('/api/market/ai-prediction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: displaySymbol,
+          companyName: companyName || displaySymbol,
+          timeframe: selectedTf,
+          currentPrice: latestPrice,
+          candles: currentCandles,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setAiPrediction(json.data);
+      }
+    } catch (err) {
+      console.error('Error fetching AI prediction in NseLiveChart:', err);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // Fetch candles from /api/ipos/charts
   const fetchCandles = async (tfValue: string) => {
@@ -102,6 +139,7 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
 
       if (json.success && Array.isArray(json.candles)) {
         setCandles(json.candles);
+        fetchAiPrediction(json.candles);
       }
     } catch (err) {
       console.error('Error fetching candles in NseLiveChart:', err);
@@ -123,10 +161,10 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
   const priceChangePct = previousPrice > 0 ? Number(((priceChange / previousPrice) * 100).toFixed(2)) : 0;
   const isPositive = priceChange >= 0;
 
-  // Windowed candles for crisp SVG rendering (limit to 70 for 1D)
+  // Windowed candles for crisp SVG rendering (limit to 55 for 1D for bold readable candles)
   const displayCandles = useMemo(() => {
-    if (selectedTf === '1D' && candles.length > 70) {
-      return candles.slice(-70);
+    if (selectedTf === '1D' && candles.length > 55) {
+      return candles.slice(-55);
     }
     return candles;
   }, [candles, selectedTf]);
@@ -142,9 +180,11 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
 
     const min = Math.min(...lows);
     const max = Math.max(...highs);
-    const margin = Math.max((max - min) * 0.05, 0.5);
-    const adjMin = Math.max(0, min - margin);
-    const adjMax = max + margin;
+    const rawSpan = Math.max(max - min, 0.5);
+    // Dynamic padding ensures candles have breathing room but are never squished flat
+    const pad = Math.max(rawSpan * 0.16, 0.4);
+    const adjMin = Math.max(0, min - pad);
+    const adjMax = max + pad;
     const maxVol = Math.max(...volumes, 1000);
 
     return {
@@ -156,17 +196,17 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
   }, [displayCandles]);
 
   // SVG layout metrics
-  const paddingLeft = 12;
-  const paddingRight = 65;
-  const priceTop = 16;
-  const priceHeight = dimensions.height - 140;
-  const volTop = dimensions.height - 110;
-  const volHeight = 65;
+  const paddingLeft = 14;
+  const paddingRight = 75; // Ample room for right-side price axis and AI level badges
+  const priceTop = 20;
+  const priceHeight = dimensions.height - 145;
+  const volTop = dimensions.height - 105;
+  const volHeight = 60;
   const chartWidth = Math.max(dimensions.width - paddingLeft - paddingRight, 100);
 
   const candleCount = displayCandles.length;
   const barWidth = candleCount > 0 ? chartWidth / candleCount : 10;
-  const bodyWidth = Math.max(2, Math.min(12, barWidth * 0.72));
+  const bodyWidth = Math.max(4, Math.min(14, barWidth * 0.72));
 
   const getY = (val: number) => priceTop + ((maxPrice - val) / priceRange) * priceHeight;
   const getPriceAtY = (y: number) => maxPrice - ((y - priceTop) / priceHeight) * priceRange;
@@ -203,38 +243,37 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
 
   return (
     <div className="space-y-3 w-full">
-      {/* Header telemetry */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#080d1a] border border-white/10">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono font-bold text-white text-base">NSE:{displaySymbol}</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Live NSE Exchange Feed
-            </span>
-          </div>
-          <div className="flex items-baseline gap-2.5">
-            <span className="text-2xl sm:text-3xl font-mono font-extrabold text-white">
-              ₹{currentPrice.toFixed(2)}
-            </span>
-            <div
-              className={`flex items-center gap-1 font-mono font-bold text-xs px-2 py-0.5 rounded-lg ${
-                isPositive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
-              }`}
-            >
-              {isPositive ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-              <span>
-                {isPositive ? '+' : ''}₹{priceChange.toFixed(2)} ({isPositive ? '+' : ''}
-                {priceChangePct}%)
+      {/* Header telemetry & controls */}
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-[#080d1a] border border-white/10 space-y-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-mono font-bold text-white text-base">NSE:{displaySymbol}</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Live NSE Exchange Feed
               </span>
             </div>
+            <div className="flex items-baseline gap-2.5">
+              <span className="text-2xl sm:text-3xl font-mono font-extrabold text-white">
+                ₹{currentPrice.toFixed(2)}
+              </span>
+              <div
+                className={`flex items-center gap-1 font-mono font-bold text-xs px-2 py-0.5 rounded-lg ${
+                  isPositive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/15 text-rose-400 border border-rose-500/20'
+                }`}
+              >
+                {isPositive ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                <span>
+                  {isPositive ? '+' : ''}₹{priceChange.toFixed(2)} ({isPositive ? '+' : ''}
+                  {priceChangePct}%)
+                </span>
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* Mode & Timeframe Controls */}
-        <div className="flex flex-wrap items-center gap-2">
           {/* Mode Switcher */}
-          <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-white/10 text-xs">
             <button
               onClick={() => setChartMode('candle')}
               className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1 ${
@@ -268,11 +307,24 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
               <Zap className="w-3 h-3" />
               <span>TradingView Live</span>
             </button>
+            <button
+              onClick={() => setShowAiPrediction(!showAiPrediction)}
+              className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                showAiPrediction
+                  ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 text-white shadow-md shadow-purple-500/25 border border-purple-400/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3 h-3 text-cyan-200 animate-pulse" />
+              <span>AI Predictor</span>
+            </button>
           </div>
+        </div>
 
-          {/* Timeframe Pills (visible for Candles and Line modes) */}
-          {chartMode !== 'tradingview' && (
-            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10 text-xs">
+        {/* Sub-strip: Timeframe Pills & Refresh */}
+        {chartMode !== 'tradingview' && (
+          <div className="flex items-center justify-between border-t border-white/5 pt-2 text-xs">
+            <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-900 border border-white/5">
               {TIMEFRAMES.map((tf) => (
                 <button
                   key={tf.value}
@@ -287,19 +339,18 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
                 </button>
               ))}
             </div>
-          )}
 
-          {chartMode !== 'tradingview' && (
             <button
               onClick={() => fetchCandles(selectedTf)}
               disabled={loading}
               title="Refresh Candles"
-              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition cursor-pointer"
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition cursor-pointer flex items-center gap-1.5 text-xs font-mono"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Chart Canvas */}
@@ -373,6 +424,122 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
                 </g>
               ))}
 
+              {/* AI Prediction Target & Stop-Loss Overlay Reference Lines */}
+              {showOverlayLines && aiPrediction && (
+                <g pointerEvents="none">
+                  {/* Target 2 (Breakout) */}
+                  {aiPrediction.tradeSetup.target2 >= minPrice && aiPrediction.tradeSetup.target2 <= maxPrice && (
+                    <g>
+                      <line
+                        x1={paddingLeft}
+                        y1={getY(aiPrediction.tradeSetup.target2)}
+                        x2={paddingLeft + chartWidth}
+                        y2={getY(aiPrediction.tradeSetup.target2)}
+                        stroke="#06b6d4"
+                        strokeWidth={1.2}
+                        strokeDasharray="4 4"
+                        strokeOpacity={0.45}
+                      />
+                      <rect
+                        x={paddingLeft + chartWidth + 4}
+                        y={getY(aiPrediction.tradeSetup.target2) - 8}
+                        width={68}
+                        height={16}
+                        fill="#083344"
+                        rx={3}
+                        stroke="#06b6d4"
+                        strokeWidth={0.75}
+                      />
+                      <text
+                        x={paddingLeft + chartWidth + 38}
+                        y={getY(aiPrediction.tradeSetup.target2) + 4}
+                        fill="#cffafe"
+                        fontSize={8.5}
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        T2: ₹{aiPrediction.tradeSetup.target2.toFixed(1)}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Target 1 (Conservative) */}
+                  {aiPrediction.tradeSetup.target1 >= minPrice && aiPrediction.tradeSetup.target1 <= maxPrice && (
+                    <g>
+                      <line
+                        x1={paddingLeft}
+                        y1={getY(aiPrediction.tradeSetup.target1)}
+                        x2={paddingLeft + chartWidth}
+                        y2={getY(aiPrediction.tradeSetup.target1)}
+                        stroke="#10b981"
+                        strokeWidth={1.2}
+                        strokeDasharray="4 4"
+                        strokeOpacity={0.45}
+                      />
+                      <rect
+                        x={paddingLeft + chartWidth + 4}
+                        y={getY(aiPrediction.tradeSetup.target1) - 8}
+                        width={68}
+                        height={16}
+                        fill="#064e3b"
+                        rx={3}
+                        stroke="#10b981"
+                        strokeWidth={0.75}
+                      />
+                      <text
+                        x={paddingLeft + chartWidth + 38}
+                        y={getY(aiPrediction.tradeSetup.target1) + 4}
+                        fill="#a7f3d0"
+                        fontSize={8.5}
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        T1: ₹{aiPrediction.tradeSetup.target1.toFixed(1)}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Stop Loss (SL) */}
+                  {aiPrediction.tradeSetup.stopLoss >= minPrice && aiPrediction.tradeSetup.stopLoss <= maxPrice && (
+                    <g>
+                      <line
+                        x1={paddingLeft}
+                        y1={getY(aiPrediction.tradeSetup.stopLoss)}
+                        x2={paddingLeft + chartWidth}
+                        y2={getY(aiPrediction.tradeSetup.stopLoss)}
+                        stroke="#f43f5e"
+                        strokeWidth={1.2}
+                        strokeDasharray="4 4"
+                        strokeOpacity={0.45}
+                      />
+                      <rect
+                        x={paddingLeft + chartWidth + 4}
+                        y={getY(aiPrediction.tradeSetup.stopLoss) - 8}
+                        width={68}
+                        height={16}
+                        fill="#881337"
+                        rx={3}
+                        stroke="#f43f5e"
+                        strokeWidth={0.75}
+                      />
+                      <text
+                        x={paddingLeft + chartWidth + 38}
+                        y={getY(aiPrediction.tradeSetup.stopLoss) + 4}
+                        fill="#fecdd3"
+                        fontSize={8.5}
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        SL: ₹{aiPrediction.tradeSetup.stopLoss.toFixed(1)}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              )}
+
               {/* Volume Baseline */}
               <line
                 x1={paddingLeft}
@@ -402,7 +569,9 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
                 const isUp = c.close >= c.open;
                 const color = isUp ? '#10b981' : '#f43f5e';
                 const bodyY = Math.min(yOpen, yClose);
-                const bodyH = Math.max(1.8, Math.abs(yOpen - yClose));
+                const bodyH = Math.max(3.5, Math.abs(yOpen - yClose));
+                const wickTop = Math.min(yHigh, yLow);
+                const wickBottom = Math.max(yHigh, yLow);
 
                 const volBarH = Math.max(1, (c.volume / maxVolume) * volHeight);
                 const volBarY = volTop + volHeight - volBarH;
@@ -422,11 +591,11 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
                     {/* Wick */}
                     <line
                       x1={centerX}
-                      y1={yHigh}
+                      y1={wickTop}
                       x2={centerX}
-                      y2={yLow}
+                      y2={Math.max(wickBottom, wickTop + 4)}
                       stroke={color}
-                      strokeWidth={1.5}
+                      strokeWidth={1.8}
                       strokeLinecap="round"
                     />
                     {/* Body */}
@@ -437,8 +606,8 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
                       height={bodyH}
                       fill={color}
                       stroke={color}
-                      strokeWidth={0.75}
-                      rx={1}
+                      strokeWidth={1}
+                      rx={1.5}
                     />
                   </g>
                 );
@@ -550,6 +719,44 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
                     return null;
                   }}
                 />
+                {/* AI Prediction Target & Stop-Loss Reference Lines for Area View */}
+                {showOverlayLines && aiPrediction && (
+                  <>
+                    <ReferenceLine
+                      y={aiPrediction.tradeSetup.target2}
+                      stroke="#06b6d4"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: `T2: ₹${aiPrediction.tradeSetup.target2}`,
+                        fill: '#06b6d4',
+                        fontSize: 10,
+                        position: 'insideTopRight',
+                      }}
+                    />
+                    <ReferenceLine
+                      y={aiPrediction.tradeSetup.target1}
+                      stroke="#10b981"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: `T1: ₹${aiPrediction.tradeSetup.target1}`,
+                        fill: '#10b981',
+                        fontSize: 10,
+                        position: 'insideTopRight',
+                      }}
+                    />
+                    <ReferenceLine
+                      y={aiPrediction.tradeSetup.stopLoss}
+                      stroke="#f43f5e"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: `SL: ₹${aiPrediction.tradeSetup.stopLoss}`,
+                        fill: '#f43f5e',
+                        fontSize: 10,
+                        position: 'insideBottomRight',
+                      }}
+                    />
+                  </>
+                )}
                 <Area
                   type="monotone"
                   dataKey="close"
@@ -563,6 +770,17 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
           </div>
         )}
       </div>
+
+      {/* AI Stock Trading & Prediction Model Panel */}
+      {showAiPrediction && (
+        <AiStockPredictionPanel
+          prediction={aiPrediction}
+          loading={aiLoading}
+          onRefresh={() => fetchAiPrediction(candles, true)}
+          showOverlayLines={showOverlayLines}
+          onToggleOverlayLines={() => setShowOverlayLines(!showOverlayLines)}
+        />
+      )}
     </div>
   );
 };
