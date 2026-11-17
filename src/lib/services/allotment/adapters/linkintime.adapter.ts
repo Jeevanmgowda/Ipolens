@@ -2,43 +2,63 @@ import { RegistrarSlug, RegistrarServerMirror } from '@/types/allotment';
 import { BaseRegistrarAdapter } from './base.adapter';
 import { AllotmentAdapterResult, RegistrarQueryOptions } from '../types';
 
-export class LinkIntimeAdapter extends BaseRegistrarAdapter {
+/**
+ * MUFG Intime India Private Limited (formerly Link Intime India Pvt Ltd) Allotment Adapter
+ * 
+ * Rules:
+ * 1. Operates under MUFG Pension & Market Services / Corporate Markets.
+ * 2. Official portal migrated from linkintime.co.in to https://in.mpms.mufg.com/Initial_Offer/public-issues.html.
+ * 3. NO live calls to undocumented web endpoints (SearchOnPan removed).
+ * 4. Gated behind official B2B API credentials (MUFG_INTIME_API_KEY / LINKINTIME_API_KEY).
+ * 5. Safely falls back to official portal verification with pre-copied PAN shortcut.
+ */
+export class MufgIntimeAdapter extends BaseRegistrarAdapter {
   readonly slug: RegistrarSlug = 'linkintime';
-  readonly name = 'Link Intime India Pvt Ltd (MUFG)';
+  readonly name = 'MUFG Intime India Pvt Ltd (formerly Link Intime)';
   readonly portalUrl = 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html';
   readonly mirrors: RegistrarServerMirror[] = [
     {
-      serverName: 'Server 1 (MUFG Investor Portal)',
+      serverName: 'Server 1 (MUFG Intime Primary)',
       url: 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
       isPrimary: true,
     },
     {
-      serverName: 'Server 2 (Link Intime Legacy Portal)',
+      serverName: 'Server 2 (Dedicated Investor Gateway)',
+      url: 'https://idia.in.mpms.mufg.com',
+    },
+    {
+      serverName: 'Server 3 (Legacy Redirect Mirror)',
       url: 'https://linkintime.co.in/initial_offer/public-issues.html',
     },
     {
-      serverName: 'Server 3 (Web Client Download)',
+      serverName: 'Server 4 (Web Client Mirror)',
       url: 'https://web.linkintime.co.in/client-downloads/IPO_Status_Allotment.aspx',
     },
   ];
+
+  get isEnabled(): boolean {
+    const key = process.env.MUFG_INTIME_API_KEY || process.env.LINKINTIME_API_KEY;
+    return Boolean(key && key.trim().length > 5);
+  }
 
   async checkAllotment(
     symbol: string,
     pan: string,
     options?: RegistrarQueryOptions
   ): Promise<AllotmentAdapterResult> {
-    const apiKey = process.env.LINKINTIME_API_KEY;
+    const apiKey = process.env.MUFG_INTIME_API_KEY || process.env.LINKINTIME_API_KEY;
+    const apiEndpoint = process.env.MUFG_INTIME_API_ENDPOINT;
 
-    // 1. If official B2B API key configured, query official API
-    if (apiKey && apiKey.trim().length > 5) {
+    // 1. If official authorized B2B API key and endpoint are configured, execute authorized query
+    if (this.isEnabled && apiEndpoint) {
       try {
-        const res = await this.safeFetch('https://api.linkintime.co.in/v1/allotment/inquire', {
+        const res = await this.safeFetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
           },
-          body: JSON.stringify({ symbol, pan }),
+          body: JSON.stringify({ symbol, pan, applicationNo: options?.applicationNo }),
         });
 
         if (res.ok) {
@@ -55,8 +75,8 @@ export class LinkIntimeAdapter extends BaseRegistrarAdapter {
               explanation:
                 allotted > 0
                   ? `Official confirmation from ${this.name}: ${allotted} shares allotted.`
-                  : `Non-allottee status confirmed by ${this.name}. Refund/unblock in progress.`,
-              source: 'Link Intime B2B API',
+                  : `Non-allottee status confirmed by ${this.name}. ASBA refund/unblock initiated.`,
+              source: 'MUFG Intime Authorized B2B API',
               isOfficialGatewayRequired: false,
               directPortalUrl: this.portalUrl,
               mirrors: this.mirrors,
@@ -64,65 +84,18 @@ export class LinkIntimeAdapter extends BaseRegistrarAdapter {
             };
           }
         }
-      } catch (err: any) {
-        // Fall through to public endpoint inquiry
+      } catch {
+        // Fall through to compliant fallback result
       }
     }
 
-    // 2. Query public endpoint
-    const queryUrl = 'https://linkintime.co.in/Initial_Offer/IPO.aspx/SearchOnPan';
-    try {
-      const res = await this.safeFetch(queryUrl, {
-        method: 'POST',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-          'Content-Type': 'application/json; charset=UTF-8',
-          'Accept': 'application/json, text/plain, */*',
-          'Referer': this.portalUrl,
-        },
-        body: JSON.stringify({
-          pan,
-          clientid: symbol,
-        }),
-      });
-
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && (data.allottedShares !== undefined || data.sharesAllotted !== undefined)) {
-            const allotted = Number(data.allottedShares ?? data.sharesAllotted ?? 0);
-            const applied = Number(data.appliedShares ?? data.sharesApplied ?? 0);
-            return {
-              status: allotted > 0 ? 'allotted' : 'not_allotted',
-              sharesAllotted: allotted,
-              sharesApplied: applied || undefined,
-              applicantName: data.name || data.investorName,
-              applicationNo: data.applicationNo,
-              category: data.category || 'Retail',
-              explanation:
-                allotted > 0
-                  ? `Official confirmation from ${this.name}: ${allotted} shares allotted.`
-                  : `Non-allottee status confirmed by ${this.name}. Bank ASBA unblock initiated.`,
-              source: `${this.name} Gateway`,
-              isOfficialGatewayRequired: false,
-              directPortalUrl: this.portalUrl,
-              mirrors: this.mirrors,
-              checkedAt: new Date().toISOString(),
-            };
-          }
-        }
-      }
-    } catch {
-      // Handled below
-    }
-
-    // 3. Compliant alternative: Link Intime's public portal is gated by Akamai Bot Manager & CAPTCHA.
-    // In accordance with guidelines, we do not bypass CAPTCHA. We provide direct mirror links.
+    // 2. Compliant fallback: MUFG Intime enforces interactive captcha and bot defense on in.mpms.mufg.com.
+    // In accordance with guidelines, no undocumented scraping or captcha bypasses are executed.
     return this.buildInteractiveRequiredResult(
-      `${this.name} enforces interactive CAPTCHA & session tokens to protect investor tax IDs. Click the verified official mirror link below to view your instant allotment.`
+      `MUFG Intime India Private Limited enforces interactive security verification (captcha & session tokens) on in.mpms.mufg.com. Direct API access is currently gated pending signed registrar authorization. Please use the official 1-click portal link below to check your status.`
     );
   }
 }
 
+// Export LinkIntimeAdapter alias for complete backward compatibility across tests and factories
+export const LinkIntimeAdapter = MufgIntimeAdapter;

@@ -1,16 +1,17 @@
 import { RegistrarSlug, RegistrarServerMirror } from '@/types/allotment';
-import { AllotmentAdapterResult, AllotmentStatus, RegistrarQueryOptions } from '../types';
+import { AllotmentAdapterResult, IRegistrarAdapter, RegistrarQueryOptions } from '../types';
 
-export abstract class BaseRegistrarAdapter {
+export abstract class BaseRegistrarAdapter implements IRegistrarAdapter {
   abstract readonly slug: RegistrarSlug;
   abstract readonly name: string;
   abstract readonly portalUrl: string;
   abstract readonly mirrors: RegistrarServerMirror[];
+  abstract readonly isEnabled: boolean;
 
   /**
    * Performs the allotment inquiry against the registrar's official source.
-   * If automated access is gated by CAPTCHA / interactive challenge, returns
-   * a compliant 'unavailable' result linking users directly to the official portal.
+   * If automated access is disabled or gated by CAPTCHA / authorization requirements,
+   * returns a compliant 'unavailable' result linking users directly to the official portal.
    */
   abstract checkAllotment(
     symbol: string,
@@ -19,12 +20,13 @@ export abstract class BaseRegistrarAdapter {
   ): Promise<AllotmentAdapterResult>;
 
   /**
-   * Helper to perform safe server-side HTTP request with snappy timeout and no Next.js caching
+   * Helper to perform safe server-side HTTP request with snappy timeout and no Next.js caching.
+   * Strictly used only when authorized B2B API endpoints and credentials are provided.
    */
   protected async safeFetch(
     url: string,
     init: RequestInit,
-    timeoutMs: number = 3500
+    timeoutMs: number = 4000
   ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -42,7 +44,8 @@ export abstract class BaseRegistrarAdapter {
   }
 
   /**
-   * Builds compliant result when official registrar requires user interactive verification (CAPTCHA / WAF)
+   * Builds compliant result when official registrar requires user interactive verification or
+   * when live direct API integration is pending authorization.
    */
   protected buildInteractiveRequiredResult(explanation?: string): AllotmentAdapterResult {
     return {
@@ -50,7 +53,7 @@ export abstract class BaseRegistrarAdapter {
       sharesAllotted: 0,
       explanation:
         explanation ||
-        `${this.name} requires interactive security verification (CAPTCHA / Anti-Bot) to protect tax records. Please verify directly via the official 1-click registrar gateway.`,
+        `Direct automated inquiry for ${this.name} is currently gated pending authorized B2B registrar API integration. Please verify your allotment directly on the official registrar portal.`,
       source: `Official ${this.name} Portal`,
       isOfficialGatewayRequired: true,
       directPortalUrl: this.portalUrl,
@@ -59,4 +62,3 @@ export abstract class BaseRegistrarAdapter {
     };
   }
 }
-

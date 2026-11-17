@@ -2,6 +2,15 @@ import { RegistrarSlug, RegistrarServerMirror } from '@/types/allotment';
 import { BaseRegistrarAdapter } from './base.adapter';
 import { AllotmentAdapterResult, RegistrarQueryOptions } from '../types';
 
+/**
+ * Bigshare Services Pvt Ltd Allotment Adapter
+ * 
+ * Rules:
+ * 1. Official portal: https://www.bigshareonline.com/ipo_Allotment.html
+ * 2. NO live calls to undocumented web endpoints (AllotmentStatus.aspx scraping removed).
+ * 3. Gated behind official B2B API credentials (BIGSHARE_API_KEY).
+ * 4. Safely falls back to official Bigshare portal verification with pre-copied PAN shortcut.
+ */
 export class BigshareAdapter extends BaseRegistrarAdapter {
   readonly slug: RegistrarSlug = 'bigshare';
   readonly name = 'Bigshare Services Pvt Ltd';
@@ -22,17 +31,23 @@ export class BigshareAdapter extends BaseRegistrarAdapter {
     },
   ];
 
+  get isEnabled(): boolean {
+    const key = process.env.BIGSHARE_API_KEY;
+    return Boolean(key && key.trim().length > 5);
+  }
+
   async checkAllotment(
     symbol: string,
     pan: string,
     options?: RegistrarQueryOptions
   ): Promise<AllotmentAdapterResult> {
     const apiKey = process.env.BIGSHARE_API_KEY;
+    const apiEndpoint = process.env.BIGSHARE_API_ENDPOINT;
 
-    // 1. If official B2B partner key is configured
-    if (apiKey && apiKey.trim().length > 5) {
+    // 1. If official authorized B2B API key and endpoint are configured, execute authorized query
+    if (this.isEnabled && apiEndpoint) {
       try {
-        const res = await this.safeFetch('https://api.bigshareonline.com/v1/allotment', {
+        const res = await this.safeFetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -60,7 +75,7 @@ export class BigshareAdapter extends BaseRegistrarAdapter {
                 allotted > 0
                   ? `Official confirmation from ${this.name}: ${allotted} shares allotted.`
                   : `Non-allottee status confirmed by ${this.name}. Bank ASBA unblock initiated.`,
-              source: 'Bigshare B2B API',
+              source: 'Bigshare Authorized B2B API',
               isOfficialGatewayRequired: false,
               directPortalUrl: this.portalUrl,
               mirrors: this.mirrors,
@@ -69,64 +84,14 @@ export class BigshareAdapter extends BaseRegistrarAdapter {
           }
         }
       } catch {
-        // Fall through to public query
+        // Fall through to compliant fallback result
       }
     }
 
-    // 2. Query public endpoint
-    const queryUrl = 'https://www.bigshareonline.com/AllotmentStatus.aspx';
-    try {
-      const res = await this.safeFetch(queryUrl, {
-        method: 'POST',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-          'Content-Type': 'application/json; charset=UTF-8',
-          'Accept': 'application/json, text/plain, */*',
-          'Referer': this.portalUrl,
-        },
-        body: JSON.stringify({
-          Txt_Search: pan,
-          CompanySelection: symbol,
-          SelectionType: 1, // 1 for PAN
-        }),
-      });
-
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && (data.allottedShares !== undefined || data.sharesAllotted !== undefined)) {
-            const allotted = Number(data.allottedShares ?? data.sharesAllotted ?? 0);
-            const applied = Number(data.appliedShares ?? data.sharesApplied ?? 0);
-            return {
-              status: allotted > 0 ? 'allotted' : 'not_allotted',
-              sharesAllotted: allotted,
-              sharesApplied: applied || undefined,
-              applicantName: data.name || data.investorName,
-              applicationNo: data.applicationNo,
-              category: data.category || 'Retail',
-              explanation:
-                allotted > 0
-                  ? `Official confirmation from ${this.name}: ${allotted} shares allotted.`
-                  : `Non-allottee status confirmed by ${this.name}. Bank ASBA unblock initiated.`,
-              source: `${this.name} Gateway`,
-              isOfficialGatewayRequired: false,
-              directPortalUrl: this.portalUrl,
-              mirrors: this.mirrors,
-              checkedAt: new Date().toISOString(),
-            };
-          }
-        }
-      }
-    } catch {
-      // Handled below
-    }
-
-    // 3. Compliant fallback for Cloudflare/CAPTCHA gated endpoint
+    // 2. Compliant fallback: Bigshare Services enforces session captcha / anti-bot challenge.
+    // In accordance with guidelines, no undocumented scraping or captcha bypasses are executed.
     return this.buildInteractiveRequiredResult(
-      `${this.name} enforces interactive security verification (session CAPTCHA / anti-bot challenge) to protect investor tax IDs. Click the verified official mirror link below to view your instant allotment.`
+      `Bigshare Services enforces interactive security verification (session captcha / anti-bot challenge) to protect investor tax IDs. Direct API access is currently gated pending signed registrar authorization. Please use the official 1-click portal link below to check your status.`
     );
   }
 }
-

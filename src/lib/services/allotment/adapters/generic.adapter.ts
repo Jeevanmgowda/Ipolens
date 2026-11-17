@@ -14,6 +14,7 @@ export class GenericRegistrarAdapter extends BaseRegistrarAdapter {
   readonly name: string;
   readonly portalUrl: string;
   readonly mirrors: RegistrarServerMirror[];
+  readonly isEnabled = false;
 
   constructor(config: GenericRegistrarConfig) {
     super();
@@ -24,13 +25,12 @@ export class GenericRegistrarAdapter extends BaseRegistrarAdapter {
   }
 
   async checkAllotment(
-    symbol: string,
-    pan: string,
-    options?: RegistrarQueryOptions
+    _symbol: string,
+    _pan: string,
+    _options?: RegistrarQueryOptions
   ): Promise<AllotmentAdapterResult> {
     return this.buildInteractiveRequiredResult(
-      `${this.name} requires direct investor verification. Click the official 1-click gateway link below to check your allotment.`
+      `${this.name} requires direct investor verification on its official portal. Click the official 1-click gateway link below to check your allotment.`
     );
   }
 }
-

@@ -2,25 +2,28 @@ import { AllotmentScanResult, RegistrarInfo, RegistrarSlug } from '@/types/allot
 
 export const OFFICIAL_REGISTRARS: RegistrarInfo[] = [
   {
-    name: 'Link Intime India Pvt Ltd (MUFG)',
+    name: 'MUFG Intime India Pvt Ltd (formerly Link Intime)',
     slug: 'linkintime',
     portalUrl: 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
-    queryEndpoint: 'https://linkintime.co.in/Initial_Offer/IPO.aspx/SearchOnPan',
     queryParamFormat: 'pan',
     description:
-      'Premier registrar for major Mainboard IPOs including Tata Technologies, Bajaj Housing Finance, Swiggy, Premier Energies, and Waaree Energies.',
+      'Premier registrar for major Mainboard IPOs including Tata Technologies, Bajaj Housing Finance, Swiggy, Premier Energies, and Waaree Energies (under MUFG Pension & Market Services).',
     mirrors: [
       {
-        serverName: 'Server 1 (MUFG / Primary Portal)',
+        serverName: 'Server 1 (MUFG Intime Primary)',
         url: 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
         isPrimary: true,
       },
       {
-        serverName: 'Server 2 (Link Intime Legacy)',
+        serverName: 'Server 2 (Dedicated Investor Gateway)',
+        url: 'https://idia.in.mpms.mufg.com',
+      },
+      {
+        serverName: 'Server 3 (Legacy Redirect Mirror)',
         url: 'https://linkintime.co.in/initial_offer/public-issues.html',
       },
       {
-        serverName: 'Server 3 (Web Client Download)',
+        serverName: 'Server 4 (Web Client Mirror)',
         url: 'https://web.linkintime.co.in/client-downloads/IPO_Status_Allotment.aspx',
       },
     ],
@@ -29,7 +32,6 @@ export const OFFICIAL_REGISTRARS: RegistrarInfo[] = [
     name: 'KFin Technologies Limited',
     slug: 'kfintech',
     portalUrl: 'https://kosmic.kfintech.com/ipostatus/',
-    queryEndpoint: 'https://kosmic.kfintech.com/ipostatus/IPOStatus',
     queryParamFormat: 'pan',
     description:
       'Official registrar for National Stock Exchange (NSE), Hyundai Motor India, Hero Motors, Ola Electric, and Brainbees Solutions.',
@@ -57,7 +59,6 @@ export const OFFICIAL_REGISTRARS: RegistrarInfo[] = [
     name: 'Bigshare Services Pvt Ltd',
     slug: 'bigshare',
     portalUrl: 'https://www.bigshareonline.com/ipo_Allotment.html',
-    queryEndpoint: 'https://www.bigshareonline.com/AllotmentStatus.aspx',
     queryParamFormat: 'pan',
     description:
       'Leading registrar for high-growth Mainboard and SME public issues including SpectraA, Arkade Developers, and Netweb Technologies.',

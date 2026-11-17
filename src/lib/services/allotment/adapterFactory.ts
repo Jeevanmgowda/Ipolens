@@ -1,13 +1,13 @@
 import { RegistrarSlug } from '@/types/allotment';
 import { BaseRegistrarAdapter } from './adapters/base.adapter';
-import { LinkIntimeAdapter } from './adapters/linkintime.adapter';
+import { MufgIntimeAdapter } from './adapters/linkintime.adapter';
 import { KFintechAdapter } from './adapters/kfintech.adapter';
 import { BigshareAdapter } from './adapters/bigshare.adapter';
 import { BseGatewayAdapter } from './adapters/bse.adapter';
 import { GenericRegistrarAdapter } from './adapters/generic.adapter';
 
 export class RegistrarAdapterFactory {
-  private static linkintimeInstance = new LinkIntimeAdapter();
+  private static mufgIntimeInstance = new MufgIntimeAdapter();
   private static kfintechInstance = new KFintechAdapter();
   private static bigshareInstance = new BigshareAdapter();
   private static bseInstance = new BseGatewayAdapter();
@@ -54,7 +54,7 @@ export class RegistrarAdapterFactory {
   public static getAdapter(slug: RegistrarSlug): BaseRegistrarAdapter {
     switch (slug) {
       case 'linkintime':
-        return this.linkintimeInstance;
+        return this.mufgIntimeInstance;
       case 'kfintech':
         return this.kfintechInstance;
       case 'bigshare':
@@ -71,4 +71,3 @@ export class RegistrarAdapterFactory {
     }
   }
 }
-

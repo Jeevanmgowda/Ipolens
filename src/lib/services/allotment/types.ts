@@ -30,17 +30,33 @@ export interface AllotmentAdapterResult {
   checkedAt: string;
 }
 
+export interface IRegistrarAdapter {
+  readonly slug: RegistrarSlug;
+  readonly name: string;
+  readonly isEnabled: boolean;
+  readonly portalUrl: string;
+  readonly mirrors: RegistrarServerMirror[];
+  checkAllotment(
+    symbol: string,
+    pan: string,
+    options?: RegistrarQueryOptions
+  ): Promise<AllotmentAdapterResult>;
+}
+
 export interface TrustedIpoInfo {
+  id?: string;
   symbol: string;
   companyName: string;
   registrarName: string;
   registrarSlug: RegistrarSlug;
   portalUrl: string;
   mirrors: RegistrarServerMirror[];
+  bseAllotmentUrl?: string;
   priceHigh: number;
   lotSize: number;
   status: string;
   allotmentDate?: string;
+  isSample?: boolean;
 }
 
 export interface AllotmentCheckResult {
@@ -67,4 +83,3 @@ export interface AllotmentCheckResult {
   mirrors: RegistrarServerMirror[];
   checkedAt: string;
 }
-

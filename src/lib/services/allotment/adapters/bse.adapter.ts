@@ -6,6 +6,7 @@ export class BseGatewayAdapter extends BaseRegistrarAdapter {
   readonly slug: RegistrarSlug = 'other';
   readonly name = 'BSE India Official Allotment Gateway';
   readonly portalUrl = 'https://www.bseindia.com/investors/appli_check.aspx';
+  readonly isEnabled = false;
   readonly mirrors: RegistrarServerMirror[] = [
     {
       serverName: 'BSE India Official Checker (Primary)',
@@ -19,9 +20,9 @@ export class BseGatewayAdapter extends BaseRegistrarAdapter {
   ];
 
   async checkAllotment(
-    symbol: string,
-    pan: string,
-    options?: RegistrarQueryOptions
+    _symbol: string,
+    _pan: string,
+    _options?: RegistrarQueryOptions
   ): Promise<AllotmentAdapterResult> {
     // BSE India public application check strictly enforces Google reCAPTCHA v2 and session validation.
     // In accordance with security & compliance guidelines, we provide direct 1-click official verification links.
@@ -38,4 +39,3 @@ export class BseGatewayAdapter extends BaseRegistrarAdapter {
     };
   }
 }
-

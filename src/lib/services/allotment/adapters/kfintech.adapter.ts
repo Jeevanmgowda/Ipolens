@@ -2,6 +2,15 @@ import { RegistrarSlug, RegistrarServerMirror } from '@/types/allotment';
 import { BaseRegistrarAdapter } from './base.adapter';
 import { AllotmentAdapterResult, RegistrarQueryOptions } from '../types';
 
+/**
+ * KFin Technologies Limited Allotment Adapter
+ * 
+ * Rules:
+ * 1. Official portal: https://kosmic.kfintech.com/ipostatus/
+ * 2. NO live calls to undocumented web endpoints (IPOStatus scraping removed).
+ * 3. Gated behind official B2B API credentials (KFINTECH_API_KEY).
+ * 4. Safely falls back to official Kosmic portal verification with pre-copied PAN shortcut.
+ */
 export class KFintechAdapter extends BaseRegistrarAdapter {
   readonly slug: RegistrarSlug = 'kfintech';
   readonly name = 'KFin Technologies Limited';
@@ -26,17 +35,23 @@ export class KFintechAdapter extends BaseRegistrarAdapter {
     },
   ];
 
+  get isEnabled(): boolean {
+    const key = process.env.KFINTECH_API_KEY;
+    return Boolean(key && key.trim().length > 5);
+  }
+
   async checkAllotment(
     symbol: string,
     pan: string,
     options?: RegistrarQueryOptions
   ): Promise<AllotmentAdapterResult> {
     const apiKey = process.env.KFINTECH_API_KEY;
+    const apiEndpoint = process.env.KFINTECH_API_ENDPOINT;
 
-    // 1. If official B2B API key configured, query official KFintech partner API
-    if (apiKey && apiKey.trim().length > 5) {
+    // 1. If official authorized B2B API key and endpoint are configured, execute authorized query
+    if (this.isEnabled && apiEndpoint) {
       try {
-        const res = await this.safeFetch('https://api.kfintech.com/v1/ipo/allotment', {
+        const res = await this.safeFetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -65,7 +80,7 @@ export class KFintechAdapter extends BaseRegistrarAdapter {
                 allotted > 0
                   ? `Official confirmation from ${this.name}: ${allotted} shares allotted.`
                   : `Non-allottee status confirmed by ${this.name}. Bank ASBA unblock initiated.`,
-              source: 'KFintech B2B API',
+              source: 'KFintech Authorized B2B API',
               isOfficialGatewayRequired: false,
               directPortalUrl: this.portalUrl,
               mirrors: this.mirrors,
@@ -74,65 +89,14 @@ export class KFintechAdapter extends BaseRegistrarAdapter {
           }
         }
       } catch {
-        // Fall through to public endpoint inquiry
+        // Fall through to compliant fallback result
       }
     }
 
-    // 2. Query public Kosmic endpoint
-    const queryUrl = 'https://kosmic.kfintech.com/ipostatus/IPOStatus';
-    try {
-      const res = await this.safeFetch(queryUrl, {
-        method: 'POST',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-          'Content-Type': 'application/json; charset=UTF-8',
-          'Accept': 'application/json, text/plain, */*',
-          'Referer': this.portalUrl,
-        },
-        body: JSON.stringify({
-          pan,
-          symbol,
-          appNo: options?.applicationNo || '',
-          clientId: options?.dpClientId || '',
-        }),
-      });
-
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && (data.allottedShares !== undefined || data.sharesAllotted !== undefined)) {
-            const allotted = Number(data.allottedShares ?? data.sharesAllotted ?? 0);
-            const applied = Number(data.appliedShares ?? data.sharesApplied ?? 0);
-            return {
-              status: allotted > 0 ? 'allotted' : 'not_allotted',
-              sharesAllotted: allotted,
-              sharesApplied: applied || undefined,
-              applicantName: data.name || data.investorName,
-              applicationNo: data.applicationNo || data.appNo,
-              category: data.category || 'Retail',
-              explanation:
-                allotted > 0
-                  ? `Official confirmation from ${this.name}: ${allotted} shares allotted.`
-                  : `Non-allottee status confirmed by ${this.name}. Bank ASBA unblock initiated.`,
-              source: `${this.name} Gateway`,
-              isOfficialGatewayRequired: false,
-              directPortalUrl: this.portalUrl,
-              mirrors: this.mirrors,
-              checkedAt: new Date().toISOString(),
-            };
-          }
-        }
-      }
-    } catch {
-      // Handled below
-    }
-
-    // 3. Compliant alternative: KFintech enforces Akamai / math CAPTCHA verification
+    // 2. Compliant fallback: KFintech enforces interactive captcha / anti-bot challenge on kosmic.kfintech.com.
+    // In accordance with guidelines, no undocumented scraping or captcha bypasses are executed.
     return this.buildInteractiveRequiredResult(
-      `${this.name} enforces interactive security verification (math CAPTCHA / anti-bot challenge) to protect investor tax IDs. Click the verified official mirror link below to view your instant allotment.`
+      `KFin Technologies enforces interactive security verification (math captcha / anti-bot challenge) on kosmic.kfintech.com to protect taxpayer records. Direct API access is currently gated pending signed registrar authorization. Please use the official 1-click portal link below to check your status.`
     );
   }
 }
-
