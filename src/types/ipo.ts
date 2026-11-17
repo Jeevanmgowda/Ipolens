@@ -124,6 +124,10 @@ export interface LiveIpoDetail {
   remainingTime?: string;
   isListed?: boolean;
   listingPrice?: number | string;
+  currentPrice?: number;
+  dayChange?: number;
+  dayChangePercent?: number;
+  volume?: number;
   gmpEstimate?: number;
   expectedListingGainPct?: number;
   objectsOfIssue?: string[];

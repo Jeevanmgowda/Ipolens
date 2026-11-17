@@ -69,6 +69,10 @@ export async function GET(
           registrarSlug: 'linkintime',
           isListed: liveIpo.status === 'Listed',
           listingPrice: liveIpo.listingPrice,
+          currentPrice: liveIpo.currentPrice,
+          dayChange: liveIpo.dayChange,
+          dayChangePercent: liveIpo.dayChangePercent,
+          volume: liveIpo.volume,
         };
       }
     }

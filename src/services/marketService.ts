@@ -1,5 +1,6 @@
 import { MarketQuoteData, MarketOhlcCandle, MarketStatus } from '@/types/liveMarket';
 import { MarketDataProvider, UpstoxProvider, MockMarketProvider } from './marketDataProvider';
+import { LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { redis } from '@/lib/redis';
 
 export class MarketService {
@@ -10,11 +11,7 @@ export class MarketService {
    * Determine whether the service should run in simulated mock mode
    */
   static isMockMode(): boolean {
-    const envVal = process.env.USE_MOCK_MARKET_DATA;
-    if (envVal === 'false') {
-      return false;
-    }
-    return true; // Default to true for zero-credential free development
+    return process.env.USE_MOCK_MARKET_DATA === 'true';
   }
 
   /**
@@ -73,8 +70,31 @@ export class MarketService {
 
       return quote;
     } catch (err: any) {
-      console.warn(`[MarketService] Provider error for ${clean}, falling back to mock provider:`, err.message);
-      return this.mockProvider.getQuote(clean);
+      if (this.isMockMode()) {
+        return this.mockProvider.getQuote(clean);
+      }
+      const registered = LISTED_IPOS_REGISTRY.find((l) => l.symbol.toUpperCase() === clean);
+      if (registered) {
+        const ltp = registered.listingPrice;
+        const prevClose = registered.issuePrice;
+        const change = Number((ltp - prevClose).toFixed(2));
+        const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
+        return {
+          symbol: clean,
+          ltp,
+          open: ltp,
+          high: Math.max(ltp, prevClose),
+          low: Math.min(ltp, prevClose),
+          previousClose: prevClose,
+          volume: 0,
+          change,
+          changePercent,
+          timestamp: new Date().toISOString(),
+          isMock: false,
+        };
+      }
+      console.warn(`[MarketService] Provider error for ${clean}:`, err.message);
+      throw err;
     }
   }
 

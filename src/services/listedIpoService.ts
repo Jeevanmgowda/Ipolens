@@ -215,7 +215,7 @@ export const LISTED_IPOS_REGISTRY: ListedIpoMetadata[] = [
   },
 ];
 
-const CACHE_TTL_MS = 25000; // 25 seconds live cache
+const CACHE_TTL_MS = 10000; // 10 seconds live exchange quote cache
 let listedIposCache: { timestamp: number; data: ListedIpoItem[] } | null = null;
 const chartCache = new Map<string, { timestamp: number; data: IpoChartResponse }>();
 
@@ -411,93 +411,91 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
   const results: ListedIpoItem[] = [];
   let errorCount = 0;
 
-  const promises = iposMetadata.map(async (meta) => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1500);
+  // Process requests in batches of 10 to avoid Yahoo Finance rate throttling
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < iposMetadata.length; i += BATCH_SIZE) {
+    const batch = iposMetadata.slice(i, i + BATCH_SIZE);
+    const batchPromises = batch.map(async (meta) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-      const res = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${meta.ticker}?interval=1d&range=5d`,
-        {
-          headers: COMMON_HEADERS,
-          signal: controller.signal,
-          cache: 'no-store',
+        const res = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${meta.ticker}?interval=1d&range=5d`,
+          {
+            headers: COMMON_HEADERS,
+            signal: controller.signal,
+            cache: 'no-store',
+          }
+        );
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const result = json.chart?.result?.[0];
+        const m = result?.meta;
+
+        if (m && typeof m.regularMarketPrice === 'number') {
+          const currentPrice = Number(m.regularMarketPrice.toFixed(2));
+          const prevClose = typeof m.chartPreviousClose === 'number' ? m.chartPreviousClose : currentPrice;
+          const dayChange = Number((currentPrice - prevClose).toFixed(2));
+          const dayChangePercent = prevClose > 0 ? Number(((dayChange / prevClose) * 100).toFixed(2)) : 0;
+          const listingGainPercent = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
+          const totalGainPercent = Number((((currentPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
+
+          return {
+            symbol: meta.symbol,
+            ticker: meta.ticker,
+            companyName: meta.companyName,
+            series: meta.series,
+            listingDate: meta.listingDate,
+            issuePrice: meta.issuePrice,
+            listingPrice: meta.listingPrice,
+            currentPrice,
+            dayChange,
+            dayChangePercent,
+            listingGainPercent,
+            totalGainPercent,
+            dayHigh: typeof m.regularMarketDayHigh === 'number' ? Number(m.regularMarketDayHigh.toFixed(2)) : currentPrice,
+            dayLow: typeof m.regularMarketDayLow === 'number' ? Number(m.regularMarketDayLow.toFixed(2)) : currentPrice,
+            fiftyTwoWeekHigh: typeof m.fiftyTwoWeekHigh === 'number' ? Number(m.fiftyTwoWeekHigh.toFixed(2)) : currentPrice,
+            fiftyTwoWeekLow: typeof m.fiftyTwoWeekLow === 'number' ? Number(m.fiftyTwoWeekLow.toFixed(2)) : currentPrice,
+            volume: typeof m.regularMarketVolume === 'number' ? m.regularMarketVolume : 0,
+            allotmentRegistrar: meta.allotmentRegistrar,
+          };
         }
-      );
-      clearTimeout(timeoutId);
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const result = json.chart?.result?.[0];
-      const m = result?.meta;
-
-      if (m && typeof m.regularMarketPrice === 'number') {
-        const currentPrice = Number(m.regularMarketPrice.toFixed(2));
-        const prevClose = typeof m.chartPreviousClose === 'number' ? m.chartPreviousClose : currentPrice;
-        const dayChange = Number((currentPrice - prevClose).toFixed(2));
-        const dayChangePercent = prevClose > 0 ? Number(((dayChange / prevClose) * 100).toFixed(2)) : 0;
-        const listingGainPercent = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
-        const totalGainPercent = Number((((currentPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
-
-        return {
-          symbol: meta.symbol,
-          ticker: meta.ticker,
-          companyName: meta.companyName,
-          series: meta.series,
-          listingDate: meta.listingDate,
-          issuePrice: meta.issuePrice,
-          listingPrice: meta.listingPrice,
-          currentPrice,
-          dayChange,
-          dayChangePercent,
-          listingGainPercent,
-          totalGainPercent,
-          dayHigh: typeof m.regularMarketDayHigh === 'number' ? Number(m.regularMarketDayHigh.toFixed(2)) : currentPrice,
-          dayLow: typeof m.regularMarketDayLow === 'number' ? Number(m.regularMarketDayLow.toFixed(2)) : currentPrice,
-          fiftyTwoWeekHigh: typeof m.fiftyTwoWeekHigh === 'number' ? Number(m.fiftyTwoWeekHigh.toFixed(2)) : currentPrice,
-          fiftyTwoWeekLow: typeof m.fiftyTwoWeekLow === 'number' ? Number(m.fiftyTwoWeekLow.toFixed(2)) : currentPrice,
-          volume: typeof m.regularMarketVolume === 'number' ? m.regularMarketVolume : 0,
-          allotmentRegistrar: meta.allotmentRegistrar,
-        };
+      } catch {
+        errorCount++;
       }
-    } catch {
-      errorCount++;
-      if (errorCount >= 3) {
-        yahooQuotesCooldownUntil = Date.now() + 60_000;
-        if (!hasLoggedYahooQuoteNotice) {
-          console.warn('[ListedIpos] External exchange quote gateway unreachable. Using verified registry for 60s.');
-          hasLoggedYahooQuoteNotice = true;
-        }
+
+      const listingGain = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
+      return {
+        symbol: meta.symbol,
+        ticker: meta.ticker,
+        companyName: meta.companyName,
+        series: meta.series,
+        listingDate: meta.listingDate,
+        issuePrice: meta.issuePrice,
+        listingPrice: meta.listingPrice,
+        currentPrice: meta.listingPrice,
+        dayChange: 0,
+        dayChangePercent: 0,
+        listingGainPercent: listingGain,
+        totalGainPercent: listingGain,
+        dayHigh: Math.max(meta.listingPrice, meta.issuePrice),
+        dayLow: Math.min(meta.listingPrice, meta.issuePrice),
+        fiftyTwoWeekHigh: Math.max(meta.listingPrice, meta.issuePrice),
+        fiftyTwoWeekLow: Math.min(meta.listingPrice, meta.issuePrice),
+        volume: 0,
+        allotmentRegistrar: meta.allotmentRegistrar,
+      };
+    });
+
+    const batchSettled = await Promise.allSettled(batchPromises);
+    for (const s of batchSettled) {
+      if (s.status === 'fulfilled' && s.value) {
+        results.push(s.value);
       }
-    }
-
-    const listingGain = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
-    return {
-      symbol: meta.symbol,
-      ticker: meta.ticker,
-      companyName: meta.companyName,
-      series: meta.series,
-      listingDate: meta.listingDate,
-      issuePrice: meta.issuePrice,
-      listingPrice: meta.listingPrice,
-      currentPrice: meta.listingPrice,
-      dayChange: 0,
-      dayChangePercent: 0,
-      listingGainPercent: listingGain,
-      totalGainPercent: listingGain,
-      dayHigh: Math.max(meta.listingPrice, meta.issuePrice),
-      dayLow: Math.min(meta.listingPrice, meta.issuePrice),
-      fiftyTwoWeekHigh: Math.max(meta.listingPrice, meta.issuePrice),
-      fiftyTwoWeekLow: Math.min(meta.listingPrice, meta.issuePrice),
-      volume: 0,
-      allotmentRegistrar: meta.allotmentRegistrar,
-    };
-  });
-
-  const settled = await Promise.allSettled(promises);
-  for (const s of settled) {
-    if (s.status === 'fulfilled' && s.value) {
-      results.push(s.value);
     }
   }
 

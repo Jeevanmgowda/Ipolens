@@ -420,10 +420,16 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                   {/* Pricing Grid */}
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
-                      <span className="text-[10px] text-slate-400 font-medium block">
-                        {isListed ? 'Current Price (LTP)' : 'Price Band'}
+                      <span className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
+                        <span>{isListed ? 'Current Price (LTP)' : 'Price Band'}</span>
+                        {isListed && (
+                          <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            LIVE
+                          </span>
+                        )}
                       </span>
-                      <span className="font-mono text-sm font-extrabold text-white mt-0.5 block truncate">
+                      <span className={`font-mono text-sm font-extrabold mt-0.5 block truncate ${isListed ? 'text-emerald-400' : 'text-white'}`}>
                         {isListed ? (
                           ipo.currentPrice !== undefined && ipo.currentPrice !== null ? (
                             `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -734,15 +740,20 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
 
                       {activeTab === 'listed' ? (
                         <>
-                          <td className="py-3.5 px-4 font-mono font-extrabold text-white text-sm">
-                            {ipo.currentPrice !== undefined && ipo.currentPrice !== null
-                              ? `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                              : ipo.listingPrice
-                              ? `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                              : '—'}
+                          <td className="py-3.5 px-4 font-mono font-extrabold text-emerald-400 text-sm">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                              <span>
+                                {ipo.currentPrice !== undefined && ipo.currentPrice !== null
+                                  ? `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : ipo.listingPrice
+                                  ? `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : '—'}
+                              </span>
+                            </div>
                           </td>
                           <td className="py-3.5 px-4">
-                            {ipo.dayChange !== undefined && ipo.dayChange !== null ? (
+                            {ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0 ? (
                               <span
                                 className={`font-mono font-bold ${
                                   (ipo.dayChange || 0) > 0
@@ -752,10 +763,14 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                                     : 'text-slate-400'
                                 }`}
                               >
-                                {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange.toFixed(2)} ({ipo.dayChangePercent ?? 0}%)
+                                {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange.toFixed(2)} ({(ipo.dayChangePercent || 0) >= 0 ? '+' : ''}{ipo.dayChangePercent ?? 0}%)
+                              </span>
+                            ) : ipo.listingPrice && ipo.issuePrice && ipo.listingPrice !== ipo.issuePrice ? (
+                              <span className={`font-mono text-xs font-semibold ${ipo.listingPrice >= ipo.issuePrice ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {ipo.listingPrice >= ipo.issuePrice ? '+' : ''}₹{(ipo.listingPrice - ipo.issuePrice).toFixed(2)} ({(((ipo.listingPrice - ipo.issuePrice) / ipo.issuePrice) * 100).toFixed(1)}%)
                               </span>
                             ) : (
-                              <span className="text-slate-400">—</span>
+                              <span className="text-slate-400 font-mono text-xs">Closing Quote</span>
                             )}
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">

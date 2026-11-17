@@ -352,33 +352,98 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
                 </h4>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                    <span className="text-[11px] text-slate-400 block">Price Band</span>
-                    <span className="text-sm font-bold font-mono text-white mt-1 block">
-                      {priceBand}
-                    </span>
-                  </div>
+                  {isListed ? (
+                    <>
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block flex items-center justify-between">
+                          <span>Current Price (LTP)</span>
+                          <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            LIVE
+                          </span>
+                        </span>
+                        <span className="text-sm font-bold font-mono text-emerald-400 mt-1 block">
+                          {detail?.currentPrice !== undefined && detail?.currentPrice !== null
+                            ? `₹${detail.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : detail?.listingPrice
+                            ? `₹${Number(detail.listingPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : priceBand}
+                        </span>
+                      </div>
 
-                  <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                    <span className="text-[11px] text-slate-400 block">Lot Size</span>
-                    <span className="text-sm font-bold font-mono text-cyan-400 mt-1 block">
-                      {lotSize} shares
-                    </span>
-                  </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block">Today's Change</span>
+                        <span
+                          className={`text-sm font-bold font-mono mt-1 block ${
+                            (detail?.dayChange || 0) > 0
+                              ? 'text-emerald-400'
+                              : (detail?.dayChange || 0) < 0
+                              ? 'text-rose-400'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {detail?.dayChange !== undefined && detail?.dayChange !== null && detail.dayChange !== 0 ? (
+                            <>
+                              {(detail.dayChange || 0) >= 0 ? '+' : ''}₹{detail.dayChange.toFixed(2)}{' '}
+                              <span className="text-xs font-normal">
+                                ({(detail.dayChangePercent || 0) >= 0 ? '+' : ''}{detail.dayChangePercent}%)
+                              </span>
+                            </>
+                          ) : (
+                            'Exchange Closing Quote'
+                          )}
+                        </span>
+                      </div>
 
-                  <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                    <span className="text-[11px] text-slate-400 block">Total Issue Size</span>
-                    <span className="text-sm font-bold font-mono text-emerald-400 mt-1 block">
-                      {issueSize}
-                    </span>
-                  </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block">Listing Price</span>
+                        <span className="text-sm font-bold font-mono text-white mt-1 block">
+                          {detail?.listingPrice
+                            ? `₹${Number(detail.listingPrice).toLocaleString('en-IN')}`
+                            : priceBand}
+                        </span>
+                      </div>
 
-                  <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                    <span className="text-[11px] text-slate-400 block">Current Multiple</span>
-                    <span className="text-sm font-bold font-mono text-amber-400 mt-1 block">
-                      {totalSub.toFixed(2)}x
-                    </span>
-                  </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block">Traded Volume</span>
+                        <span className="text-sm font-bold font-mono text-cyan-400 mt-1 block">
+                          {detail?.volume && detail.volume > 0
+                            ? `${detail.volume.toLocaleString('en-IN')} shares`
+                            : 'Active NSE Book'}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block">Price Band</span>
+                        <span className="text-sm font-bold font-mono text-white mt-1 block">
+                          {priceBand}
+                        </span>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block">Lot Size</span>
+                        <span className="text-sm font-bold font-mono text-cyan-400 mt-1 block">
+                          {lotSize} shares
+                        </span>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block">Total Issue Size</span>
+                        <span className="text-sm font-bold font-mono text-emerald-400 mt-1 block">
+                          {issueSize}
+                        </span>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <span className="text-[11px] text-slate-400 block">Current Multiple</span>
+                        <span className="text-sm font-bold font-mono text-amber-400 mt-1 block">
+                          {totalSub.toFixed(2)}x
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">

@@ -45,12 +45,22 @@ export async function GET(req: NextRequest) {
         // Fallback gracefully without Redis
       }
 
-      // 3. Real Market Tick Emitter (Polls authentic quotes for requested symbols every 5 seconds)
+      // 3. Real Market Tick Emitter (Polls authentic quotes for requested or listed IPOs every 4 seconds)
       const tickInterval = setInterval(async () => {
         if (isAborted) return;
-        if (requestedSymbols.length === 0) return;
 
-        for (const sym of requestedSymbols) {
+        let targetSymbols = requestedSymbols;
+        if (targetSymbols.length === 0) {
+          try {
+            const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
+            targetSymbols = LISTED_IPOS_REGISTRY.slice(0, 30).map((l) => l.symbol);
+          } catch {
+            targetSymbols = ['SWIGGY', 'HYUNDAI', 'BAJAJHFL', 'TATATECH', 'PREMIERENE', 'KRN', 'NETWEB', 'DOMS', 'WAAREE'];
+          }
+        }
+
+        for (const sym of targetSymbols) {
+          if (isAborted) break;
           const clean = sym.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').replace(/^NSE_EQ\|/, '').trim();
           if (!clean) continue;
 
@@ -79,7 +89,7 @@ export async function GET(req: NextRequest) {
             // ignore network glitch
           }
         }
-      }, 5000);
+      }, 4000);
 
       // Keep-alive heartbeat ping every 12 seconds
       const pingInterval = setInterval(() => {

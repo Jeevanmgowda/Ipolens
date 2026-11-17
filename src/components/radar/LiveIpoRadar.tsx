@@ -110,11 +110,42 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
         if (lJson.success && Array.isArray(lJson.data)) allItems.push(...lJson.data);
       }
 
-      // Deduplicate by symbol
+      // Deduplicate by symbol: prioritize listed items and retain live market current prices
       const uniqueMap = new Map<string, LiveMarketIpoItem>();
       allItems.forEach((item) => {
-        if (!uniqueMap.has(item.symbol)) {
-          uniqueMap.set(item.symbol, item);
+        const sym = item.symbol.toUpperCase();
+        const existing = uniqueMap.get(sym);
+        if (!existing) {
+          uniqueMap.set(sym, item);
+        } else {
+          const isIncomingListed = item.status === 'Listed' || item.isListed || (typeof item.currentPrice === 'number' && item.currentPrice > 0);
+          const isExistingListed = existing.status === 'Listed' || existing.isListed || (typeof existing.currentPrice === 'number' && existing.currentPrice > 0);
+
+          if (isIncomingListed) {
+            uniqueMap.set(sym, {
+              ...existing,
+              ...item,
+              status: 'Listed',
+              isListed: true,
+              currentPrice: item.currentPrice ?? existing.currentPrice,
+              dayChange: item.dayChange ?? existing.dayChange,
+              dayChangePercent: item.dayChangePercent ?? existing.dayChangePercent,
+              volume: item.volume ?? existing.volume,
+            });
+          } else if (isExistingListed) {
+            uniqueMap.set(sym, {
+              ...item,
+              ...existing,
+              status: 'Listed',
+              isListed: true,
+              currentPrice: existing.currentPrice,
+              dayChange: existing.dayChange,
+              dayChangePercent: existing.dayChangePercent,
+              volume: existing.volume,
+            });
+          } else {
+            uniqueMap.set(sym, { ...existing, ...item });
+          }
         }
       });
       setIpos(Array.from(uniqueMap.values()));
@@ -135,14 +166,14 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
     }
   }, [onIposLoaded, overviewData]);
 
-  // Initial load & periodic background refresh (every 20s for active telemetry)
+  // Initial load & periodic background refresh (every 10s for live telemetry & quotes)
   useEffect(() => {
     fetchMarketData();
 
-    // Auto-sync market telemetry every 20 seconds
+    // Auto-sync market telemetry and listed prices every 10 seconds
     const interval = setInterval(() => {
       fetchMarketData(true);
-    }, 20000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, []);

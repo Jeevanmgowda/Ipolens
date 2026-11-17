@@ -365,6 +365,7 @@ export class NSEIPOProvider implements IPODataProvider {
         dayChangePercent: l.dayChangePercent,
         volume: l.volume,
         marketStatus: 'OPEN',
+        isListed: true,
       });
     }
 
