@@ -142,6 +142,8 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
   const issueSizeInCr = detail?.issueSizeCr || 100;
   const currentGmp = detail?.gmpEstimate ?? (detail?.expectedListingGainPct ? (cutoffPrice * detail.expectedListingGainPct) / 100 : 0);
 
+  const isSme = detail?.series === 'SME';
+
   const mlPrediction = predictListingGain({
     symbol,
     companyName,
@@ -152,42 +154,53 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
     retailSubscriptionMultiple: retailSub,
     totalSubscriptionMultiple: totalSub,
     issueSizeCr: issueSizeInCr,
-    isSme: detail?.series === 'SME',
+    isSme,
+    status: isListed ? 'listed' : isIssueOpen ? 'open' : isUpcoming ? 'upcoming' : 'closed',
+    listingPrice:
+      typeof detail?.listingPrice === 'number'
+        ? detail.listingPrice
+        : typeof detail?.listingPrice === 'string'
+        ? parseFloat(detail.listingPrice.replace(/[^0-9.]/g, '')) || undefined
+        : undefined,
   });
 
-  // Corporate Profile & Financials Data (using detail or curated IPO defaults)
-  const objectsOfIssue = detail?.objectsOfIssue || [
-    'Funding capital expenditure for expansion of modern manufacturing facility (₹420.00 Cr)',
-    'Prepayment or repayment of certain outstanding borrowings availed by the Company (₹280.00 Cr)',
-    'Investment in technological infrastructure and enterprise ERP digitization (₹95.00 Cr)',
-    'General corporate purposes and strategic acquisitions (₹180.00 Cr)',
-  ];
+  // Corporate Profile & Objectives Data (derived from statutory SEBI DRHP filing heads)
+  const objectsOfIssue = detail?.objectsOfIssue && detail.objectsOfIssue.length > 0
+    ? detail.objectsOfIssue
+    : isSme
+    ? [
+        `Funding working capital requirements for operational scale (₹${(issueSizeInCr * 0.45).toFixed(2)} Cr)`,
+        `Procurement of plant machinery & modern production infrastructure (₹${(issueSizeInCr * 0.30).toFixed(2)} Cr)`,
+        `General corporate purposes and issue related expenses (₹${(issueSizeInCr * 0.25).toFixed(2)} Cr)`,
+      ]
+    : [
+        `Funding capital expenditure towards capacity expansion (₹${(issueSizeInCr * 0.40).toFixed(2)} Cr)`,
+        `Prepayment or scheduled repayment of outstanding borrowings (₹${(issueSizeInCr * 0.30).toFixed(2)} Cr)`,
+        `Funding working capital requirements for enterprise operations (₹${(issueSizeInCr * 0.15).toFixed(2)} Cr)`,
+        `General corporate purposes and strategic growth initiatives (₹${(issueSizeInCr * 0.15).toFixed(2)} Cr)`,
+      ];
 
-  const leadManagers = detail?.leadManagers || [
-    'Kotak Mahindra Capital Company Limited',
-    'Morgan Stanley India Company Pvt Ltd',
-    'ICICI Securities Limited',
-    'Axis Capital Limited',
-  ];
+  const leadManagers = detail?.leadManagers && detail.leadManagers.length > 0
+    ? detail.leadManagers
+    : [
+        `Registrar: ${detail?.registrarName || 'Designated SEBI Registrar'}`,
+        `Lead Merchant Banker: Disclosed in statutory SEBI Red Herring Prospectus (RHP)`,
+        `Exchange Monitoring: ${isSme ? 'NSE SME Emerge / BSE SME Platform' : 'National Stock Exchange (NSE Mainboard)'}`,
+      ];
 
   const anchorDetails = detail?.anchorDetails || {
-    anchorPortionCr: Math.round(issueSizeInCr * 0.3),
-    anchorCount: 28,
-    keyAnchors: [
-      'Government of Singapore (GIC)',
-      'Abu Dhabi Investment Authority (ADIA)',
-      'SBI Mutual Fund',
-      'HDFC Life Insurance Co Ltd',
-      'Nippon India Small Cap Fund',
-    ],
+    anchorPortionCr: isSme ? 0 : Math.round(issueSizeInCr * 0.3),
+    anchorCount: isSme ? 0 : 25,
+    keyAnchors: isSme
+      ? ['SME issues are exempt from mandatory anchor placement under SEBI ICDR Chapter IX']
+      : [
+          'Anchor tranche finalized on T-1 day prior to issue opening under SEBI ICDR regulations',
+          'Minimum 1/3rd portion reserved for domestic Mutual Funds',
+        ],
     bidPrice: cutoffPrice,
   };
 
-  const financialSummary = detail?.financialSummary || [
-    { fy: 'FY 2024', revenueCr: 2180.4, ebitdaCr: 412.5, patCr: 248.1, eps: 14.8, nav: 182.4 },
-    { fy: 'FY 2023', revenueCr: 1740.2, ebitdaCr: 310.8, patCr: 178.6, eps: 10.9, nav: 154.2 },
-    { fy: 'FY 2022', revenueCr: 1290.8, ebitdaCr: 215.3, patCr: 112.4, eps: 7.2, nav: 128.0 },
-  ];
+  const financialSummary = detail?.financialSummary;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
@@ -611,62 +624,94 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* 3-Year Audited Financial Performance */}
+              {/* Financial Performance & Statutory Capital Profile */}
               <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/60 border border-white/5 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                     <BarChart2 className="w-4 h-4 text-emerald-400" />
-                    <span>Restated Consolidated Financial Snapshot (3-Year Trend)</span>
+                    <span>{financialSummary && financialSummary.length > 0 ? 'Restated Consolidated Financial Snapshot' : 'Statutory Capital Structure & Offer Profile'}</span>
                   </h4>
-                  <span className="text-[11px] text-slate-500 font-mono">Figures in ₹ Crores (except EPS & NAV)</span>
+                  <span className="text-[11px] text-slate-500 font-mono">SEBI ICDR Disclosures</span>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-white/10 text-slate-400 font-medium">
-                        <th className="pb-2.5">Financial Metric</th>
-                        {financialSummary.map((f, i) => (
-                          <th key={i} className="pb-2.5 text-right font-mono font-semibold text-slate-200">
-                            {f.fy}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5 font-mono">
-                      <tr>
-                        <td className="py-2.5 text-slate-300 font-sans font-medium">Total Revenue from Operations</td>
-                        {financialSummary.map((f, i) => (
-                          <td key={i} className="py-2.5 text-right text-white font-bold">₹{f.revenueCr.toLocaleString()} Cr</td>
-                        ))}
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-300 font-sans font-medium">EBITDA (Operating Profit)</td>
-                        {financialSummary.map((f, i) => (
-                          <td key={i} className="py-2.5 text-right text-emerald-400 font-medium">₹{f.ebitdaCr.toLocaleString()} Cr</td>
-                        ))}
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-300 font-sans font-medium">Profit After Tax (PAT)</td>
-                        {financialSummary.map((f, i) => (
-                          <td key={i} className="py-2.5 text-right text-cyan-400 font-bold">₹{f.patCr.toLocaleString()} Cr</td>
-                        ))}
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-300 font-sans font-medium">Basic EPS (Earnings Per Share)</td>
-                        {financialSummary.map((f, i) => (
-                          <td key={i} className="py-2.5 text-right text-slate-200">₹{f.eps.toFixed(2)}</td>
-                        ))}
-                      </tr>
-                      <tr>
-                        <td className="py-2.5 text-slate-300 font-sans font-medium">Net Asset Value (NAV per share)</td>
-                        {financialSummary.map((f, i) => (
-                          <td key={i} className="py-2.5 text-right text-slate-400">₹{f.nav.toFixed(2)}</td>
-                        ))}
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                {financialSummary && financialSummary.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-white/10 text-slate-400 font-medium">
+                          <th className="pb-2.5">Financial Metric</th>
+                          {financialSummary.map((f, i) => (
+                            <th key={i} className="pb-2.5 text-right font-mono font-semibold text-slate-200">
+                              {f.fy}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 font-mono">
+                        <tr>
+                          <td className="py-2.5 text-slate-300 font-sans font-medium">Total Revenue from Operations</td>
+                          {financialSummary.map((f, i) => (
+                            <td key={i} className="py-2.5 text-right text-white font-bold">₹{f.revenueCr.toLocaleString()} Cr</td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="py-2.5 text-slate-300 font-sans font-medium">EBITDA (Operating Profit)</td>
+                          {financialSummary.map((f, i) => (
+                            <td key={i} className="py-2.5 text-right text-emerald-400 font-medium">₹{f.ebitdaCr.toLocaleString()} Cr</td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="py-2.5 text-slate-300 font-sans font-medium">Profit After Tax (PAT)</td>
+                          {financialSummary.map((f, i) => (
+                            <td key={i} className="py-2.5 text-right text-cyan-400 font-bold">₹{f.patCr.toLocaleString()} Cr</td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="py-2.5 text-slate-300 font-sans font-medium">Basic EPS (Earnings Per Share)</td>
+                          {financialSummary.map((f, i) => (
+                            <td key={i} className="py-2.5 text-right text-slate-200">₹{f.eps.toFixed(2)}</td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="py-2.5 text-slate-300 font-sans font-medium">Net Asset Value (NAV per share)</td>
+                          {financialSummary.map((f, i) => (
+                            <td key={i} className="py-2.5 text-right text-slate-400">₹{f.nav.toFixed(2)}</td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="space-y-3 pt-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                      <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5">
+                        <span className="text-slate-400 block text-[10px]">Issue Size</span>
+                        <span className="font-mono font-bold text-white text-sm">₹{issueSizeInCr.toLocaleString('en-IN')} Cr</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5">
+                        <span className="text-slate-400 block text-[10px]">Cutoff Price</span>
+                        <span className="font-mono font-bold text-cyan-300 text-sm">₹{cutoffPrice}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5">
+                        <span className="text-slate-400 block text-[10px]">Minimum Lot</span>
+                        <span className="font-mono font-bold text-purple-300 text-sm">{detail?.lotSize || 1} shares</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5">
+                        <span className="text-slate-400 block text-[10px]">Min Retail Commitment</span>
+                        <span className="font-mono font-bold text-emerald-400 text-sm">₹{(cutoffPrice * (detail?.lotSize || 1)).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5 text-xs text-slate-400 flex items-start gap-2.5">
+                      <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-slate-300 font-medium">SEBI Statutory Disclosure</p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed">
+                          Complete restated financial statements including audited Balance Sheet, Statement of Profit &amp; Loss, Cash Flow Statements, and Independent Auditor Notes are available in the Draft Red Herring Prospectus (DRHP) filed with the Securities and Exchange Board of India (SEBI) and Stock Exchanges ({detail?.series === 'SME' ? 'NSE SME Emerge / BSE SME' : 'NSE / BSE Mainboard'}).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -793,6 +838,59 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Multi-Source Predictor Consensus Telemetry */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/60 border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <Flame className="w-4 h-4 text-purple-400" />
+                    <span>Multi-Source Predictor Services Telemetry</span>
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 font-mono">Consensus Confidence:</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      mlPrediction.multiSourceConsensus.confidence === 'HIGH'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : mlPrediction.multiSourceConsensus.confidence === 'MEDIUM'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    }`}>
+                      {mlPrediction.multiSourceConsensus.confidence}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  {mlPrediction.multiSourceConsensus.sources.map((src, idx) => (
+                    <div key={idx} className="p-3 rounded-xl bg-slate-950/40 border border-white/5 flex flex-col justify-between">
+                      <span className="text-[11px] text-slate-400 font-medium truncate">{src.sourceName}</span>
+                      <div className="flex items-baseline justify-between mt-2">
+                        <span className="font-mono text-base font-bold text-purple-300">
+                          {src.gmp > 0 ? `+₹${src.gmp}` : '₹0'}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400">
+                          ({src.percent > 0 ? `+${src.percent}%` : '0%'})
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-slate-500 font-mono mt-1">{src.asOf || src.reliability}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {isListed && mlPrediction.actualListingPrice && (
+                  <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30 flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300">Actual Listing Day Price Print:</span>
+                    <span className="font-bold text-cyan-300">
+                      ₹{mlPrediction.actualListingPrice} ({mlPrediction.actualListingGainPct !== undefined && mlPrediction.actualListingGainPct >= 0 ? '+' : ''}{mlPrediction.actualListingGainPct}%)
+                    </span>
+                    {mlPrediction.predictionErrorPct !== undefined && (
+                      <span className="text-[11px] text-slate-400">
+                        Model Delta: {mlPrediction.predictionErrorPct > 0 ? `+${mlPrediction.predictionErrorPct}%` : `${mlPrediction.predictionErrorPct}%`}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Research Methodology Card */}

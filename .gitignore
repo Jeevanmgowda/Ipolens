@@ -48,4 +48,6 @@ __pycache__/
 
 # agents & local tooling
 .claude/
+.archify/
+.agents/
 

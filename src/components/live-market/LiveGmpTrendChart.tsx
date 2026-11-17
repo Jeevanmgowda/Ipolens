@@ -31,8 +31,8 @@ const TIMEFRAMES = [
 export const LiveGmpTrendChart: React.FC<LiveGmpTrendChartProps> = ({
   symbol,
   companyName = symbol,
-  baseGmp = 75,
-  issuePrice = 450,
+  baseGmp = 0,
+  issuePrice = 100,
 }) => {
   const [timeframe, setTimeframe] = useState<'1D' | '7D' | '1M' | 'All'>('7D');
   const [data, setData] = useState<GmpTrendResponse | null>(null);

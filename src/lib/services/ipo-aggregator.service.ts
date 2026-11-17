@@ -2,31 +2,6 @@ import { IpoStatus, IssueType, UnifiedIPO } from '@/types/ipo';
 import { UpstoxIpoService } from './upstox-ipo.service';
 import { getRedisClient } from '@/lib/redis';
 
-// Known baseline GMP dictionary for Indian IPOs (tracked unofficial grey market rates)
-const KNOWN_GMP_MAP: Record<string, number> = {
-  SWIGGY: 25,
-  HYUNDAI: 45,
-  BAJAJHFL: 78,
-  PREMIERENE: 480,
-  KRN: 245,
-  NETWEB: 380,
-  TATATECH: 485,
-  IREDA: 28,
-  DOMS: 540,
-  WAAREE: 1047,
-  GARUDA: 10,
-  MONEYVIEW: 85,
-  SHREETNB: 14,
-  HELIOS: 110,
-  APEXCLOUD: 165,
-  EIMS: 22,
-  DECCAN: 32,
-  VANS: 18,
-  VIVEKANAND: 8,
-  PAYTM: 0,
-  ZOMATO: 15,
-};
-
 export class IpoAggregatorService {
   /**
    * Look up latest Grey Market Premium (GMP) dynamically from live scraped feeds
@@ -56,13 +31,8 @@ export class IpoAggregatorService {
       // optional
     }
 
-    // 3. Realistic dynamic estimate based on price and issue type if newly announced
-    if (priceBandMax > 0) {
-      const multiplier = issueType === 'sme' ? 0.28 : 0.22;
-      return Math.round(priceBandMax * multiplier);
-    }
-
-    return 25;
+    // 3. Newly announced issue with no active OTC quote trades at flat baseline
+    return 0;
   }
 
   /**
