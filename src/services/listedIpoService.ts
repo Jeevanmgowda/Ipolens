@@ -213,26 +213,6 @@ export const LISTED_IPOS_REGISTRY: ListedIpoMetadata[] = [
     listingPrice: 76,
     allotmentRegistrar: 'Link Intime India Pvt Ltd',
   },
-  {
-    symbol: 'DECCAN',
-    ticker: 'DECCAN.NS',
-    companyName: 'Deccan Urban Infrastructure Ltd',
-    series: 'EQ',
-    listingDate: '01-Oct-2026',
-    issuePrice: 93,
-    listingPrice: 117,
-    allotmentRegistrar: 'Link Intime India Pvt Ltd',
-  },
-  {
-    symbol: 'SOLARVISION',
-    ticker: 'SOLARVISION.NS',
-    companyName: 'SolarVision CleanTech Industries Ltd',
-    series: 'SME',
-    listingDate: '03-Oct-2026',
-    issuePrice: 142,
-    listingPrice: 190,
-    allotmentRegistrar: 'KFin Technologies Limited',
-  },
 ];
 
 const CACHE_TTL_MS = 25000; // 25 seconds live cache
@@ -340,6 +320,45 @@ async function extractLiveListedMetadata(): Promise<ListedIpoMetadata[]> {
     for (const item of dynamicallyExtracted) {
       mergedMap.set(item.symbol.toUpperCase(), item);
     }
+
+    // Also ingest verified listed items from scraped data/ipos.json
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const path = require('path');
+      const rootFeed = path.resolve(process.cwd(), 'data', 'ipos.json');
+      const scriptFeed = path.resolve(process.cwd(), 'scripts', 'data', 'ipos.json');
+      const feedPath = fs.existsSync(rootFeed) ? rootFeed : (fs.existsSync(scriptFeed) ? scriptFeed : null);
+      if (feedPath) {
+        const rawFeed = fs.readFileSync(feedPath, 'utf-8');
+        const parsedFeed = JSON.parse(rawFeed);
+        const feedList = Array.isArray(parsedFeed.ipos) ? parsedFeed.ipos : [];
+        for (const item of feedList) {
+          if (item.status === 'listed' && item.symbol) {
+            const sym = String(item.symbol).toUpperCase();
+            if (!mergedMap.has(sym)) {
+              const pBand = item.priceBand || { min: 100, max: 100 };
+              const issuePrice = pBand.max || pBand.min || 100;
+              const listingPrice = item.gmp?.value ? issuePrice + item.gmp.value : issuePrice;
+              mergedMap.set(sym, {
+                symbol: sym,
+                ticker: `${sym}.NS`,
+                companyName: item.companyName || sym,
+                series: item.series === 'SME' || item.platform === 'SME' ? 'SME' : 'EQ',
+                listingDate: item.listingDate || 'Recent Listing',
+                issuePrice,
+                listingPrice,
+                allotmentRegistrar: 'Official Exchange Registrar',
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Scraped feed optional
+    }
+
     return Array.from(mergedMap.values());
   } catch (err: any) {
     ipoWatchTrackerCooldownUntil = Date.now() + 60_000;

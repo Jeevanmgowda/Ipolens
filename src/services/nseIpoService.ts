@@ -1038,14 +1038,35 @@ export async function extractLiveMarketFeed(): Promise<{
  * Look up real scraped GMP dynamically from live market feeds
  */
 export async function getLiveScrapedGmp(symbolOrName: string): Promise<number | null> {
-  const meta = findMarketMetadata(symbolOrName);
-  if (meta && meta.gmp !== undefined) {
-    return meta.gmp;
+  const clean = symbolOrName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // 1. Prioritize real scraped InvestorGain feed from data/ipos.json
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path');
+    const rootFeed = path.resolve(process.cwd(), 'data', 'ipos.json');
+    if (fs.existsSync(rootFeed)) {
+      const parsedFeed = JSON.parse(fs.readFileSync(rootFeed, 'utf-8'));
+      const feedList = Array.isArray(parsedFeed.ipos) ? parsedFeed.ipos : [];
+      for (const item of feedList) {
+        const itemSym = (item.symbol || '').toLowerCase();
+        const itemName = (item.companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (itemSym === clean || itemName.includes(clean) || clean.includes(itemName)) {
+          if (item.gmp?.value !== undefined && item.gmp?.value !== null) {
+            return item.gmp.value;
+          }
+        }
+      }
+    }
+  } catch {
+    // optional
   }
 
+  // 2. Query live scraped OTC tracker
   try {
     const feed = await extractLiveMarketFeed();
-    const clean = symbolOrName.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const item of feed.activeAndUpcoming) {
       const itemNorm = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const ticker = deriveTicker(item.name).toLowerCase();
@@ -1063,6 +1084,13 @@ export async function getLiveScrapedGmp(symbolOrName: string): Promise<number | 
   } catch {
     // optional
   }
+
+  // 3. Fallback to market metadata
+  const meta = findMarketMetadata(symbolOrName);
+  if (meta && meta.gmp !== undefined) {
+    return meta.gmp;
+  }
+
   return null;
 }
 
@@ -1078,9 +1106,21 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
   try {
     // 1. Fetch NSE India official exchange APIs
     const nseCookie = await getOrRefreshNseCookie();
-    const [currentIssues, upcomingIssues, liveMarketData] = await Promise.all([
+    const toDate = new Date();
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 90);
+    const formatDateNse = (d: Date) => {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}-${month}-${year}`;
+    };
+    const pastUrl = `https://www.nseindia.com/api/public-past-issues?from_date=${formatDateNse(fromDate)}&to_date=${formatDateNse(toDate)}`;
+
+    const [currentIssues, upcomingIssues, pastIssues, liveMarketData] = await Promise.all([
       fetchNseEndpoint('https://www.nseindia.com/api/ipo-current-issue', nseCookie),
       fetchNseEndpoint('https://www.nseindia.com/api/all-upcoming-issues?category=ipo', nseCookie),
+      fetchNseEndpoint(pastUrl, nseCookie),
       extractLiveMarketFeed(),
     ]);
 
@@ -1236,6 +1276,49 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       });
     }
 
+    // 3.5 Process official NSE Past issues (closed / recent past offerings)
+    for (const item of pastIssues) {
+      const sym = item.symbol ? String(item.symbol).toUpperCase() : '';
+      if (!sym || map.has(sym)) continue;
+
+      const compName = item.companyName || item.company || sym;
+      const meta = findMarketMetadata(sym) || findMarketMetadata(compName);
+      const registrar = getRegistrarInfo(sym, compName);
+      const cleanPrice = cleanPriceText(meta?.priceBand || item.issuePrice || item.priceRange || '100');
+      const prices = cleanPrice.match(/(\d+(?:\.\d+)?)/g) || ['100'];
+      const priceLow = meta?.priceLow || parseFloat(prices[0]) || 100;
+      const priceHigh = meta?.priceHigh || parseFloat(prices[prices.length - 1]) || priceLow;
+      const isSme = item.securityType === 'SME' || item.series === 'SME' || meta?.series === 'SME';
+
+      const openDate = meta?.openDate || item.ipoStartDate || item.issueStartDate || '';
+      const closeDate = meta?.closeDate || item.ipoEndDate || item.issueEndDate || '';
+      const listingDate = meta?.listingDate || item.listingDate || '';
+
+      map.set(sym, {
+        symbol: sym,
+        companyName: compName,
+        series: isSme ? 'SME' : 'EQ',
+        status: 'Closed',
+        issueStartDate: openDate,
+        issueEndDate: closeDate,
+        listingDate,
+        expectedListingDate: listingDate || 'Past Issue',
+        issuePrice: cleanPrice,
+        priceBand: cleanPrice,
+        priceLow,
+        priceHigh,
+        lotSize: meta?.lotSize ? String(meta.lotSize) : (isSme ? '1200' : '14'),
+        minInvestment: meta?.minInvestment || (priceHigh * (isSme ? 1200 : 14)),
+        issueSize: meta?.issueSize || '',
+        noOfTime: '0.00',
+        gmpEstimate: meta?.gmp || 0,
+        gmpPercent: meta?.gmpPercent || 0,
+        remainingTime: 'Bidding Closed',
+        registrarName: registrar.name,
+        registrarUrl: registrar.url,
+      });
+    }
+
     // 4. Merge live market feed items (additional Upcoming and Open IPOs)
     for (const item of liveMarketData.activeAndUpcoming) {
       const meta = findMarketMetadata(item.name);
@@ -1354,15 +1437,44 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
         for (const item of feedList) {
           const sym = item.symbol ? String(item.symbol).toUpperCase() : deriveTicker(item.companyName || '');
           if (!sym) continue;
+          const rawStatus = (item.status || '').toLowerCase();
+          const isItemListed =
+            rawStatus === 'listed' ||
+            Boolean(item.listingDate && isListingDatePast(item.listingDate)) ||
+            LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === sym);
           const existing = map.get(sym);
           if (existing) {
-            if ((!existing.gmpEstimate || existing.gmpEstimate === 0) && item.gmp?.value) {
+            if (item.gmp?.value !== undefined && item.gmp?.value !== null) {
               existing.gmpEstimate = item.gmp.value;
               const pHigh = existing.priceHigh || 100;
               existing.gmpPercent = item.gmp.percent || (pHigh > 0 ? Math.round(((existing.gmpEstimate || 0) / pHigh) * 100) : 0);
             }
-            if (!existing.noOfTime && item.subscriptionTimes) {
+            if (item.subscriptionTimes && item.subscriptionTimes !== '-' && item.subscriptionTimes !== '—') {
               existing.noOfTime = item.subscriptionTimes;
+            }
+            if ((!existing.listingDate || existing.listingDate === 'TBD' || existing.listingDate === '') && item.listingDate) {
+              existing.listingDate = item.listingDate;
+              existing.expectedListingDate = item.listingDate;
+            }
+            if ((!existing.issueSize || existing.issueSize === '—' || existing.issueSize === '') && item.issueSize) {
+              existing.issueSize = item.issueSize;
+            }
+            if ((!existing.lotSize || existing.lotSize === '14' || existing.lotSize === '0' || existing.lotSize === '') && item.lotSize) {
+              existing.lotSize = String(item.lotSize);
+            }
+            if ((!existing.priceHigh || existing.priceHigh === 0) && item.priceBand) {
+              existing.priceLow = item.priceBand.min;
+              existing.priceHigh = item.priceBand.max;
+              existing.priceBand = item.priceBand.min === item.priceBand.max ? `₹${item.priceBand.min}` : `₹${item.priceBand.min} – ₹${item.priceBand.max}`;
+              existing.issuePrice = existing.priceBand;
+            }
+            if (isItemListed) {
+              existing.isListed = true;
+              existing.status = 'Listed';
+              existing.remainingTime = 'Listed on Exchange';
+            } else if (rawStatus === 'closed' && !existing.isListed) {
+              existing.status = 'Closed';
+              existing.remainingTime = 'Bidding Closed';
             }
           } else {
             const registrar = getRegistrarInfo(sym, item.companyName || '');
@@ -1371,12 +1483,23 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
             const isSme = item.platform === 'SME' || item.series === 'SME';
             const openDate = item.openDate || '';
             const closeDate = item.closeDate || '';
-            const status = resolveIpoLifecycleStatus(openDate, closeDate, false);
+            const status: IpoStatus = isItemListed
+              ? 'Listed'
+              : rawStatus === 'closed'
+                ? 'Closed'
+                : resolveIpoLifecycleStatus(openDate, closeDate, false);
+            const remainingTime = isItemListed
+              ? 'Listed on Exchange'
+              : status === 'Closed'
+                ? 'Bidding Closed'
+                : calculateRemainingTime(closeDate);
+
             map.set(sym, {
               symbol: sym,
               companyName: item.companyName || sym,
               series: isSme ? 'SME' : 'EQ',
               status,
+              isListed: isItemListed,
               issueStartDate: openDate,
               issueEndDate: closeDate,
               listingDate: item.listingDate,
@@ -1391,7 +1514,7 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
               isBse: item.exchanges?.includes('BSE') ? 'Y' : 'N',
               gmpEstimate: item.gmp?.value || 0,
               gmpPercent: item.gmp?.percent || 0,
-              remainingTime: calculateRemainingTime(closeDate),
+              remainingTime,
               registrarName: registrar.name,
               registrarUrl: registrar.url,
             });
@@ -1422,11 +1545,9 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       }
     }
 
-    // 7. Enrich and sync verified items from MARKET_IPO_REGISTRY
+    // 7. Enrich verified items from MARKET_IPO_REGISTRY (Do NOT insert missing synthetic entries)
     for (const m of MARKET_IPO_REGISTRY) {
       const isListed = LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === m.symbol.toUpperCase());
-      const lifecycleStatus = isListed ? 'Listed' : resolveIpoLifecycleStatus(m.openDate, m.closeDate, isListed);
-      const remTime = isListed ? 'Listed on Exchange' : calculateRemainingTime(m.closeDate);
       const existing = map.get(m.symbol);
 
       if (existing) {
@@ -1449,7 +1570,7 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
         if (!existing.retailSubscription && m.retailSubscription) existing.retailSubscription = m.retailSubscription;
         if (!existing.niiSubscription && m.niiSubscription) existing.niiSubscription = m.niiSubscription;
         if (!existing.qibSubscription && m.qibSubscription) existing.qibSubscription = m.qibSubscription;
-        if (m.listingDate) existing.listingDate = m.listingDate;
+        if (m.listingDate && !existing.listingDate) existing.listingDate = m.listingDate;
         if (isListed) {
           existing.isListed = true;
           existing.status = 'Listed';
@@ -1458,35 +1579,6 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
             existing.listingPrice = `₹${(m.priceHigh + (m.gmp || 0)).toLocaleString('en-IN')}`;
           }
         }
-      } else {
-        map.set(m.symbol, {
-          symbol: m.symbol,
-          companyName: m.companyName,
-          series: m.series,
-          status: lifecycleStatus,
-          issueStartDate: m.openDate,
-          issueEndDate: m.closeDate,
-          listingDate: m.listingDate,
-          expectedListingDate: m.listingDate,
-          issuePrice: m.priceBand,
-          priceBand: m.priceBand,
-          priceLow: m.priceLow,
-          priceHigh: m.priceHigh,
-          lotSize: String(m.lotSize),
-          minInvestment: m.minInvestment,
-          issueSize: m.issueSize,
-          noOfTime: m.currentSubscription.toFixed(2),
-          gmpEstimate: m.gmp,
-          gmpPercent: m.gmpPercent,
-          retailSubscription: m.retailSubscription,
-          niiSubscription: m.niiSubscription,
-          qibSubscription: m.qibSubscription,
-          remainingTime: remTime,
-          registrarName: m.registrar,
-          registrarUrl: m.registrarUrl,
-          isListed,
-          listingPrice: isListed && m.priceHigh ? `₹${(m.priceHigh + (m.gmp || 0)).toLocaleString('en-IN')}` : undefined,
-        });
       }
     }
 
@@ -1495,6 +1587,8 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       const isListed = Boolean(
         ipoItem.isListed ||
         ipoItem.status === 'Listed' ||
+        (ipoItem.listingDate && isListingDatePast(ipoItem.listingDate)) ||
+        (ipoItem.remainingTime && ipoItem.remainingTime.toLowerCase().includes('listed')) ||
         LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === ipoItem.symbol.toUpperCase())
       );
 

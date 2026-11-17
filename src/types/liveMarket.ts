@@ -39,6 +39,7 @@ export interface LiveMarketIpoItem {
   isClosingSoon?: boolean;
 
   // Secondary market metrics (when listed)
+  isListed?: boolean;
   issuePrice?: number;
   listingPrice?: number;
   currentPrice?: number;

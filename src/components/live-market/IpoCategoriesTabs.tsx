@@ -36,9 +36,53 @@ interface IpoCategoriesTabsProps {
   onAnalyzeAi?: (symbol: string, companyName: string) => void;
 }
 
+export function isListingDatePastClient(dateStr?: string | null): boolean {
+  if (!dateStr || dateStr === 'TBD' || dateStr === '—' || dateStr === '-' || dateStr.toLowerCase().includes('t+3')) {
+    return false;
+  }
+  const lower = dateStr.toLowerCase();
+  if (lower.includes('listed') || lower.includes('past')) {
+    return true;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const isoParsed = Date.parse(dateStr);
+    if (!isNaN(isoParsed)) {
+      return Date.now() >= isoParsed;
+    }
+  }
+  const match = dateStr.match(/(\d{1,2})[-/ ]([a-zA-Z]{3,9})(?:[-/ ](\d{2,4}))?/);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const mStr = match[2].toLowerCase().slice(0, 3);
+    let year = match[3] ? parseInt(match[3], 10) : 2026;
+    if (year < 100) year += 2000;
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const m = months[mStr];
+    if (m !== undefined) {
+      const listingMs = Date.UTC(year, m, day, 4, 30, 0);
+      return Date.now() >= listingMs;
+    }
+  }
+  const parsed = Date.parse(dateStr);
+  if (!isNaN(parsed)) return Date.now() >= parsed;
+  return false;
+}
+
 export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
-  // The IPO API has already resolved listing dates and registry matches on the server.
-  if (ipo.status === 'Listed' || (ipo.remainingTime || '').toLowerCase().includes('listed')) return 'listed';
+  // Permanent rule: If listed from any origin, listing date reached/passed, or trading active, move strictly to Listed Market
+  const isListed =
+    ipo.status === 'Listed' ||
+    ipo.isListed === true ||
+    (ipo.remainingTime || '').toLowerCase().includes('listed') ||
+    Boolean(ipo.listingDate && isListingDatePastClient(ipo.listingDate)) ||
+    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined);
+
+  if (isListed) {
+    return 'listed';
+  }
   const rem = (ipo.remainingTime || '').toLowerCase();
   if (rem.includes('bidding closed') || rem.includes('closed') || ipo.status === 'Closed') {
     return 'closed';
@@ -412,15 +456,23 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                               : 'text-slate-400'
                           }`}
                         >
-                          {ipo.dayChange !== undefined && ipo.dayChange !== null ? (
+                          {ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0 ? (
                             <>
                               {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange.toFixed(2)}{' '}
                               <span className="text-xs font-normal">
                                 ({(ipo.dayChangePercent || 0) >= 0 ? '+' : ''}{ipo.dayChangePercent ?? 0}%)
                               </span>
                             </>
+                          ) : ipo.listingPrice && ipo.issuePrice && ipo.listingPrice !== ipo.issuePrice ? (
+                            <span className={ipo.listingPrice >= ipo.issuePrice ? 'text-emerald-400' : 'text-rose-400'}>
+                              {ipo.listingPrice >= ipo.issuePrice ? '+' : ''}
+                              ₹{(ipo.listingPrice - ipo.issuePrice).toFixed(2)}{' '}
+                              <span className="text-xs font-normal">
+                                ({(((ipo.listingPrice - ipo.issuePrice) / ipo.issuePrice) * 100).toFixed(1)}% gain)
+                              </span>
+                            </span>
                           ) : (
-                            '—'
+                            'Market Closed'
                           )}
                         </span>
                       ) : (
@@ -466,7 +518,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <span className="font-mono font-semibold text-slate-300">
                           {ipo.volume !== undefined && ipo.volume !== null && ipo.volume > 0
                             ? `${ipo.volume.toLocaleString('en-IN')} shares`
-                            : '—'}
+                            : ipo.issueSize && ipo.issueSize !== '—'
+                            ? `Issue: ${ipo.issueSize}`
+                            : 'Exchange Traded'}
                         </span>
                       </div>
                     </div>

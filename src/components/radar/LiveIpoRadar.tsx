@@ -247,7 +247,7 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
         lastUpdated={lastUpdated || 'Syncing...'}
         isRefreshing={isRefreshing}
         connectionStatus={overviewData?.connectionStatus || (overviewData?.isMock ? 'DEMO' : 'LIVE')}
-        isMock={overviewData?.isMock ?? true}
+        isMock={overviewData?.isMock ?? false}
         alerts={alerts}
         onRefresh={() => fetchMarketData(false)}
       />

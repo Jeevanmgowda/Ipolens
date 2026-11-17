@@ -35,14 +35,17 @@ export function isIpoListed(ipo: {
     return true;
   }
 
+  // Permanent rule: If listing date has arrived or passed, it belongs strictly to Listed Market
+  if (ipo.listingDate && isListingDatePast(ipo.listingDate)) {
+    return true;
+  }
+
   // If it has actual trading price / listing price from secondary market
   if (
     (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined) ||
     (typeof ipo.listingPrice === 'number' && ipo.listingPrice > 0 && ipo.status !== 'Upcoming' && ipo.status !== 'Open')
   ) {
-    if (rem.includes('listed') || (ipo.listingDate && isListingDatePast(ipo.listingDate))) {
-      return true;
-    }
+    return true;
   }
 
   return false;
@@ -200,6 +203,8 @@ export class NSEIPOProvider implements IPODataProvider {
       const isActuallyListed = Boolean(
         raw.isListed ||
         raw.status === 'Listed' ||
+        (raw.listingDate && isListingDatePast(raw.listingDate)) ||
+        (raw.remainingTime && raw.remainingTime.toLowerCase().includes('listed')) ||
         LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
         listedRaw.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase())
       );
@@ -287,8 +292,8 @@ export class NSEIPOProvider implements IPODataProvider {
         openDate: raw.issueStartDate || 'TBD',
         closeDate: raw.issueEndDate || 'TBD',
         allotmentDate: isActuallyListed ? 'Allotted' : (raw.issueEndDate || 'TBD'),
-        listingDate: isActuallyListed ? (listedMatch?.listingDate || meta?.listingDate || 'Listed on Exchange') : (meta?.listingDate || 'TBD'),
-        expectedListingDate: isActuallyListed ? 'Listed on Exchange' : (meta?.listingDate || (raw.issueEndDate ? 'T+3 Trading Days' : 'TBD')),
+        listingDate: raw.listingDate || listedMatch?.listingDate || meta?.listingDate || (isActuallyListed ? 'Recent Listing' : 'TBD'),
+        expectedListingDate: raw.expectedListingDate || raw.listingDate || meta?.listingDate || (isActuallyListed ? 'Recent Listing' : (raw.issueEndDate ? 'T+3 Trading Days' : 'TBD')),
         registrar: raw.registrarName || 'Link Intime India Pvt Ltd',
         registrarUrl: raw.registrarUrl,
         gmp,
@@ -307,6 +312,7 @@ export class NSEIPOProvider implements IPODataProvider {
         dayChangePercent: dayChangePercentVal,
         volume: volumeVal,
         marketStatus: 'OPEN',
+        isListed: isActuallyListed,
       });
     }
 

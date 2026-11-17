@@ -35,13 +35,14 @@ def _parse_price_band(text):
 
 
 def _nse_date(text):
-    # e.g. "16-Sep-2026" -> "2026-09-16"
+    # e.g. "16-Sep-2026" or "02-NOV-2026" -> "2026-11-02"
     if not text:
         return None
+    cleaned = text.strip()
     try:
-        return datetime.datetime.strptime(text.strip(), "%d-%b-%Y").strftime("%Y-%m-%d")
+        return datetime.datetime.strptime(cleaned.title(), "%d-%b-%Y").strftime("%Y-%m-%d")
     except ValueError:
-        return text.strip() if re.match(r"^\d{4}-\d{2}-\d{2}$", text.strip()) else None
+        return cleaned if re.match(r"^\d{4}-\d{2}-\d{2}$", cleaned) else None
 
 
 def _bse_date(text):
@@ -158,8 +159,14 @@ def build_merged(nse_data: dict, bse_data: dict, gmp_data: dict) -> tuple[list, 
         rec["exchanges"].add("NSE")
         rec["nse"] = row
         rec["symbol"] = rec["symbol"] or row.get("symbol") or row.get("issueSymbol")
-        rec["openDate"] = rec["openDate"] or _nse_date(row.get("issueStartDate"))
-        rec["closeDate"] = rec["closeDate"] or _nse_date(row.get("issueEndDate"))
+        rec["openDate"] = rec["openDate"] or _nse_date(row.get("ipoStartDate") or row.get("issueStartDate"))
+        rec["closeDate"] = rec["closeDate"] or _nse_date(row.get("ipoEndDate") or row.get("issueEndDate"))
+        rec["listingDate"] = rec["listingDate"] or _nse_date(row.get("listingDate"))
+        if rec["priceBand"] is None:
+            rec["priceBand"] = _parse_price_band(row.get("issuePrice") or row.get("priceRange"))
+        if "SME" in (row.get("securityType") or row.get("series") or ""):
+            rec["platform"] = "SME"
+            rec["series"] = "SME"
         rec["status"] = rec["status"] or "closed"
 
     # BSE Issues (flag=1 returns active, recent, and forthcoming)
@@ -195,16 +202,28 @@ def build_merged(nse_data: dict, bse_data: dict, gmp_data: dict) -> tuple[list, 
             candidates = [k for k in by_key if k.startswith(key) or key.startswith(k)]
             rec = by_key[candidates[0]] if len(candidates) == 1 else None
         if rec is None:
+            key, rec = get_or_create(raw_name)
+        if not rec:
             unmatched_gmp.append(raw_name)
             continue
         rec["gmp"] = row
-        rec["status"] = row.get("status") or rec["status"]
+        raw_status = row.get("status")
+        if raw_status in ("LN", "LP"):
+            rec["status"] = "listed"
+        elif raw_status == "closed":
+            rec["status"] = rec["status"] or "closed"
+        elif raw_status in ("open", "upcoming"):
+            rec["status"] = rec["status"] or raw_status
         if row.get("category") == "SME":
             rec["platform"] = "SME"
             rec["series"] = "SME"
+        rec["openDate"] = rec["openDate"] or row.get("openDate")
+        rec["closeDate"] = rec["closeDate"] or row.get("closeDate")
         rec["listingDate"] = rec["listingDate"] or row.get("listingDate")
         rec["issueSize"] = rec["issueSize"] or row.get("issueSize")
         rec["lotSize"] = rec["lotSize"] or row.get("lotSize")
+        if rec["priceBand"] is None and row.get("price"):
+            rec["priceBand"] = _parse_price_band(row.get("price"))
 
     today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
 
@@ -213,19 +232,20 @@ def build_merged(nse_data: dict, bse_data: dict, gmp_data: dict) -> tuple[list, 
         if not rec["symbol"]:
             rec["symbol"] = _derive_ticker(rec["companyName"])
 
-        # Auto-resolve lifecycle status based on dates if ambiguous
-        if not rec["status"]:
+        # Permanent Rule: If listing date has arrived or passed, status MUST be listed
+        if rec["listingDate"] and today_str >= rec["listingDate"]:
+            rec["status"] = "listed"
+        elif not rec["status"]:
             if rec["openDate"] and today_str < rec["openDate"]:
                 rec["status"] = "upcoming"
             elif rec["openDate"] and rec["closeDate"] and rec["openDate"] <= today_str <= rec["closeDate"]:
                 rec["status"] = "open"
             elif rec["closeDate"] and today_str > rec["closeDate"]:
-                if rec["listingDate"] and today_str >= rec["listingDate"]:
-                    rec["status"] = "listed"
-                else:
-                    rec["status"] = "closed"
+                rec["status"] = "closed"
             else:
                 rec["status"] = "upcoming"
+        elif rec["status"] in ("closed", "open", "upcoming") and rec["listingDate"] and today_str >= rec["listingDate"]:
+            rec["status"] = "listed"
 
     return list(by_key.values()), unmatched_gmp
 
@@ -262,7 +282,13 @@ def run(out_path: str = DEFAULT_OUT, months_back: int = 1, open_only: bool = Fal
     if open_only:
         ipos = [r for r in ipos if r["status"] in ("open", "upcoming")]
 
-    ipos.sort(key=lambda r: (r["openDate"] or "9999-99-99", r["companyName"] or ""))
+    def _sort_key(r):
+        dt = r.get("openDate") or r.get("listingDate") or r.get("closeDate") or ""
+        status_priority = {"open": 0, "upcoming": 1, "closed": 2, "listed": 3}.get(r.get("status"), 4)
+        clean_num = int(dt.replace("-", "")) if dt and "-" in dt else 0
+        return (status_priority, -clean_num)
+
+    ipos.sort(key=_sort_key)
     trimmed = [_trim(r) for r in ipos]
 
     output = {
@@ -303,7 +329,7 @@ def run(out_path: str = DEFAULT_OUT, months_back: int = 1, open_only: bool = Fal
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge NSE, BSE and GMP scraper feeds")
     parser.add_argument("--out", default=DEFAULT_OUT, help="Output JSON path")
-    parser.add_argument("--months", type=int, default=1, help="Months of past issues to query from NSE")
+    parser.add_argument("--months", type=int, default=3, help="Months of past issues to query from NSE")
     parser.add_argument("--open-only", action="store_true", help="Only retain open/upcoming issues")
     args = parser.parse_args()
 

@@ -523,35 +523,50 @@ export class UpstoxIpoService {
           }));
           return issueType ? listedMapped.filter((i) => i.issueType === issueType) : listedMapped;
         } else {
-          const { MARKET_IPO_REGISTRY, isListingDatePast, isBiddingClosed, isBiddingStarted } = await import('@/services/nseIpoService');
-          const regMapped: Partial<UnifiedIPO>[] = MARKET_IPO_REGISTRY.map((m) => {
-            const isListed = isListingDatePast(m.listingDate);
-            const isClosed = isBiddingClosed(m.closeDate);
-            const itemStatus: 'upcoming' | 'open' | 'closed' | 'listed' =
-              isListed ? 'listed' : isClosed ? 'closed' : isBiddingStarted(m.openDate) ? 'open' : 'upcoming';
-            return {
-              id: `${m.symbol.toLowerCase()}-ipo`,
-              symbol: m.symbol.toUpperCase(),
-              companyName: m.companyName,
-              issueType: (m.series === 'SME' ? 'sme' : 'regular') as IssueType,
-              status: itemStatus,
-              priceBandMin: m.priceLow,
-              priceBandMax: m.priceHigh,
-              lotSize: m.lotSize,
-              openDate: m.openDate,
-              closeDate: m.closeDate,
-              listingDate: m.listingDate,
-              issueSizeInCrores: m.issueSizeCr,
-              subscriptionTotal: m.currentSubscription,
-              subscriptionRetail: m.retailSubscription,
-              subscriptionHni: m.niiSubscription,
-              subscriptionQib: m.qibSubscription,
-              registrar: m.registrar,
-              instrumentKey: `NSE_EQ|${m.symbol.toUpperCase()}`,
-            };
-          }).filter((i) => i.status === status);
-          if (regMapped.length > 0) {
-            return issueType ? regMapped.filter((i) => i.issueType === issueType) : regMapped;
+          // If live fetch returned 0 items, read verified real exchange feed from data/ipos.json
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const fs = require('fs');
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const path = require('path');
+            const dataPath = path.resolve(process.cwd(), 'data', 'ipos.json');
+            if (fs.existsSync(dataPath)) {
+              const fileContent = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+              const iposList: any[] = Array.isArray(fileContent?.ipos) ? fileContent.ipos : [];
+              const diskMapped: Partial<UnifiedIPO>[] = iposList
+                .filter((item) => {
+                  const rawStatus = (item.status || '').toLowerCase();
+                  if (status === 'closed') return rawStatus === 'closed';
+                  if (status === 'open') return rawStatus === 'open' || rawStatus === 'active';
+                  return rawStatus === 'upcoming';
+                })
+                .map((m) => {
+                  const pBand = m.priceBand || { min: 100, max: 100 };
+                  const isSme = m.platform === 'SME' || m.series === 'SME';
+                  return {
+                    id: `${(m.symbol || 'ipo').toLowerCase()}-ipo`,
+                    symbol: String(m.symbol || '').toUpperCase(),
+                    companyName: m.companyName,
+                    issueType: (isSme ? 'sme' : 'regular') as IssueType,
+                    status,
+                    priceBandMin: pBand.min || 100,
+                    priceBandMax: pBand.max || 100,
+                    lotSize: m.lotSize ? parseInt(String(m.lotSize), 10) : (isSme ? 1200 : 14),
+                    openDate: m.openDate,
+                    closeDate: m.closeDate,
+                    listingDate: m.listingDate,
+                    issueSizeInCrores: m.issueSize ? parseFloat(String(m.issueSize).replace(/[^0-9.]/g, '')) : undefined,
+                    subscriptionTotal: m.subscriptionTimes ? parseFloat(String(m.subscriptionTimes).replace(/[^0-9.]/g, '')) : undefined,
+                    registrar: 'Official Registrar',
+                    instrumentKey: `NSE_EQ|${String(m.symbol || '').toUpperCase()}`,
+                  };
+                });
+              if (diskMapped.length > 0) {
+                return issueType ? diskMapped.filter((i) => i.issueType === issueType) : diskMapped;
+              }
+            }
+          } catch {
+            // disk fallback optional
           }
         }
       }
