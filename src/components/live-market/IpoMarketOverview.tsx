@@ -154,9 +154,14 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
               <span className="font-mono text-xs font-bold text-white block">
                 ₹{(activeTopGainer.currentPrice || activeTopGainer.listingPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
-              <span className={`text-[10px] font-mono ${(activeTopGainer.dayChange || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+              <span className={`text-[10px] font-mono block ${(activeTopGainer.dayChange || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                 {(activeTopGainer.dayChange || 0) >= 0 ? '+' : ''}₹{(activeTopGainer.dayChange || 0).toFixed(2)}
               </span>
+              {(activeTopGainer.previousClose || activeTopGainer.issuePrice) && (
+                <span className="text-[9px] text-slate-400 font-mono block">
+                  Close: ₹{(activeTopGainer.previousClose || activeTopGainer.issuePrice || 0).toFixed(2)}
+                </span>
+              )}
             </div>
           </div>
         )}

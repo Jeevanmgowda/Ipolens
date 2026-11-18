@@ -70,6 +70,7 @@ export async function GET(
           isListed: liveIpo.status === 'Listed',
           listingPrice: liveIpo.listingPrice,
           currentPrice: liveIpo.currentPrice,
+          previousClose: liveIpo.previousClose,
           dayChange: liveIpo.dayChange,
           dayChangePercent: liveIpo.dayChangePercent,
           volume: liveIpo.volume,

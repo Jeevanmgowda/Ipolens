@@ -353,66 +353,75 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {isListed ? (
-                    <>
-                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                        <span className="text-[11px] text-slate-400 block flex items-center justify-between">
-                          <span>Current Price (LTP)</span>
-                          <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            LIVE
-                          </span>
-                        </span>
-                        <span className="text-sm font-bold font-mono text-emerald-400 mt-1 block">
-                          {detail?.currentPrice !== undefined && detail?.currentPrice !== null
-                            ? `₹${detail.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            : detail?.listingPrice
-                            ? `₹${Number(detail.listingPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            : priceBand}
-                        </span>
-                      </div>
+                    (() => {
+                      const modalCur = typeof detail?.currentPrice === 'number'
+                        ? detail.currentPrice
+                        : typeof detail?.listingPrice === 'number'
+                        ? detail.listingPrice
+                        : parseFloat(String(detail?.listingPrice || '').replace(/[^0-9.]/g, '')) || cutoffPrice;
+                      const modalPrev = detail?.previousClose || (typeof detail?.listingPrice === 'number' ? detail.listingPrice : parseFloat(String(detail?.listingPrice || '').replace(/[^0-9.]/g, '')) || cutoffPrice);
+                      const diff = detail?.dayChange !== undefined && detail?.dayChange !== null && detail.dayChange !== 0
+                        ? detail.dayChange
+                        : Number((modalCur - modalPrev).toFixed(2));
+                      const pct = detail?.dayChangePercent !== undefined && detail?.dayChangePercent !== null && detail.dayChangePercent !== 0
+                        ? detail.dayChangePercent
+                        : (modalPrev > 0 ? Number(((diff / modalPrev) * 100).toFixed(2)) : 0);
 
-                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                        <span className="text-[11px] text-slate-400 block">Today's Change</span>
-                        <span
-                          className={`text-sm font-bold font-mono mt-1 block ${
-                            (detail?.dayChange || 0) > 0
-                              ? 'text-emerald-400'
-                              : (detail?.dayChange || 0) < 0
-                              ? 'text-rose-400'
-                              : 'text-slate-400'
-                          }`}
-                        >
-                          {detail?.dayChange !== undefined && detail?.dayChange !== null && detail.dayChange !== 0 ? (
-                            <>
-                              {(detail.dayChange || 0) >= 0 ? '+' : ''}₹{detail.dayChange.toFixed(2)}{' '}
-                              <span className="text-xs font-normal">
-                                ({(detail.dayChangePercent || 0) >= 0 ? '+' : ''}{detail.dayChangePercent}%)
+                      return (
+                        <>
+                          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                            <span className="text-[11px] text-slate-400 block flex items-center justify-between">
+                              <span>Current Price (LTP)</span>
+                              <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                LIVE
                               </span>
-                            </>
-                          ) : (
-                            'Exchange Closing Quote'
-                          )}
-                        </span>
-                      </div>
+                            </span>
+                            <span className="text-sm font-bold font-mono text-emerald-400 mt-1 block">
+                              ₹{modalCur.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
 
-                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                        <span className="text-[11px] text-slate-400 block">Listing Price</span>
-                        <span className="text-sm font-bold font-mono text-white mt-1 block">
-                          {detail?.listingPrice
-                            ? `₹${Number(detail.listingPrice).toLocaleString('en-IN')}`
-                            : priceBand}
-                        </span>
-                      </div>
+                          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                            <span className="text-[11px] text-slate-400 block flex items-center justify-between">
+                              <span>Today&apos;s Change</span>
+                              <span className="text-[10px] text-slate-400 font-mono">vs Close</span>
+                            </span>
+                            <span
+                              className={`text-sm font-bold font-mono mt-1 block ${
+                                diff > 0
+                                  ? 'text-emerald-400'
+                                  : diff < 0
+                                  ? 'text-rose-400'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {diff >= 0 ? '+' : ''}₹{diff.toFixed(2)}{' '}
+                              <span className="text-xs font-normal">
+                                ({pct >= 0 ? '+' : ''}{pct}%)
+                              </span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 block font-mono mt-0.5 truncate">
+                              vs Close ₹{modalPrev.toFixed(2)}
+                            </span>
+                          </div>
 
-                      <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
-                        <span className="text-[11px] text-slate-400 block">Traded Volume</span>
-                        <span className="text-sm font-bold font-mono text-cyan-400 mt-1 block">
-                          {detail?.volume && detail.volume > 0
-                            ? `${detail.volume.toLocaleString('en-IN')} shares`
-                            : 'Active NSE Book'}
-                        </span>
-                      </div>
-                    </>
+                          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                            <span className="text-[11px] text-slate-400 block">Last Closed Price</span>
+                            <span className="text-sm font-bold font-mono text-white mt-1 block">
+                              ₹{modalPrev.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                            <span className="text-[11px] text-slate-400 block">Listing / Issue Price</span>
+                            <span className="text-sm font-bold font-mono text-cyan-400 mt-1 block truncate">
+                              {detail?.listingPrice ? `₹${Number(detail.listingPrice).toLocaleString('en-IN')}` : priceBand} / ₹{cutoffPrice}
+                            </span>
+                          </div>
+                        </>
+                      );
+                    })()
                   ) : (
                     <>
                       <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/5">

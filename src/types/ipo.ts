@@ -26,6 +26,7 @@ export interface UnifiedIPO {
   listingPrice?: number;
   issuePrice?: number;
   currentPrice?: number;
+  previousClose?: number;
   dayChange?: number;
   dayChangePercent?: number;
   volume?: number;
@@ -73,6 +74,7 @@ export interface LiveIpoSummary {
   registrarUrl?: string;
   isListed?: boolean;
   listingPrice?: string;
+  previousClose?: number;
   listingDate?: string;
   expectedListingDate?: string;
 }
@@ -125,6 +127,7 @@ export interface LiveIpoDetail {
   isListed?: boolean;
   listingPrice?: number | string;
   currentPrice?: number;
+  previousClose?: number;
   dayChange?: number;
   dayChangePercent?: number;
   volume?: number;

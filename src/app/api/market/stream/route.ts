@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
                 type: 'TICK',
                 symbol: clean,
                 ltp: liveQuote.ltp,
+                previousClose: liveQuote.previousClose,
                 change: liveQuote.change,
                 changePercent: liveQuote.changePercent,
                 volume: liveQuote.volume,

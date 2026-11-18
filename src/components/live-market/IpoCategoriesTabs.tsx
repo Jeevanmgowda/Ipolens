@@ -447,40 +447,44 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
                       <span className="text-[10px] text-slate-400 font-medium block">
                         {isListed
-                          ? "Today's Change"
+                          ? "Today's Change (vs Last Close)"
                           : ipo.series === 'DEBT'
                           ? `Min Lot (${ipo.lotSize} ${ipo.lotSize === 1 ? 'unit' : 'units'})`
                           : `Lot Size (${ipo.lotSize} shares)`}
                       </span>
                       {isListed ? (
-                        <span
-                          className={`font-mono text-sm font-bold mt-0.5 block ${
-                            (ipo.dayChange || 0) > 0
-                              ? 'text-emerald-400'
-                              : (ipo.dayChange || 0) < 0
-                              ? 'text-rose-400'
-                              : 'text-slate-400'
-                          }`}
-                        >
-                          {ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0 ? (
-                            <>
-                              {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange.toFixed(2)}{' '}
-                              <span className="text-xs font-normal">
-                                ({(ipo.dayChangePercent || 0) >= 0 ? '+' : ''}{ipo.dayChangePercent ?? 0}%)
+                        (() => {
+                          const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
+                          const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
+                          const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
+                            ? ipo.dayChange
+                            : Number((cur - prev).toFixed(2));
+                          const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
+                            ? ipo.dayChangePercent
+                            : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
+
+                          return (
+                            <div>
+                              <span
+                                className={`font-mono text-sm font-bold mt-0.5 block ${
+                                  diff > 0
+                                    ? 'text-emerald-400'
+                                    : diff < 0
+                                    ? 'text-rose-400'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                {diff >= 0 ? '+' : ''}₹{diff.toFixed(2)}{' '}
+                                <span className="text-xs font-normal">
+                                  ({pct >= 0 ? '+' : ''}{pct}%)
+                                </span>
                               </span>
-                            </>
-                          ) : ipo.listingPrice && ipo.issuePrice && ipo.listingPrice !== ipo.issuePrice ? (
-                            <span className={ipo.listingPrice >= ipo.issuePrice ? 'text-emerald-400' : 'text-rose-400'}>
-                              {ipo.listingPrice >= ipo.issuePrice ? '+' : ''}
-                              ₹{(ipo.listingPrice - ipo.issuePrice).toFixed(2)}{' '}
-                              <span className="text-xs font-normal">
-                                ({(((ipo.listingPrice - ipo.issuePrice) / ipo.issuePrice) * 100).toFixed(1)}% gain)
+                              <span className="text-[10px] text-slate-400 block font-mono mt-0.5 truncate">
+                                vs Close: ₹{prev.toFixed(2)}
                               </span>
-                            </span>
-                          ) : (
-                            'Market Closed'
-                          )}
-                        </span>
+                            </div>
+                          );
+                        })()
                       ) : (
                         <span className="font-mono text-sm font-bold text-cyan-300 mt-0.5 block">
                           ₹{(ipo.minInvestment || (ipo.priceHigh * ipo.lotSize)).toLocaleString('en-IN')}
@@ -493,7 +497,13 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                   {isListed ? (
                     /* LISTED MARKET TELEMETRY BANNER */
                     <div className="space-y-2 p-3 rounded-xl bg-slate-900/60 border border-white/5 mb-4">
-                      <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Prev Close</span>
+                          <span className="font-mono font-bold text-slate-200">
+                            ₹{(ipo.previousClose || ipo.issuePrice || ipo.listingPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
                         <div>
                           <span className="text-slate-400 block text-[10px]">Issue Price</span>
                           <span className="font-mono font-bold text-slate-200">
@@ -676,8 +686,8 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                   {activeTab === 'listed' ? (
                     <>
                       <th className="py-3 px-4">Current Price (LTP)</th>
-                      <th className="py-3 px-4">Day Change</th>
-                      <th className="py-3 px-4">Issue / Listing</th>
+                      <th className="py-3 px-4">Today&apos;s Change (vs Close)</th>
+                      <th className="py-3 px-4">Prev Close / Issue</th>
                       <th className="py-3 px-4">Traded Volume</th>
                     </>
                   ) : activeTab === 'closed' ? (
@@ -753,38 +763,46 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             </div>
                           </td>
                           <td className="py-3.5 px-4">
-                            {ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0 ? (
-                              <span
-                                className={`font-mono font-bold ${
-                                  (ipo.dayChange || 0) > 0
-                                    ? 'text-emerald-400'
-                                    : (ipo.dayChange || 0) < 0
-                                    ? 'text-rose-400'
-                                    : 'text-slate-400'
-                                }`}
-                              >
-                                {(ipo.dayChange || 0) >= 0 ? '+' : ''}₹{ipo.dayChange.toFixed(2)} ({(ipo.dayChangePercent || 0) >= 0 ? '+' : ''}{ipo.dayChangePercent ?? 0}%)
-                              </span>
-                            ) : ipo.listingPrice && ipo.issuePrice && ipo.listingPrice !== ipo.issuePrice ? (
-                              <span className={`font-mono text-xs font-semibold ${ipo.listingPrice >= ipo.issuePrice ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                {ipo.listingPrice >= ipo.issuePrice ? '+' : ''}₹{(ipo.listingPrice - ipo.issuePrice).toFixed(2)} ({(((ipo.listingPrice - ipo.issuePrice) / ipo.issuePrice) * 100).toFixed(1)}%)
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-mono text-xs">Closing Quote</span>
-                            )}
+                            {(() => {
+                              const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
+                              const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
+                              const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
+                                ? ipo.dayChange
+                                : Number((cur - prev).toFixed(2));
+                              const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
+                                ? ipo.dayChangePercent
+                                : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
+
+                              return (
+                                <div>
+                                  <span
+                                    className={`font-mono font-bold block ${
+                                      diff > 0
+                                        ? 'text-emerald-400'
+                                        : diff < 0
+                                        ? 'text-rose-400'
+                                        : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {diff >= 0 ? '+' : ''}₹{diff.toFixed(2)} ({pct >= 0 ? '+' : ''}{pct}%)
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-mono block">
+                                    vs Close: ₹{prev.toFixed(2)}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
-                            {ipo.issuePrice
-                              ? `₹${ipo.issuePrice.toLocaleString('en-IN')}`
-                              : ipo.priceHigh
-                              ? `₹${ipo.priceHigh.toLocaleString('en-IN')}`
-                              : '—'}{' '}
-                            /{' '}
-                            {ipo.listingPrice
-                              ? `₹${ipo.listingPrice.toLocaleString('en-IN')}`
-                              : ipo.currentPrice
-                              ? `₹${ipo.currentPrice.toLocaleString('en-IN')}`
-                              : '—'}
+                            <div>
+                              <span>
+                                {ipo.issuePrice ? `₹${ipo.issuePrice.toLocaleString('en-IN')}` : '—'} /{' '}
+                                {ipo.listingPrice ? `₹${ipo.listingPrice.toLocaleString('en-IN')}` : '—'}
+                              </span>
+                              <span className="block text-[10px] text-slate-400">
+                                Prev Close: ₹{(ipo.previousClose || ipo.issuePrice || ipo.listingPrice || 0).toFixed(2)}
+                              </span>
+                            </div>
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
                             {ipo.volume !== undefined && ipo.volume !== null && ipo.volume > 0

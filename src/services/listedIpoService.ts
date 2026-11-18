@@ -383,6 +383,9 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
   if (Date.now() < yahooQuotesCooldownUntil) {
     const fallbackResults: ListedIpoItem[] = iposMetadata.map((meta) => {
       const listingGain = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
+      const previousClose = meta.issuePrice > 0 ? meta.issuePrice : meta.listingPrice;
+      const dayChange = Number((meta.listingPrice - previousClose).toFixed(2));
+      const dayChangePercent = previousClose > 0 ? Number(((dayChange / previousClose) * 100).toFixed(2)) : 0;
       return {
         symbol: meta.symbol,
         ticker: meta.ticker,
@@ -392,8 +395,9 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
         issuePrice: meta.issuePrice,
         listingPrice: meta.listingPrice,
         currentPrice: meta.listingPrice,
-        dayChange: 0,
-        dayChangePercent: 0,
+        previousClose,
+        dayChange,
+        dayChangePercent,
         listingGainPercent: listingGain,
         totalGainPercent: listingGain,
         dayHigh: Math.max(meta.listingPrice, meta.issuePrice),
@@ -437,7 +441,11 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
 
         if (m && typeof m.regularMarketPrice === 'number') {
           const currentPrice = Number(m.regularMarketPrice.toFixed(2));
-          const prevClose = typeof m.chartPreviousClose === 'number' ? m.chartPreviousClose : currentPrice;
+          const prevClose = typeof m.chartPreviousClose === 'number'
+            ? m.chartPreviousClose
+            : typeof m.previousClose === 'number'
+            ? m.previousClose
+            : (meta.issuePrice || currentPrice);
           const dayChange = Number((currentPrice - prevClose).toFixed(2));
           const dayChangePercent = prevClose > 0 ? Number(((dayChange / prevClose) * 100).toFixed(2)) : 0;
           const listingGainPercent = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
@@ -452,6 +460,7 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
             issuePrice: meta.issuePrice,
             listingPrice: meta.listingPrice,
             currentPrice,
+            previousClose: Number(prevClose.toFixed(2)),
             dayChange,
             dayChangePercent,
             listingGainPercent,
@@ -469,6 +478,9 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
       }
 
       const listingGain = Number((((meta.listingPrice - meta.issuePrice) / meta.issuePrice) * 100).toFixed(1));
+      const previousClose = meta.issuePrice > 0 ? meta.issuePrice : meta.listingPrice;
+      const dayChange = Number((meta.listingPrice - previousClose).toFixed(2));
+      const dayChangePercent = previousClose > 0 ? Number(((dayChange / previousClose) * 100).toFixed(2)) : 0;
       return {
         symbol: meta.symbol,
         ticker: meta.ticker,
@@ -478,8 +490,9 @@ export async function fetchLiveListedIpos(): Promise<ListedIpoItem[]> {
         issuePrice: meta.issuePrice,
         listingPrice: meta.listingPrice,
         currentPrice: meta.listingPrice,
-        dayChange: 0,
-        dayChangePercent: 0,
+        previousClose,
+        dayChange,
+        dayChangePercent,
         listingGainPercent: listingGain,
         totalGainPercent: listingGain,
         dayHigh: Math.max(meta.listingPrice, meta.issuePrice),

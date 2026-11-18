@@ -112,8 +112,9 @@ export class NSEIPOProvider implements IPODataProvider {
             const issuePriceNum = u.cutOffPrice || u.priceBandMax || u.priceBandMin || 100;
             const listingPriceNum = u.listingPrice || quote?.open || issuePriceNum;
             const currentPriceNum = quote?.last_price ?? (isListed ? listingPriceNum : undefined);
-            const dayChangeNum = quote?.net_change ?? (isListed ? 0 : undefined);
-            const dayChangePercentNum = quote?.day_change_percent ?? (isListed ? 0 : undefined);
+            const prevCloseNum = quote?.close ?? (isListed ? (issuePriceNum || listingPriceNum) : undefined);
+            const dayChangeNum = quote?.net_change ?? (isListed && currentPriceNum && prevCloseNum ? Number((currentPriceNum - prevCloseNum).toFixed(2)) : (isListed ? 0 : undefined));
+            const dayChangePercentNum = quote?.day_change_percent ?? (isListed && currentPriceNum && prevCloseNum && prevCloseNum > 0 ? Number((((currentPriceNum - prevCloseNum) / prevCloseNum) * 100).toFixed(2)) : (isListed ? 0 : undefined));
             const volumeNum = quote?.volume ?? (isListed ? 0 : undefined);
 
             const gmp = isListed && currentPriceNum
@@ -172,6 +173,7 @@ export class NSEIPOProvider implements IPODataProvider {
               issuePrice: issuePriceNum,
               listingPrice: listingPriceNum,
               currentPrice: currentPriceNum,
+              previousClose: prevCloseNum,
               dayChange: dayChangeNum,
               dayChangePercent: dayChangePercentNum,
               volume: volumeNum,
@@ -255,8 +257,13 @@ export class NSEIPOProvider implements IPODataProvider {
       const issuePriceVal = isActuallyListed ? (listedMatch?.issuePrice || priceHigh) : priceHigh;
       const listingPriceVal = isActuallyListed ? (listedMatch?.listingPrice || parsedListPrice) : undefined;
       const currentPriceVal = isActuallyListed ? ((listedMatch as any)?.currentPrice || listingPriceVal) : undefined;
-      const dayChangeVal = isActuallyListed ? ((listedMatch as any)?.dayChange || 0) : undefined;
-      const dayChangePercentVal = isActuallyListed ? ((listedMatch as any)?.dayChangePercent || 0) : undefined;
+      const previousCloseVal = isActuallyListed ? ((listedMatch as any)?.previousClose || issuePriceVal) : undefined;
+      const dayChangeVal = isActuallyListed
+        ? ((listedMatch as any)?.dayChange ?? (currentPriceVal && previousCloseVal ? Number((currentPriceVal - previousCloseVal).toFixed(2)) : 0))
+        : undefined;
+      const dayChangePercentVal = isActuallyListed
+        ? ((listedMatch as any)?.dayChangePercent ?? (currentPriceVal && previousCloseVal && previousCloseVal > 0 ? Number((((currentPriceVal - previousCloseVal) / previousCloseVal) * 100).toFixed(2)) : 0))
+        : undefined;
       const volumeVal = isActuallyListed ? ((listedMatch as any)?.volume || 0) : undefined;
 
       const isDebt = raw.series === 'DEBT';
@@ -308,6 +315,7 @@ export class NSEIPOProvider implements IPODataProvider {
         issuePrice: issuePriceVal,
         listingPrice: listingPriceVal,
         currentPrice: currentPriceVal,
+        previousClose: previousCloseVal,
         dayChange: dayChangeVal,
         dayChangePercent: dayChangePercentVal,
         volume: volumeVal,
@@ -322,6 +330,7 @@ export class NSEIPOProvider implements IPODataProvider {
       if (existing) {
         existing.status = 'Listed';
         if (l.currentPrice !== undefined && l.currentPrice !== null) existing.currentPrice = l.currentPrice;
+        if (l.previousClose !== undefined && l.previousClose !== null) existing.previousClose = l.previousClose;
         if (l.dayChange !== undefined && l.dayChange !== null) existing.dayChange = l.dayChange;
         if (l.dayChangePercent !== undefined && l.dayChangePercent !== null) existing.dayChangePercent = l.dayChangePercent;
         if (l.volume !== undefined && l.volume !== null && l.volume > 0) existing.volume = l.volume;
@@ -361,6 +370,7 @@ export class NSEIPOProvider implements IPODataProvider {
         issuePrice: l.issuePrice,
         listingPrice: l.listingPrice,
         currentPrice: l.currentPrice,
+        previousClose: l.previousClose,
         dayChange: l.dayChange,
         dayChangePercent: l.dayChangePercent,
         volume: l.volume,

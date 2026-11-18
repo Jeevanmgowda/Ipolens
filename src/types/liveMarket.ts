@@ -43,6 +43,7 @@ export interface LiveMarketIpoItem {
   issuePrice?: number;
   listingPrice?: number;
   currentPrice?: number;
+  previousClose?: number;
   dayChange?: number;
   dayChangePercent?: number;
   volume?: number;

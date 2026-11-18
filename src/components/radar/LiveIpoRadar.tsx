@@ -128,6 +128,7 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
               status: 'Listed',
               isListed: true,
               currentPrice: item.currentPrice ?? existing.currentPrice,
+              previousClose: item.previousClose ?? existing.previousClose,
               dayChange: item.dayChange ?? existing.dayChange,
               dayChangePercent: item.dayChangePercent ?? existing.dayChangePercent,
               volume: item.volume ?? existing.volume,
@@ -139,6 +140,7 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
               status: 'Listed',
               isListed: true,
               currentPrice: existing.currentPrice,
+              previousClose: existing.previousClose,
               dayChange: existing.dayChange,
               dayChangePercent: existing.dayChangePercent,
               volume: existing.volume,
@@ -190,12 +192,16 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
             setIpos((prev) =>
               prev.map((item) => {
                 if (item.symbol.toUpperCase() === parsed.symbol.toUpperCase()) {
+                  const prevClose = parsed.previousClose ?? item.previousClose;
+                  const calculatedChange = parsed.change ?? (prevClose ? Number((parsed.ltp - prevClose).toFixed(2)) : item.dayChange);
+                  const calculatedPercent = parsed.changePercent ?? (prevClose && prevClose > 0 ? Number(((calculatedChange / prevClose) * 100).toFixed(2)) : item.dayChangePercent);
                   return {
                     ...item,
                     currentPrice: parsed.ltp,
-                    dayChange: parsed.change,
-                    dayChangePercent: parsed.changePercent,
-                    volume: parsed.volume,
+                    previousClose: prevClose,
+                    dayChange: calculatedChange,
+                    dayChangePercent: calculatedPercent,
+                    volume: parsed.volume || item.volume,
                   };
                 }
                 return item;

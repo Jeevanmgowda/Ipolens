@@ -7,6 +7,7 @@ export interface ListedIpoItem {
   issuePrice: number;
   listingPrice: number;
   currentPrice: number;
+  previousClose?: number;
   dayChange: number;
   dayChangePercent: number;
   listingGainPercent: number;
