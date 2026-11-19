@@ -9,6 +9,7 @@ import {
 import { fetchLiveListedIpos, LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { UpstoxIpoService } from '@/lib/services/upstox-ipo.service';
+import { isFalseOrDemoSymbol, normalizeCompanyName, isSameIpo } from '@/lib/utils/ipoDeduplication';
 
 /**
  * Universal evaluator to determine if an IPO is officially listed on the secondary market.
@@ -31,7 +32,7 @@ export function isIpoListed(ipo: {
   if (rem.includes('listed')) return true;
 
   const sym = (ipo.symbol || '').toUpperCase().trim();
-  if (sym && LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === sym)) {
+  if (sym && LISTED_IPOS_REGISTRY.some((l) => isSameIpo(l.symbol, l.companyName, ipo.symbol, ipo.companyName))) {
     return true;
   }
 
@@ -191,15 +192,31 @@ export class NSEIPOProvider implements IPODataProvider {
       fetchLiveListedIpos(),
     ]);
 
-    const items: LiveMarketIpoItem[] = [...upstoxIpos];
-    const seenSymbols = new Set(items.map((i) => i.symbol.toUpperCase()));
+    const items: LiveMarketIpoItem[] = upstoxIpos.filter((u) => !isFalseOrDemoSymbol(u.symbol));
 
     // 1. Process Live, Forthcoming, and Closed issues from NSE
     for (const raw of liveRaw) {
       if (!raw.symbol) continue;
       const symUpper = raw.symbol.toUpperCase();
-      if (seenSymbols.has(symUpper)) continue;
-      seenSymbols.add(symUpper);
+      if (isFalseOrDemoSymbol(symUpper)) continue;
+
+      const existingIndex = items.findIndex((i) =>
+        isSameIpo(i.symbol, i.companyName, symUpper, raw.companyName)
+      );
+
+      if (existingIndex !== -1) {
+        const existing = items[existingIndex];
+        if (!existing.openDate || existing.openDate === 'TBD') existing.openDate = raw.issueStartDate || existing.openDate;
+        if (!existing.closeDate || existing.closeDate === 'TBD') existing.closeDate = raw.issueEndDate || existing.closeDate;
+        if (!existing.listingDate || existing.listingDate === 'TBD') existing.listingDate = raw.listingDate || existing.listingDate;
+        if (!existing.registrar || existing.registrar === 'Official Registrar') existing.registrar = raw.registrarName || existing.registrar;
+        if (raw.registrarUrl) existing.registrarUrl = raw.registrarUrl;
+        if (!existing.currentSubscription && raw.noOfTime) existing.currentSubscription = parseFloat(raw.noOfTime) || existing.currentSubscription;
+        if (!existing.qibSubscription && raw.qibSubscription) existing.qibSubscription = raw.qibSubscription;
+        if (!existing.retailSubscription && raw.retailSubscription) existing.retailSubscription = raw.retailSubscription;
+        if (!existing.niiSubscription && raw.niiSubscription) existing.niiSubscription = raw.niiSubscription;
+        continue;
+      }
 
       const meta = findMarketMetadata(raw.symbol) || findMarketMetadata(raw.companyName);
       const isActuallyListed = Boolean(
@@ -207,8 +224,8 @@ export class NSEIPOProvider implements IPODataProvider {
         raw.status === 'Listed' ||
         (raw.listingDate && isListingDatePast(raw.listingDate)) ||
         (raw.remainingTime && raw.remainingTime.toLowerCase().includes('listed')) ||
-        LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
-        listedRaw.some((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase())
+        LISTED_IPOS_REGISTRY.some((l) => isSameIpo(l.symbol, l.companyName, raw.symbol, raw.companyName)) ||
+        listedRaw.some((l) => isSameIpo(l.symbol, l.companyName, raw.symbol, raw.companyName))
       );
 
       const computedRemainingTime = raw.remainingTime || calculateRemainingTime(raw.issueEndDate);
@@ -251,8 +268,8 @@ export class NSEIPOProvider implements IPODataProvider {
       const employeeSub = raw.employeeSubscription !== undefined ? raw.employeeSubscription : 0;
 
       // Resolve secondary market figures if listed
-      const listedMatch = listedRaw.find((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase()) ||
-        LISTED_IPOS_REGISTRY.find((l) => l.symbol.toUpperCase() === raw.symbol.toUpperCase());
+      const listedMatch = listedRaw.find((l) => isSameIpo(l.symbol, l.companyName, raw.symbol, raw.companyName)) ||
+        LISTED_IPOS_REGISTRY.find((l) => isSameIpo(l.symbol, l.companyName, raw.symbol, raw.companyName));
       const parsedListPrice = parseFloat(raw.listingPrice?.replace(/[^0-9.]/g, '') || '') || priceHigh;
       const issuePriceVal = isActuallyListed ? (listedMatch?.issuePrice || priceHigh) : priceHigh;
       const listingPriceVal = isActuallyListed ? (listedMatch?.listingPrice || parsedListPrice) : undefined;
@@ -326,9 +343,16 @@ export class NSEIPOProvider implements IPODataProvider {
 
     // 2. Process Listed IPOs
     for (const l of listedRaw) {
-      const existing = items.find((i) => i.symbol === l.symbol.toUpperCase());
+      if (!l.symbol) continue;
+      const symUpper = l.symbol.toUpperCase();
+      if (isFalseOrDemoSymbol(symUpper)) continue;
+
+      const existing = items.find((i) =>
+        isSameIpo(i.symbol, i.companyName, symUpper, l.companyName)
+      );
       if (existing) {
         existing.status = 'Listed';
+        existing.isListed = true;
         if (l.currentPrice !== undefined && l.currentPrice !== null) existing.currentPrice = l.currentPrice;
         if (l.previousClose !== undefined && l.previousClose !== null) existing.previousClose = l.previousClose;
         if (l.dayChange !== undefined && l.dayChange !== null) existing.dayChange = l.dayChange;
@@ -338,6 +362,9 @@ export class NSEIPOProvider implements IPODataProvider {
         if (l.issuePrice) existing.issuePrice = l.issuePrice;
         if (l.listingDate && (!existing.listingDate || existing.listingDate === 'TBD' || existing.listingDate === 'Recent Listing')) {
           existing.listingDate = l.listingDate;
+        }
+        if (l.allotmentRegistrar && (!existing.registrar || existing.registrar === 'Official Registrar' || existing.registrar === 'Link Intime India Pvt Ltd')) {
+          existing.registrar = l.allotmentRegistrar;
         }
         continue;
       }
@@ -379,7 +406,27 @@ export class NSEIPOProvider implements IPODataProvider {
       });
     }
 
-    return items;
+    // 3. Final Multi-Key Deduplication Pass
+    const deduplicatedItems: LiveMarketIpoItem[] = [];
+    for (const item of items) {
+      if (isFalseOrDemoSymbol(item.symbol)) continue;
+      const dupIdx = deduplicatedItems.findIndex((d) =>
+        isSameIpo(d.symbol, d.companyName, item.symbol, item.companyName)
+      );
+      if (dupIdx === -1) {
+        deduplicatedItems.push(item);
+      } else {
+        const existing = deduplicatedItems[dupIdx];
+        const isItemListed = item.status === 'Listed' || item.isListed || (typeof item.currentPrice === 'number' && item.currentPrice > 0);
+        if (isItemListed) {
+          deduplicatedItems[dupIdx] = { ...existing, ...item };
+        } else {
+          deduplicatedItems[dupIdx] = { ...item, ...existing };
+        }
+      }
+    }
+
+    return deduplicatedItems;
   }
 
   async getUpcomingIpos(): Promise<LiveMarketIpoItem[]> {

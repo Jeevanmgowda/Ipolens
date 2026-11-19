@@ -1,4 +1,5 @@
 import { ListedIpoItem, IpoChartResponse, IpoChartPoint } from '../types/listedIpo';
+import { isFalseOrDemoSymbol } from '@/lib/utils/ipoDeduplication';
 
 export interface ListedIpoMetadata {
   symbol: string;
@@ -213,6 +214,76 @@ export const LISTED_IPOS_REGISTRY: ListedIpoMetadata[] = [
     listingPrice: 76,
     allotmentRegistrar: 'Link Intime India Pvt Ltd',
   },
+  {
+    symbol: 'WAAREEENER',
+    ticker: 'WAAREEENER.NS',
+    companyName: 'Waaree Energies Limited',
+    series: 'EQ',
+    listingDate: '28-Oct-2024',
+    issuePrice: 1503,
+    listingPrice: 2550,
+    allotmentRegistrar: 'Link Intime India Pvt Ltd',
+  },
+  {
+    symbol: 'NTPCGREEN',
+    ticker: 'NTPCGREEN.NS',
+    companyName: 'NTPC Green Energy Limited',
+    series: 'EQ',
+    listingDate: '27-Nov-2024',
+    issuePrice: 108,
+    listingPrice: 111.5,
+    allotmentRegistrar: 'KFin Technologies Limited',
+  },
+  {
+    symbol: 'SAGILITY',
+    ticker: 'SAGILITY.NS',
+    companyName: 'Sagility India Limited',
+    series: 'EQ',
+    listingDate: '12-Nov-2024',
+    issuePrice: 30,
+    listingPrice: 31.06,
+    allotmentRegistrar: 'Link Intime India Pvt Ltd',
+  },
+  {
+    symbol: 'AFCONS',
+    ticker: 'AFCONS.NS',
+    companyName: 'Afcons Infrastructure Limited',
+    series: 'EQ',
+    listingDate: '04-Nov-2024',
+    issuePrice: 463,
+    listingPrice: 430,
+    allotmentRegistrar: 'Link Intime India Pvt Ltd',
+  },
+  {
+    symbol: 'ACMESOLAR',
+    ticker: 'ACMESOLAR.NS',
+    companyName: 'ACME Solar Holdings Limited',
+    series: 'EQ',
+    listingDate: '13-Nov-2024',
+    issuePrice: 289,
+    listingPrice: 259,
+    allotmentRegistrar: 'KFin Technologies Limited',
+  },
+  {
+    symbol: 'ZINKA',
+    ticker: 'ZINKA.NS',
+    companyName: 'Zinka Logistics Solutions Limited (BlackBuck)',
+    series: 'EQ',
+    listingDate: '22-Nov-2024',
+    issuePrice: 273,
+    listingPrice: 279,
+    allotmentRegistrar: 'KFin Technologies Limited',
+  },
+  {
+    symbol: 'ENVIRO',
+    ticker: 'ENVIRO.NS',
+    companyName: 'Enviro Infra Engineers Limited',
+    series: 'EQ',
+    listingDate: '29-Nov-2024',
+    issuePrice: 148,
+    listingPrice: 220,
+    allotmentRegistrar: 'Bigshare Services Pvt Ltd',
+  },
 ];
 
 const CACHE_TTL_MS = 10000; // 10 seconds live exchange quote cache
@@ -278,6 +349,14 @@ async function extractLiveListedMetadata(): Promise<ListedIpoMetadata[]> {
       'jyoti cnc': { symbol: 'JYOTICNC', series: 'EQ' },
       'sbfc': { symbol: 'SBFC', series: 'EQ' },
       'kaynes': { symbol: 'KAYNES', series: 'EQ' },
+      'waaree': { symbol: 'WAAREEENER', series: 'EQ' },
+      'ntpc green': { symbol: 'NTPCGREEN', series: 'EQ' },
+      'sagility': { symbol: 'SAGILITY', series: 'EQ' },
+      'afcons': { symbol: 'AFCONS', series: 'EQ' },
+      'acme solar': { symbol: 'ACMESOLAR', series: 'EQ' },
+      'zinka': { symbol: 'ZINKA', series: 'EQ' },
+      'blackbuck': { symbol: 'ZINKA', series: 'EQ' },
+      'enviro': { symbol: 'ENVIRO', series: 'EQ' },
     };
 
     const dynamicallyExtracted: ListedIpoMetadata[] = [];
@@ -312,12 +391,15 @@ async function extractLiveListedMetadata(): Promise<ListedIpoMetadata[]> {
       }
     }
 
-    // Merge dynamically extracted with LISTED_IPOS_REGISTRY so we have all recent and landmark listings
+    // Merge dynamically extracted with LISTED_IPOS_REGISTRY:
+    // Invert priority so verified LISTED_IPOS_REGISTRY has authoritative priority over generic dynamic fields
     const mergedMap = new Map<string, ListedIpoMetadata>();
-    for (const item of LISTED_IPOS_REGISTRY) {
+    for (const item of dynamicallyExtracted) {
+      if (isFalseOrDemoSymbol(item.symbol)) continue;
       mergedMap.set(item.symbol.toUpperCase(), item);
     }
-    for (const item of dynamicallyExtracted) {
+    for (const item of LISTED_IPOS_REGISTRY) {
+      if (isFalseOrDemoSymbol(item.symbol)) continue;
       mergedMap.set(item.symbol.toUpperCase(), item);
     }
 
@@ -337,7 +419,7 @@ async function extractLiveListedMetadata(): Promise<ListedIpoMetadata[]> {
         for (const item of feedList) {
           if (item.status === 'listed' && item.symbol) {
             const sym = String(item.symbol).toUpperCase();
-            if (!mergedMap.has(sym)) {
+            if (!isFalseOrDemoSymbol(sym) && !mergedMap.has(sym)) {
               const pBand = item.priceBand || { min: 100, max: 100 };
               const issuePrice = pBand.max || pBand.min || 100;
               const listingPrice = item.gmp?.value ? issuePrice + item.gmp.value : issuePrice;

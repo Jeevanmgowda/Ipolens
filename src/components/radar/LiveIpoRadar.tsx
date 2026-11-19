@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { LiveIpoSummary } from '@/types/ipo';
+import { isFalseOrDemoSymbol, isSameIpo } from '@/lib/utils/ipoDeduplication';
 import {
   LiveMarketIpoItem,
   LiveMarketOverviewResponse,
@@ -110,19 +111,24 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
         if (lJson.success && Array.isArray(lJson.data)) allItems.push(...lJson.data);
       }
 
-      // Deduplicate by symbol: prioritize listed items and retain live market current prices
-      const uniqueMap = new Map<string, LiveMarketIpoItem>();
+      // Multi-key deduplication and false-symbol purge across all market streams
+      const deduplicated: LiveMarketIpoItem[] = [];
       allItems.forEach((item) => {
-        const sym = item.symbol.toUpperCase();
-        const existing = uniqueMap.get(sym);
-        if (!existing) {
-          uniqueMap.set(sym, item);
+        if (!item || !item.symbol || isFalseOrDemoSymbol(item.symbol)) return;
+
+        const existingIndex = deduplicated.findIndex((existing) =>
+          isSameIpo(existing.symbol, existing.companyName, item.symbol, item.companyName)
+        );
+
+        if (existingIndex === -1) {
+          deduplicated.push(item);
         } else {
+          const existing = deduplicated[existingIndex];
           const isIncomingListed = item.status === 'Listed' || item.isListed || (typeof item.currentPrice === 'number' && item.currentPrice > 0);
           const isExistingListed = existing.status === 'Listed' || existing.isListed || (typeof existing.currentPrice === 'number' && existing.currentPrice > 0);
 
           if (isIncomingListed) {
-            uniqueMap.set(sym, {
+            deduplicated[existingIndex] = {
               ...existing,
               ...item,
               status: 'Listed',
@@ -132,9 +138,9 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
               dayChange: item.dayChange ?? existing.dayChange,
               dayChangePercent: item.dayChangePercent ?? existing.dayChangePercent,
               volume: item.volume ?? existing.volume,
-            });
+            };
           } else if (isExistingListed) {
-            uniqueMap.set(sym, {
+            deduplicated[existingIndex] = {
               ...item,
               ...existing,
               status: 'Listed',
@@ -144,13 +150,13 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
               dayChange: existing.dayChange,
               dayChangePercent: existing.dayChangePercent,
               volume: existing.volume,
-            });
+            };
           } else {
-            uniqueMap.set(sym, { ...existing, ...item });
+            deduplicated[existingIndex] = { ...existing, ...item };
           }
         }
       });
-      setIpos(Array.from(uniqueMap.values()));
+      setIpos(deduplicated);
 
       // Load watchlist
       if (watchlistRes.status === 'fulfilled') {

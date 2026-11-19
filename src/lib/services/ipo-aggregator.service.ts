@@ -1,6 +1,7 @@
 import { IpoStatus, IssueType, UnifiedIPO } from '@/types/ipo';
 import { UpstoxIpoService } from './upstox-ipo.service';
 import { getRedisClient } from '@/lib/redis';
+import { isFalseOrDemoSymbol, isSameIpo } from '@/lib/utils/ipoDeduplication';
 
 export class IpoAggregatorService {
   /**
@@ -95,14 +96,18 @@ export class IpoAggregatorService {
       // ignore
     }
 
-    // Merge Upstox and NSE without duplicates
-    const seen = new Set<string>();
+    // Merge Upstox and NSE without duplicates or false symbols
     const combined: Partial<UnifiedIPO>[] = [];
     for (const item of [...baseIpos, ...nseIpos]) {
-      const sym = (item.symbol || '').toUpperCase();
-      if (!sym || seen.has(sym)) continue;
-      seen.add(sym);
-      combined.push(item);
+      if (!item.symbol || isFalseOrDemoSymbol(item.symbol)) continue;
+      const existingIdx = combined.findIndex((c) =>
+        isSameIpo(c.symbol, c.companyName, item.symbol, item.companyName)
+      );
+      if (existingIdx === -1) {
+        combined.push(item);
+      } else {
+        combined[existingIdx] = { ...combined[existingIdx], ...item };
+      }
     }
 
     const enrichedPromises = combined.map(async (raw): Promise<UnifiedIPO> => {

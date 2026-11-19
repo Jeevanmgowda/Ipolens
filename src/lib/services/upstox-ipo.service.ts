@@ -1,5 +1,6 @@
 import { IpoStatus, IssueType, UnifiedIPO } from '@/types/ipo';
 import { getRedisClient } from '@/lib/redis';
+import { isFalseOrDemoSymbol, isSameIpo } from '@/lib/utils/ipoDeduplication';
 
 interface UpstoxIpoItem {
   id: string;
@@ -467,6 +468,7 @@ export class UpstoxIpoService {
 
       const mapped: Partial<UnifiedIPO>[] = liveList
         .filter((item) => {
+          if (!item.symbol || isFalseOrDemoSymbol(item.symbol)) return false;
           const isListed = Boolean(item.isListed || item.status === 'Listed');
           if (status === 'listed') {
             return isListed;
@@ -535,6 +537,7 @@ export class UpstoxIpoService {
               const iposList: any[] = Array.isArray(fileContent?.ipos) ? fileContent.ipos : [];
               const diskMapped: Partial<UnifiedIPO>[] = iposList
                 .filter((item) => {
+                  if (!item.symbol || isFalseOrDemoSymbol(item.symbol)) return false;
                   const rawStatus = (item.status || '').toLowerCase();
                   if (status === 'closed') return rawStatus === 'closed';
                   if (status === 'open') return rawStatus === 'open' || rawStatus === 'active';

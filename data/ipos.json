@@ -9,33 +9,6 @@
   },
   "ipos": [
     {
-      "symbol": "MAHACOAL",
-      "companyName": "Mahanadi Coalfields Limited",
-      "normalizedName": "mahanadi coalfields",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "BSE",
-        "NSE"
-      ],
-      "status": "upcoming",
-      "openDate": "2026-11-19",
-      "closeDate": "2026-11-23",
-      "listingDate": "2026-11-27",
-      "priceBand": {
-        "min": 129.0,
-        "max": 136.0
-      },
-      "lotSize": "110",
-      "faceValue": 2.0,
-      "issueSize": "₹8981.12 Cr",
-      "gmp": {
-        "value": 4.0,
-        "percent": 2.94
-      },
-      "subscriptionTimes": "-"
-    },
-    {
       "symbol": "WATRANA",
       "companyName": "Watrana Rentals Limited",
       "normalizedName": "watrana rentals",
@@ -49,42 +22,15 @@
       "closeDate": "2026-11-23",
       "listingDate": "2026-11-27",
       "priceBand": {
-        "min": 232.0,
-        "max": 245.0
+        "min": 232,
+        "max": 245
       },
       "lotSize": "600",
       "faceValue": null,
       "issueSize": "₹120.10 Cr",
       "gmp": {
-        "value": 25.0,
+        "value": 25,
         "percent": 10.2
-      },
-      "subscriptionTimes": "-"
-    },
-    {
-      "symbol": "CRYSTALCP",
-      "companyName": "Crystal Crop Protection Limited",
-      "normalizedName": "crystal crop protection",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "BSE",
-        "NSE"
-      ],
-      "status": "upcoming",
-      "openDate": "2026-11-18",
-      "closeDate": "2026-11-20",
-      "listingDate": "2026-11-26",
-      "priceBand": {
-        "min": 259.0,
-        "max": 272.0
-      },
-      "lotSize": "55",
-      "faceValue": 10.0,
-      "issueSize": "₹455.49 Cr",
-      "gmp": {
-        "value": 16.0,
-        "percent": 5.88
       },
       "subscriptionTimes": "-"
     },
@@ -109,46 +55,6 @@
       "subscriptionTimes": null
     },
     {
-      "symbol": "NSE",
-      "companyName": "National Stock Exchange of India Limited",
-      "normalizedName": "national stock exchange of india",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "NSE"
-      ],
-      "status": "closed",
-      "openDate": "2026-09-17",
-      "closeDate": "2026-09-21",
-      "listingDate": null,
-      "priceBand": null,
-      "lotSize": null,
-      "faceValue": null,
-      "issueSize": null,
-      "gmp": null,
-      "subscriptionTimes": null
-    },
-    {
-      "symbol": "MOMSBELIEF",
-      "companyName": "Rays of Belief Limited- For Profit Social Enterprise (FPSE)",
-      "normalizedName": "rays of belief for profit social enterprise fpse",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "NSE"
-      ],
-      "status": "closed",
-      "openDate": "2026-09-01",
-      "closeDate": "2026-09-03",
-      "listingDate": null,
-      "priceBand": null,
-      "lotSize": null,
-      "faceValue": null,
-      "issueSize": null,
-      "gmp": null,
-      "subscriptionTimes": null
-    },
-    {
       "symbol": "VPFL",
       "companyName": "Vedant Poly Fabs Limited",
       "normalizedName": "vedant poly fabs",
@@ -162,14 +68,14 @@
       "closeDate": "2026-11-04",
       "listingDate": "2026-11-09",
       "priceBand": {
-        "min": 94.0,
-        "max": 94.0
+        "min": 94,
+        "max": 94
       },
       "lotSize": "1200",
       "faceValue": null,
       "issueSize": "₹56.68 Cr",
       "gmp": {
-        "value": 1.0,
+        "value": 1,
         "percent": 1.06
       },
       "subscriptionTimes": "1.9x"
@@ -188,14 +94,14 @@
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
       "priceBand": {
-        "min": 120.0,
-        "max": 120.0
+        "min": 120,
+        "max": 120
       },
       "lotSize": "1200",
       "faceValue": null,
       "issueSize": "₹34.56 Cr",
       "gmp": {
-        "value": 27.0,
+        "value": 27,
         "percent": 22.5
       },
       "subscriptionTimes": "248.58x"
@@ -214,21 +120,21 @@
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
       "priceBand": {
-        "min": 158.0,
-        "max": 158.0
+        "min": 158,
+        "max": 158
       },
       "lotSize": "800",
       "faceValue": null,
       "issueSize": "₹57.64 Cr",
       "gmp": {
-        "value": 105.0,
+        "value": 105,
         "percent": 66.46
       },
       "subscriptionTimes": "536.8x"
     },
     {
-      "symbol": "JOHNSOELEC",
-      "companyName": "Johnsoncab Electricals",
+      "symbol": "JOHNSONCAB",
+      "companyName": "Johnsoncab Electricals Limited",
       "normalizedName": "johnsoncab electricals",
       "platform": "SME",
       "series": "SME",
@@ -238,15 +144,15 @@
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
       "priceBand": {
-        "min": 200.0,
-        "max": 200.0
+        "min": 200,
+        "max": 200
       },
       "lotSize": "600",
       "faceValue": null,
       "issueSize": "₹56.02 Cr",
       "gmp": {
-        "value": 8.0,
-        "percent": 4.0
+        "value": 8,
+        "percent": 4
       },
       "subscriptionTimes": "23.82x"
     },
@@ -262,15 +168,15 @@
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
       "priceBand": {
-        "min": 105.0,
-        "max": 105.0
+        "min": 105,
+        "max": 105
       },
       "lotSize": "1200",
       "faceValue": null,
       "issueSize": "₹53.05 Cr",
       "gmp": {
         "value": null,
-        "percent": 0.0
+        "percent": 0
       },
       "subscriptionTimes": "4.2x"
     },
@@ -288,14 +194,14 @@
       "closeDate": "2026-11-02",
       "listingDate": "2026-11-05",
       "priceBand": {
-        "min": 82.0,
-        "max": 82.0
+        "min": 82,
+        "max": 82
       },
       "lotSize": "182",
       "faceValue": null,
       "issueSize": "₹183.06 Cr",
       "gmp": {
-        "value": 8.0,
+        "value": 8,
         "percent": 9.76
       },
       "subscriptionTimes": "63.89x"
@@ -312,15 +218,15 @@
       "closeDate": "2026-11-05",
       "listingDate": "2026-11-11",
       "priceBand": {
-        "min": 66.0,
-        "max": 66.0
+        "min": 66,
+        "max": 66
       },
       "lotSize": "2000",
       "faceValue": null,
       "issueSize": "₹22.98 Cr",
       "gmp": {
         "value": null,
-        "percent": 0.0
+        "percent": 0
       },
       "subscriptionTimes": "12.79x"
     },
@@ -338,14 +244,14 @@
       "closeDate": "2026-10-30",
       "listingDate": "2026-11-04",
       "priceBand": {
-        "min": 162.0,
-        "max": 162.0
+        "min": 162,
+        "max": 162
       },
       "lotSize": "91",
       "faceValue": null,
       "issueSize": "₹275.40 Cr",
       "gmp": {
-        "value": 11.0,
+        "value": 11,
         "percent": 6.79
       },
       "subscriptionTimes": "5.09x"
@@ -362,14 +268,14 @@
       "closeDate": "2026-10-30",
       "listingDate": "2026-11-04",
       "priceBand": {
-        "min": 203.0,
-        "max": 203.0
+        "min": 203,
+        "max": 203
       },
       "lotSize": "600",
       "faceValue": null,
       "issueSize": "₹38.05 Cr",
       "gmp": {
-        "value": 1.0,
+        "value": 1,
         "percent": 0.49
       },
       "subscriptionTimes": "1.12x"
@@ -386,15 +292,15 @@
       "closeDate": "2026-10-30",
       "listingDate": "2026-11-04",
       "priceBand": {
-        "min": 80.0,
-        "max": 80.0
+        "min": 80,
+        "max": 80
       },
       "lotSize": "1600",
       "faceValue": null,
       "issueSize": "₹28.29 Cr",
       "gmp": {
-        "value": 4.0,
-        "percent": 5.0
+        "value": 4,
+        "percent": 5
       },
       "subscriptionTimes": "25.8x"
     },
@@ -412,8 +318,8 @@
       "closeDate": "2026-10-29",
       "listingDate": "2026-11-03",
       "priceBand": {
-        "min": 330.0,
-        "max": 330.0
+        "min": 330,
+        "max": 330
       },
       "lotSize": "45",
       "faceValue": null,
@@ -438,15 +344,15 @@
       "closeDate": "2026-10-29",
       "listingDate": "2026-11-03",
       "priceBand": {
-        "min": 150.0,
-        "max": 150.0
+        "min": 150,
+        "max": 150
       },
       "lotSize": "100",
       "faceValue": null,
       "issueSize": "₹255.00 Cr",
       "gmp": {
-        "value": 69.0,
-        "percent": 46.0
+        "value": 69,
+        "percent": 46
       },
       "subscriptionTimes": "241.22x"
     },
@@ -462,15 +368,15 @@
       "closeDate": "2026-10-29",
       "listingDate": "2026-11-03",
       "priceBand": {
-        "min": 204.0,
-        "max": 204.0
+        "min": 204,
+        "max": 204
       },
       "lotSize": "600",
       "faceValue": null,
       "issueSize": "₹110.00 Cr",
       "gmp": {
         "value": null,
-        "percent": 0.0
+        "percent": 0
       },
       "subscriptionTimes": "1.17x"
     },
@@ -488,14 +394,14 @@
       "closeDate": "2026-10-28",
       "listingDate": "2026-11-02",
       "priceBand": {
-        "min": 1665.0,
-        "max": 1665.0
+        "min": 1665,
+        "max": 1665
       },
       "lotSize": "9",
       "faceValue": null,
       "issueSize": "₹1200.00 Cr",
       "gmp": {
-        "value": 54.0,
+        "value": 54,
         "percent": 3.24
       },
       "subscriptionTimes": "5.51x"
@@ -512,15 +418,15 @@
       "closeDate": "2026-10-27",
       "listingDate": "2026-10-30",
       "priceBand": {
-        "min": 93.0,
-        "max": 93.0
+        "min": 93,
+        "max": 93
       },
       "lotSize": "1200",
       "faceValue": null,
       "issueSize": "₹54.82 Cr",
       "gmp": {
         "value": null,
-        "percent": 0.0
+        "percent": 0
       },
       "subscriptionTimes": "5.44x"
     },
@@ -538,69 +444,17 @@
       "closeDate": "2026-10-23",
       "listingDate": "2026-10-28",
       "priceBand": {
-        "min": 693.0,
-        "max": 693.0
+        "min": 693,
+        "max": 693
       },
       "lotSize": "21",
       "faceValue": null,
       "issueSize": "₹1450.00 Cr",
       "gmp": {
-        "value": 13.0,
+        "value": 13,
         "percent": 1.88
       },
       "subscriptionTimes": "2.34x"
-    },
-    {
-      "symbol": "JPL",
-      "companyName": "Jio Platforms Limited",
-      "normalizedName": "jio platforms",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "NSE"
-      ],
-      "status": "listed",
-      "openDate": "2026-10-21",
-      "closeDate": "2026-10-23",
-      "listingDate": "2026-10-28",
-      "priceBand": {
-        "min": 1119.0,
-        "max": 1119.0
-      },
-      "lotSize": "12",
-      "faceValue": null,
-      "issueSize": "₹30187.65 Cr",
-      "gmp": {
-        "value": 250.0,
-        "percent": 22.34
-      },
-      "subscriptionTimes": "21.36x"
-    },
-    {
-      "symbol": "ZETWERK",
-      "companyName": "Zetwerk Manufacturing Businesses Limited",
-      "normalizedName": "zetwerk manufacturing businesses",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "NSE"
-      ],
-      "status": "listed",
-      "openDate": "2026-10-15",
-      "closeDate": "2026-10-19",
-      "listingDate": "2026-10-23",
-      "priceBand": {
-        "min": 151.0,
-        "max": 151.0
-      },
-      "lotSize": "99",
-      "faceValue": null,
-      "issueSize": "₹5012.33 Cr",
-      "gmp": {
-        "value": 1.2,
-        "percent": 0.79
-      },
-      "subscriptionTimes": "3.1x"
     },
     {
       "symbol": "TONBO",
@@ -616,14 +470,14 @@
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
       "priceBand": {
-        "min": 700.0,
-        "max": 700.0
+        "min": 700,
+        "max": 700
       },
       "lotSize": "21",
       "faceValue": null,
       "issueSize": "₹852.18 Cr",
       "gmp": {
-        "value": 452.0,
+        "value": 452,
         "percent": 64.57
       },
       "subscriptionTimes": "132.81x"
@@ -642,14 +496,14 @@
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
       "priceBand": {
-        "min": 586.0,
-        "max": 586.0
+        "min": 586,
+        "max": 586
       },
       "lotSize": "25",
       "faceValue": null,
       "issueSize": "₹2533.66 Cr",
       "gmp": {
-        "value": 66.0,
+        "value": 66,
         "percent": 11.26
       },
       "subscriptionTimes": "46.05x"
@@ -668,14 +522,14 @@
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
       "priceBand": {
-        "min": 344.0,
-        "max": 344.0
+        "min": 344,
+        "max": 344
       },
       "lotSize": "43",
       "faceValue": null,
       "issueSize": "₹475.48 Cr",
       "gmp": {
-        "value": 17.0,
+        "value": 17,
         "percent": 4.94
       },
       "subscriptionTimes": "14.21x"
@@ -692,14 +546,14 @@
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
       "priceBand": {
-        "min": 179.0,
-        "max": 179.0
+        "min": 179,
+        "max": 179
       },
       "lotSize": "800",
       "faceValue": null,
       "issueSize": "₹59.97 Cr",
       "gmp": {
-        "value": 7.0,
+        "value": 7,
         "percent": 3.91
       },
       "subscriptionTimes": "58.54x"
@@ -718,8 +572,8 @@
       "closeDate": "2026-10-16",
       "listingDate": "2026-10-22",
       "priceBand": {
-        "min": 289.0,
-        "max": 289.0
+        "min": 289,
+        "max": 289
       },
       "lotSize": null,
       "faceValue": null,
@@ -741,8 +595,8 @@
       "closeDate": "2026-10-16",
       "listingDate": "2026-10-22",
       "priceBand": {
-        "min": 112.0,
-        "max": 112.0
+        "min": 112,
+        "max": 112
       },
       "lotSize": null,
       "faceValue": null,
@@ -751,7 +605,7 @@
       "subscriptionTimes": null
     },
     {
-      "symbol": "HDFIRE",
+      "symbol": "HDFP",
       "companyName": "HD Fire Protect Limited",
       "normalizedName": "hd fire protect",
       "platform": "Mainboard",
@@ -764,8 +618,8 @@
       "closeDate": "2026-10-15",
       "listingDate": "2026-10-21",
       "priceBand": {
-        "min": 271.0,
-        "max": 271.0
+        "min": 271,
+        "max": 271
       },
       "lotSize": null,
       "faceValue": null,
@@ -787,8 +641,8 @@
       "closeDate": "2026-10-15",
       "listingDate": "2026-10-21",
       "priceBand": {
-        "min": 54.0,
-        "max": 54.0
+        "min": 54,
+        "max": 54
       },
       "lotSize": null,
       "faceValue": null,
@@ -810,8 +664,8 @@
       "closeDate": "2026-10-07",
       "listingDate": "2026-10-12",
       "priceBand": {
-        "min": 82.0,
-        "max": 82.0
+        "min": 82,
+        "max": 82
       },
       "lotSize": null,
       "faceValue": null,
@@ -820,7 +674,7 @@
       "subscriptionTimes": null
     },
     {
-      "symbol": "VNL",
+      "symbol": "VISHALNIR",
       "companyName": "Vishal Nirmiti Limited",
       "normalizedName": "vishal nirmiti",
       "platform": "Mainboard",
@@ -833,8 +687,8 @@
       "closeDate": "2026-10-05",
       "listingDate": "2026-10-08",
       "priceBand": {
-        "min": 220.0,
-        "max": 220.0
+        "min": 220,
+        "max": 220
       },
       "lotSize": null,
       "faceValue": null,
@@ -856,8 +710,8 @@
       "closeDate": "2026-10-05",
       "listingDate": "2026-10-08",
       "priceBand": {
-        "min": 75.0,
-        "max": 75.0
+        "min": 75,
+        "max": 75
       },
       "lotSize": null,
       "faceValue": null,
@@ -879,8 +733,8 @@
       "closeDate": "2026-10-05",
       "listingDate": "2026-10-08",
       "priceBand": {
-        "min": 118.0,
-        "max": 118.0
+        "min": 118,
+        "max": 118
       },
       "lotSize": null,
       "faceValue": null,
@@ -902,8 +756,8 @@
       "closeDate": "2026-10-01",
       "listingDate": "2026-10-07",
       "priceBand": {
-        "min": 72.0,
-        "max": 72.0
+        "min": 72,
+        "max": 72
       },
       "lotSize": null,
       "faceValue": null,
@@ -925,8 +779,8 @@
       "closeDate": "2026-09-30",
       "listingDate": "2026-10-06",
       "priceBand": {
-        "min": 167.0,
-        "max": 167.0
+        "min": 167,
+        "max": 167
       },
       "lotSize": null,
       "faceValue": null,
@@ -948,8 +802,8 @@
       "closeDate": "2026-09-30",
       "listingDate": "2026-10-06",
       "priceBand": {
-        "min": 130.0,
-        "max": 130.0
+        "min": 130,
+        "max": 130
       },
       "lotSize": null,
       "faceValue": null,
@@ -971,8 +825,8 @@
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
       "priceBand": {
-        "min": 139.0,
-        "max": 139.0
+        "min": 139,
+        "max": 139
       },
       "lotSize": null,
       "faceValue": null,
@@ -994,8 +848,8 @@
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
       "priceBand": {
-        "min": 305.0,
-        "max": 305.0
+        "min": 305,
+        "max": 305
       },
       "lotSize": null,
       "faceValue": null,
@@ -1017,8 +871,8 @@
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
       "priceBand": {
-        "min": 272.0,
-        "max": 272.0
+        "min": 272,
+        "max": 272
       },
       "lotSize": null,
       "faceValue": null,
@@ -1040,8 +894,8 @@
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
       "priceBand": {
-        "min": 32.0,
-        "max": 32.0
+        "min": 32,
+        "max": 32
       },
       "lotSize": null,
       "faceValue": null,
@@ -1063,8 +917,8 @@
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
       "priceBand": {
-        "min": 110.0,
-        "max": 110.0
+        "min": 110,
+        "max": 110
       },
       "lotSize": null,
       "faceValue": null,
@@ -1086,31 +940,8 @@
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
       "priceBand": {
-        "min": 103.0,
-        "max": 103.0
-      },
-      "lotSize": null,
-      "faceValue": null,
-      "issueSize": null,
-      "gmp": null,
-      "subscriptionTimes": null
-    },
-    {
-      "symbol": "MONEYVIEW",
-      "companyName": "Moneyview Limited",
-      "normalizedName": "moneyview",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "NSE"
-      ],
-      "status": "listed",
-      "openDate": "2026-09-24",
-      "closeDate": "2026-09-28",
-      "listingDate": "2026-10-01",
-      "priceBand": {
-        "min": 34.0,
-        "max": 34.0
+        "min": 103,
+        "max": 103
       },
       "lotSize": null,
       "faceValue": null,
@@ -1132,8 +963,8 @@
       "closeDate": "2026-09-28",
       "listingDate": "2026-10-01",
       "priceBand": {
-        "min": 405.0,
-        "max": 405.0
+        "min": 405,
+        "max": 405
       },
       "lotSize": null,
       "faceValue": null,
@@ -1155,8 +986,8 @@
       "closeDate": "2026-10-01",
       "listingDate": "2026-10-07",
       "priceBand": {
-        "min": 89.0,
-        "max": 89.0
+        "min": 89,
+        "max": 89
       },
       "lotSize": null,
       "faceValue": null,
@@ -1178,8 +1009,8 @@
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
       "priceBand": {
-        "min": 185.0,
-        "max": 185.0
+        "min": 185,
+        "max": 185
       },
       "lotSize": null,
       "faceValue": null,
@@ -1201,8 +1032,8 @@
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
       "priceBand": {
-        "min": 375.0,
-        "max": 375.0
+        "min": 375,
+        "max": 375
       },
       "lotSize": null,
       "faceValue": null,
@@ -1224,8 +1055,8 @@
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
       "priceBand": {
-        "min": 134.0,
-        "max": 134.0
+        "min": 134,
+        "max": 134
       },
       "lotSize": null,
       "faceValue": null,
@@ -1247,8 +1078,8 @@
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
       "priceBand": {
-        "min": 362.0,
-        "max": 362.0
+        "min": 362,
+        "max": 362
       },
       "lotSize": null,
       "faceValue": null,
@@ -1270,8 +1101,8 @@
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
       "priceBand": {
-        "min": 78.0,
-        "max": 78.0
+        "min": 78,
+        "max": 78
       },
       "lotSize": null,
       "faceValue": null,
@@ -1293,8 +1124,8 @@
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
       "priceBand": {
-        "min": 115.0,
-        "max": 115.0
+        "min": 115,
+        "max": 115
       },
       "lotSize": null,
       "faceValue": null,
@@ -1316,8 +1147,8 @@
       "closeDate": "2026-09-24",
       "listingDate": "2026-09-29",
       "priceBand": {
-        "min": 148.0,
-        "max": 148.0
+        "min": 148,
+        "max": 148
       },
       "lotSize": null,
       "faceValue": null,
@@ -1339,8 +1170,8 @@
       "closeDate": "2026-09-22",
       "listingDate": "2026-09-25",
       "priceBand": {
-        "min": 54.0,
-        "max": 54.0
+        "min": 54,
+        "max": 54
       },
       "lotSize": null,
       "faceValue": null,
@@ -1362,8 +1193,8 @@
       "closeDate": "2026-09-21",
       "listingDate": "2026-09-24",
       "priceBand": {
-        "min": 99.0,
-        "max": 99.0
+        "min": 99,
+        "max": 99
       },
       "lotSize": null,
       "faceValue": null,
@@ -1385,8 +1216,8 @@
       "closeDate": "2026-09-21",
       "listingDate": "2026-09-24",
       "priceBand": {
-        "min": 101.0,
-        "max": 101.0
+        "min": 101,
+        "max": 101
       },
       "lotSize": null,
       "faceValue": null,
@@ -1408,8 +1239,8 @@
       "closeDate": "2026-09-21",
       "listingDate": "2026-09-24",
       "priceBand": {
-        "min": 118.0,
-        "max": 118.0
+        "min": 118,
+        "max": 118
       },
       "lotSize": null,
       "faceValue": null,
@@ -1431,8 +1262,8 @@
       "closeDate": "2026-09-18",
       "listingDate": "2026-09-23",
       "priceBand": {
-        "min": 424.0,
-        "max": 424.0
+        "min": 424,
+        "max": 424
       },
       "lotSize": null,
       "faceValue": null,
@@ -1454,8 +1285,8 @@
       "closeDate": "2026-09-18",
       "listingDate": "2026-09-23",
       "priceBand": {
-        "min": 84.0,
-        "max": 84.0
+        "min": 84,
+        "max": 84
       },
       "lotSize": null,
       "faceValue": null,
@@ -1477,8 +1308,8 @@
       "closeDate": "2026-09-18",
       "listingDate": "2026-09-23",
       "priceBand": {
-        "min": 93.0,
-        "max": 93.0
+        "min": 93,
+        "max": 93
       },
       "lotSize": null,
       "faceValue": null,
@@ -1500,8 +1331,8 @@
       "closeDate": "2026-09-16",
       "listingDate": "2026-09-21",
       "priceBand": {
-        "min": 43.0,
-        "max": 43.0
+        "min": 43,
+        "max": 43
       },
       "lotSize": null,
       "faceValue": null,
@@ -1523,8 +1354,8 @@
       "closeDate": "2026-09-15",
       "listingDate": "2026-09-18",
       "priceBand": {
-        "min": 140.0,
-        "max": 140.0
+        "min": 140,
+        "max": 140
       },
       "lotSize": null,
       "faceValue": null,
@@ -1546,8 +1377,8 @@
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
       "priceBand": {
-        "min": 339.0,
-        "max": 339.0
+        "min": 339,
+        "max": 339
       },
       "lotSize": null,
       "faceValue": null,
@@ -1569,31 +1400,8 @@
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
       "priceBand": {
-        "min": 146.0,
-        "max": 146.0
-      },
-      "lotSize": null,
-      "faceValue": null,
-      "issueSize": null,
-      "gmp": null,
-      "subscriptionTimes": null
-    },
-    {
-      "symbol": "RENTOMOJO",
-      "companyName": "Rentomojo Limited",
-      "normalizedName": "rentomojo",
-      "platform": "Mainboard",
-      "series": "EQ",
-      "exchanges": [
-        "NSE"
-      ],
-      "status": "listed",
-      "openDate": "2026-09-09",
-      "closeDate": "2026-09-11",
-      "listingDate": "2026-09-17",
-      "priceBand": {
-        "min": 404.0,
-        "max": 404.0
+        "min": 146,
+        "max": 146
       },
       "lotSize": null,
       "faceValue": null,
@@ -1615,8 +1423,8 @@
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
       "priceBand": {
-        "min": 81.0,
-        "max": 81.0
+        "min": 81,
+        "max": 81
       },
       "lotSize": null,
       "faceValue": null,
@@ -1638,8 +1446,8 @@
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
       "priceBand": {
-        "min": 139.0,
-        "max": 139.0
+        "min": 139,
+        "max": 139
       },
       "lotSize": null,
       "faceValue": null,
@@ -1661,8 +1469,8 @@
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
       "priceBand": {
-        "min": 254.0,
-        "max": 254.0
+        "min": 254,
+        "max": 254
       },
       "lotSize": null,
       "faceValue": null,
@@ -1684,8 +1492,8 @@
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
       "priceBand": {
-        "min": 94.0,
-        "max": 94.0
+        "min": 94,
+        "max": 94
       },
       "lotSize": null,
       "faceValue": null,
@@ -1707,8 +1515,8 @@
       "closeDate": "2026-09-10",
       "listingDate": "2026-09-16",
       "priceBand": {
-        "min": 632.0,
-        "max": 632.0
+        "min": 632,
+        "max": 632
       },
       "lotSize": null,
       "faceValue": null,
@@ -1730,8 +1538,8 @@
       "closeDate": "2026-09-10",
       "listingDate": "2026-09-16",
       "priceBand": {
-        "min": 676.0,
-        "max": 676.0
+        "min": 676,
+        "max": 676
       },
       "lotSize": null,
       "faceValue": null,
@@ -1753,8 +1561,8 @@
       "closeDate": "2026-09-10",
       "listingDate": "2026-09-16",
       "priceBand": {
-        "min": 182.0,
-        "max": 182.0
+        "min": 182,
+        "max": 182
       },
       "lotSize": null,
       "faceValue": null,
@@ -1776,8 +1584,8 @@
       "closeDate": "2026-09-09",
       "listingDate": "2026-09-15",
       "priceBand": {
-        "min": 124.0,
-        "max": 124.0
+        "min": 124,
+        "max": 124
       },
       "lotSize": null,
       "faceValue": null,
@@ -1799,8 +1607,8 @@
       "closeDate": "2026-09-08",
       "listingDate": "2026-09-11",
       "priceBand": {
-        "min": 127.0,
-        "max": 127.0
+        "min": 127,
+        "max": 127
       },
       "lotSize": null,
       "faceValue": null,
@@ -1822,8 +1630,8 @@
       "closeDate": "2026-09-03",
       "listingDate": "2026-09-08",
       "priceBand": {
-        "min": 177.0,
-        "max": 177.0
+        "min": 177,
+        "max": 177
       },
       "lotSize": null,
       "faceValue": null,
@@ -1845,8 +1653,8 @@
       "closeDate": "2026-09-02",
       "listingDate": "2026-09-07",
       "priceBand": {
-        "min": 575.0,
-        "max": 575.0
+        "min": 575,
+        "max": 575
       },
       "lotSize": null,
       "faceValue": null,
@@ -1868,8 +1676,8 @@
       "closeDate": "2026-09-02",
       "listingDate": "2026-09-07",
       "priceBand": {
-        "min": 83.0,
-        "max": 83.0
+        "min": 83,
+        "max": 83
       },
       "lotSize": null,
       "faceValue": null,
@@ -1891,8 +1699,8 @@
       "closeDate": "2026-09-02",
       "listingDate": "2026-09-07",
       "priceBand": {
-        "min": 92.0,
-        "max": 92.0
+        "min": 92,
+        "max": 92
       },
       "lotSize": null,
       "faceValue": null,
@@ -1914,8 +1722,8 @@
       "closeDate": "2026-09-01",
       "listingDate": "2026-09-04",
       "priceBand": {
-        "min": 429.0,
-        "max": 429.0
+        "min": 429,
+        "max": 429
       },
       "lotSize": null,
       "faceValue": null,
@@ -1937,8 +1745,8 @@
       "closeDate": "2026-09-01",
       "listingDate": "2026-09-04",
       "priceBand": {
-        "min": 200.0,
-        "max": 200.0
+        "min": 200,
+        "max": 200
       },
       "lotSize": null,
       "faceValue": null,
@@ -1960,8 +1768,8 @@
       "closeDate": "2026-08-31",
       "listingDate": "2026-09-03",
       "priceBand": {
-        "min": 82.0,
-        "max": 82.0
+        "min": 82,
+        "max": 82
       },
       "lotSize": null,
       "faceValue": null,
@@ -1983,8 +1791,8 @@
       "closeDate": "2026-08-28",
       "listingDate": "2026-09-02",
       "priceBand": {
-        "min": 99.0,
-        "max": 99.0
+        "min": 99,
+        "max": 99
       },
       "lotSize": null,
       "faceValue": null,
@@ -2006,8 +1814,8 @@
       "closeDate": "2026-08-28",
       "listingDate": "2026-09-02",
       "priceBand": {
-        "min": 101.0,
-        "max": 101.0
+        "min": 101,
+        "max": 101
       },
       "lotSize": null,
       "faceValue": null,
@@ -2029,8 +1837,8 @@
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
       "priceBand": {
-        "min": 988.0,
-        "max": 988.0
+        "min": 988,
+        "max": 988
       },
       "lotSize": null,
       "faceValue": null,
@@ -2052,8 +1860,8 @@
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
       "priceBand": {
-        "min": 53.0,
-        "max": 53.0
+        "min": 53,
+        "max": 53
       },
       "lotSize": null,
       "faceValue": null,
@@ -2075,8 +1883,8 @@
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
       "priceBand": {
-        "min": 138.0,
-        "max": 138.0
+        "min": 138,
+        "max": 138
       },
       "lotSize": null,
       "faceValue": null,
@@ -2098,8 +1906,8 @@
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
       "priceBand": {
-        "min": 102.0,
-        "max": 102.0
+        "min": 102,
+        "max": 102
       },
       "lotSize": null,
       "faceValue": null,
@@ -2121,8 +1929,8 @@
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
       "priceBand": {
-        "min": 100.0,
-        "max": 100.0
+        "min": 100,
+        "max": 100
       },
       "lotSize": null,
       "faceValue": null,
@@ -2144,8 +1952,8 @@
       "closeDate": "2026-08-25",
       "listingDate": "2026-08-31",
       "priceBand": {
-        "min": 788.0,
-        "max": 788.0
+        "min": 788,
+        "max": 788
       },
       "lotSize": null,
       "faceValue": null,
@@ -2167,8 +1975,8 @@
       "closeDate": "2026-08-24",
       "listingDate": "2026-08-28",
       "priceBand": {
-        "min": 300.0,
-        "max": 300.0
+        "min": 300,
+        "max": 300
       },
       "lotSize": null,
       "faceValue": null,
@@ -2190,8 +1998,8 @@
       "closeDate": "2026-08-21",
       "listingDate": "2026-08-26",
       "priceBand": {
-        "min": 160.0,
-        "max": 160.0
+        "min": 160,
+        "max": 160
       },
       "lotSize": null,
       "faceValue": null,
