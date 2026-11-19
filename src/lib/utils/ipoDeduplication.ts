@@ -9,8 +9,6 @@ export const FALSE_OR_DEMO_SYMBOLS = new Set<string>([
   'DEMODEBT',
   'DEMOCLOSED',
   'DEMOLISTED',
-  'JPL',
-  'JIOPLAT',
   'ZETWERK',
   'MONEYVIEW',
   'RENTOMOJO',

@@ -1,13 +1,40 @@
 {
   "generatedAt": "2026-11-17T14:04:04Z",
-  "totalCount": 93,
+  "totalCount": 86,
   "summary": {
     "open": 0,
-    "upcoming": 3,
-    "closed": 3,
-    "listed": 87
+    "upcoming": 2,
+    "closed": 2,
+    "listed": 82
   },
   "ipos": [
+    {
+      "symbol": "JIOPLAT",
+      "companyName": "Jio Platforms Limited",
+      "normalizedName": "jio platforms",
+      "platform": "Mainboard",
+      "series": "EQ",
+      "exchanges": [
+        "NSE",
+        "BSE"
+      ],
+      "status": "upcoming",
+      "openDate": "2026-11-26",
+      "closeDate": "2026-11-30",
+      "listingDate": "2026-12-05",
+      "priceBand": {
+        "min": 400,
+        "max": 425
+      },
+      "lotSize": "35",
+      "faceValue": 10,
+      "issueSize": "₹50,000 Cr",
+      "gmp": {
+        "value": 185,
+        "percent": 43.53
+      },
+      "subscriptionTimes": "-"
+    },
     {
       "symbol": "WATRANA",
       "companyName": "Watrana Rentals Limited",
@@ -613,10 +640,10 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-13",
       "closeDate": "2026-10-15",
-      "listingDate": "2026-10-21",
+      "listingDate": null,
       "priceBand": {
         "min": 271,
         "max": 271

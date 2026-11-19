@@ -584,11 +584,11 @@ export class MockIPOProvider implements IPODataProvider {
       priceHigh: 30,
       lotSize: 500,
       issueSize: '₹2,106 Cr',
-      openDate: '05 Nov 2026',
-      closeDate: '07 Nov 2026',
-      allotmentDate: '10 Nov 2026',
-      listingDate: '12 Nov 2026',
-      expectedListingDate: '12 Nov 2026',
+      openDate: '15 Nov 2026',
+      closeDate: '18 Nov 2026',
+      allotmentDate: '21 Nov 2026',
+      listingDate: '25 Nov 2026',
+      expectedListingDate: '25 Nov 2026',
       registrar: 'Link Intime India Pvt Ltd',
       registrarUrl: 'https://linkintime.co.in',
       gmp: 0.3,
@@ -888,6 +888,10 @@ export class MockIPOProvider implements IPODataProvider {
           ...ipo,
           status: 'Listed' as const,
           remainingTime: 'Listed on Exchange',
+          currentPrice: ipo.currentPrice || ipo.listingPrice || ipo.priceHigh || 100,
+          previousClose: ipo.previousClose || ipo.issuePrice || ipo.priceHigh || 100,
+          dayChange: ipo.dayChange ?? 0,
+          dayChangePercent: ipo.dayChangePercent ?? 0,
         };
       }
       const isClosed = isBiddingClosed(ipo.closeDate) || ipo.remainingTime === 'Bidding Closed';
