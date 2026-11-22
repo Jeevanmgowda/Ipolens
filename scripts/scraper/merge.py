@@ -232,20 +232,15 @@ def build_merged(nse_data: dict, bse_data: dict, gmp_data: dict) -> tuple[list, 
         if not rec["symbol"]:
             rec["symbol"] = _derive_ticker(rec["companyName"])
 
-        # Permanent Rule: If listing date has arrived or passed, status MUST be listed
-        if rec["listingDate"] and today_str >= rec["listingDate"]:
-            rec["status"] = "listed"
+        if rec["status"] == "closed" or (rec["closeDate"] and today_str > rec["closeDate"]):
+            rec["status"] = "closed"
         elif not rec["status"]:
             if rec["openDate"] and today_str < rec["openDate"]:
                 rec["status"] = "upcoming"
             elif rec["openDate"] and rec["closeDate"] and rec["openDate"] <= today_str <= rec["closeDate"]:
                 rec["status"] = "open"
-            elif rec["closeDate"] and today_str > rec["closeDate"]:
-                rec["status"] = "closed"
             else:
                 rec["status"] = "upcoming"
-        elif rec["status"] in ("closed", "open", "upcoming") and rec["listingDate"] and today_str >= rec["listingDate"]:
-            rec["status"] = "listed"
 
     return list(by_key.values()), unmatched_gmp
 

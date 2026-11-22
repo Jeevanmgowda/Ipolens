@@ -15,6 +15,26 @@ export interface ListedIpoMetadata {
 // Registry of known landmark Indian IPOs with official tickers
 export const LISTED_IPOS_REGISTRY: ListedIpoMetadata[] = [
   {
+    symbol: 'JIOFIN',
+    ticker: 'JIOFIN.NS',
+    companyName: 'Jio Financial Services Limited',
+    series: 'EQ',
+    listingDate: '21-Aug-2023',
+    issuePrice: 261.85,
+    listingPrice: 265.0,
+    allotmentRegistrar: 'KFin Technologies Limited',
+  },
+  {
+    symbol: 'JIOPLAT',
+    ticker: 'JIOFIN.NS',
+    companyName: 'Jio Platforms Limited',
+    series: 'EQ',
+    listingDate: '21-Aug-2023',
+    issuePrice: 261.85,
+    listingPrice: 265.0,
+    allotmentRegistrar: 'KFin Technologies Limited',
+  },
+  {
     symbol: 'SWIGGY',
     ticker: 'SWIGGY.NS',
     companyName: 'Swiggy Limited',

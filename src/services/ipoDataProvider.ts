@@ -36,16 +36,8 @@ export function isIpoListed(ipo: {
     return true;
   }
 
-  // Permanent rule: If listing date has arrived or passed, it belongs strictly to Listed Market
-  if (ipo.listingDate && isListingDatePast(ipo.listingDate)) {
-    return true;
-  }
-
-  // If it has actual trading price / listing price from secondary market
-  if (
-    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined) ||
-    (typeof ipo.listingPrice === 'number' && ipo.listingPrice > 0 && ipo.status !== 'Upcoming' && ipo.status !== 'Open')
-  ) {
+  // If it has actual trading price from secondary market
+  if (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined) {
     return true;
   }
 
@@ -222,10 +214,10 @@ export class NSEIPOProvider implements IPODataProvider {
       const isActuallyListed = Boolean(
         raw.isListed ||
         raw.status === 'Listed' ||
-        (raw.listingDate && isListingDatePast(raw.listingDate)) ||
         (raw.remainingTime && raw.remainingTime.toLowerCase().includes('listed')) ||
         LISTED_IPOS_REGISTRY.some((l) => isSameIpo(l.symbol, l.companyName, raw.symbol, raw.companyName)) ||
-        listedRaw.some((l) => isSameIpo(l.symbol, l.companyName, raw.symbol, raw.companyName))
+        listedRaw.some((l) => isSameIpo(l.symbol, l.companyName, raw.symbol, raw.companyName)) ||
+        (typeof (raw as any).currentPrice === 'number' && (raw as any).currentPrice > 0)
       );
 
       const computedRemainingTime = raw.remainingTime || calculateRemainingTime(raw.issueEndDate);

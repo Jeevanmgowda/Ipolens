@@ -44,25 +44,25 @@ export interface MarketIpoMetadata {
 export const MARKET_IPO_REGISTRY: MarketIpoMetadata[] = [
   {
     symbol: 'JIOPLAT',
-    aliases: ['jioplat', 'jio', 'jio platforms', 'jio platforms limited', 'jpl'],
+    aliases: ['jioplat', 'jio', 'jio platforms', 'jio platforms limited', 'jpl', 'jiofin', 'jio financial'],
     companyName: 'Jio Platforms Limited',
     series: 'EQ',
-    priceBand: '₹400 – ₹425',
-    priceLow: 400,
-    priceHigh: 425,
-    lotSize: 35,
-    minInvestment: 14875,
+    priceBand: '₹261.85',
+    priceLow: 261.85,
+    priceHigh: 261.85,
+    lotSize: 1,
+    minInvestment: 262,
     issueSize: '₹50,000 Cr',
     issueSizeCr: 50000,
-    openDate: '26-Nov-2026',
-    closeDate: '30-Nov-2026',
-    allotmentDate: '02-Dec-2026',
-    listingDate: '05-Dec-2026',
+    openDate: '10-Aug-2023',
+    closeDate: '14-Aug-2023',
+    allotmentDate: '18-Aug-2023',
+    listingDate: '21-Aug-2023',
     registrar: 'KFin Technologies Limited',
     registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
     registrarSlug: 'kfintech',
-    gmp: 185,
-    gmpPercent: 43.53,
+    gmp: 0,
+    gmpPercent: 0,
     currentSubscription: 0,
     retailSubscription: 0,
     niiSubscription: 0,
@@ -1414,7 +1414,6 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
           const rawStatus = (item.status || '').toLowerCase();
           const isItemListed =
             rawStatus === 'listed' ||
-            Boolean(item.listingDate && isListingDatePast(item.listingDate)) ||
             LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === sym);
           const existing = map.get(sym);
           if (existing) {
@@ -1442,13 +1441,14 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
               existing.priceBand = item.priceBand.min === item.priceBand.max ? `₹${item.priceBand.min}` : `₹${item.priceBand.min} – ₹${item.priceBand.max}`;
               existing.issuePrice = existing.priceBand;
             }
-            if (isItemListed) {
+            if (rawStatus === 'closed' && !isItemListed) {
+              existing.status = 'Closed';
+              existing.remainingTime = 'Bidding Closed';
+              existing.isListed = false;
+            } else if (isItemListed) {
               existing.isListed = true;
               existing.status = 'Listed';
               existing.remainingTime = 'Listed on Exchange';
-            } else if (rawStatus === 'closed' && !existing.isListed) {
-              existing.status = 'Closed';
-              existing.remainingTime = 'Bidding Closed';
             }
           } else {
             const registrar = getRegistrarInfo(sym, item.companyName || '');
@@ -1457,15 +1457,15 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
             const isSme = item.platform === 'SME' || item.series === 'SME';
             const openDate = item.openDate || '';
             const closeDate = item.closeDate || '';
-            const status: IpoStatus = isItemListed
-              ? 'Listed'
-              : rawStatus === 'closed'
-                ? 'Closed'
+            const status: IpoStatus = rawStatus === 'closed'
+              ? 'Closed'
+              : isItemListed
+                ? 'Listed'
                 : resolveIpoLifecycleStatus(openDate, closeDate, false);
-            const remainingTime = isItemListed
-              ? 'Listed on Exchange'
-              : status === 'Closed'
-                ? 'Bidding Closed'
+            const remainingTime = status === 'Closed'
+              ? 'Bidding Closed'
+              : isItemListed
+                ? 'Listed on Exchange'
                 : calculateRemainingTime(closeDate);
 
             map.set(sym, {

@@ -3,9 +3,9 @@
   "totalCount": 86,
   "summary": {
     "open": 0,
-    "upcoming": 2,
-    "closed": 2,
-    "listed": 82
+    "upcoming": 1,
+    "closed": 84,
+    "listed": 1
   },
   "ipos": [
     {
@@ -18,21 +18,18 @@
         "NSE",
         "BSE"
       ],
-      "status": "upcoming",
-      "openDate": "2026-11-26",
-      "closeDate": "2026-11-30",
-      "listingDate": "2026-12-05",
+      "status": "listed",
+      "openDate": "2023-08-10",
+      "closeDate": "2023-08-14",
+      "listingDate": "2023-08-21",
       "priceBand": {
-        "min": 400,
-        "max": 425
+        "min": 261.85,
+        "max": 261.85
       },
-      "lotSize": "35",
+      "lotSize": "1",
       "faceValue": 10,
       "issueSize": "₹50,000 Cr",
-      "gmp": {
-        "value": 185,
-        "percent": 43.53
-      },
+      "gmp": null,
       "subscriptionTimes": "-"
     },
     {
@@ -90,7 +87,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-11-02",
       "closeDate": "2026-11-04",
       "listingDate": "2026-11-09",
@@ -116,7 +113,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-30",
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
@@ -142,7 +139,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-30",
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
@@ -166,7 +163,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-30",
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
@@ -190,7 +187,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-30",
       "closeDate": "2026-11-03",
       "listingDate": "2026-11-06",
@@ -216,7 +213,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-29",
       "closeDate": "2026-11-02",
       "listingDate": "2026-11-05",
@@ -240,7 +237,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-29",
       "closeDate": "2026-11-05",
       "listingDate": "2026-11-11",
@@ -266,7 +263,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-28",
       "closeDate": "2026-10-30",
       "listingDate": "2026-11-04",
@@ -290,7 +287,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-28",
       "closeDate": "2026-10-30",
       "listingDate": "2026-11-04",
@@ -314,7 +311,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-28",
       "closeDate": "2026-10-30",
       "listingDate": "2026-11-04",
@@ -340,7 +337,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-27",
       "closeDate": "2026-10-29",
       "listingDate": "2026-11-03",
@@ -366,7 +363,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-27",
       "closeDate": "2026-10-29",
       "listingDate": "2026-11-03",
@@ -390,7 +387,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-27",
       "closeDate": "2026-10-29",
       "listingDate": "2026-11-03",
@@ -416,7 +413,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-26",
       "closeDate": "2026-10-28",
       "listingDate": "2026-11-02",
@@ -440,7 +437,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-23",
       "closeDate": "2026-10-27",
       "listingDate": "2026-10-30",
@@ -466,7 +463,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-21",
       "closeDate": "2026-10-23",
       "listingDate": "2026-10-28",
@@ -492,7 +489,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-15",
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
@@ -518,7 +515,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-15",
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
@@ -544,7 +541,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-15",
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
@@ -568,7 +565,7 @@
       "platform": "SME",
       "series": "SME",
       "exchanges": [],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-15",
       "closeDate": "2026-10-19",
       "listingDate": "2026-10-23",
@@ -594,7 +591,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-14",
       "closeDate": "2026-10-16",
       "listingDate": "2026-10-22",
@@ -617,7 +614,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-14",
       "closeDate": "2026-10-16",
       "listingDate": "2026-10-22",
@@ -663,7 +660,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-13",
       "closeDate": "2026-10-15",
       "listingDate": "2026-10-21",
@@ -686,7 +683,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-10-05",
       "closeDate": "2026-10-07",
       "listingDate": "2026-10-12",
@@ -709,7 +706,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-30",
       "closeDate": "2026-10-05",
       "listingDate": "2026-10-08",
@@ -732,7 +729,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-30",
       "closeDate": "2026-10-05",
       "listingDate": "2026-10-08",
@@ -755,7 +752,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-30",
       "closeDate": "2026-10-05",
       "listingDate": "2026-10-08",
@@ -778,7 +775,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-29",
       "closeDate": "2026-10-01",
       "listingDate": "2026-10-07",
@@ -801,7 +798,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-28",
       "closeDate": "2026-09-30",
       "listingDate": "2026-10-06",
@@ -824,7 +821,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-28",
       "closeDate": "2026-09-30",
       "listingDate": "2026-10-06",
@@ -847,7 +844,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-25",
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
@@ -870,7 +867,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-25",
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
@@ -893,7 +890,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-25",
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
@@ -916,7 +913,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-25",
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
@@ -939,7 +936,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-25",
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
@@ -962,7 +959,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-25",
       "closeDate": "2026-09-29",
       "listingDate": "2026-10-05",
@@ -985,7 +982,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-24",
       "closeDate": "2026-09-28",
       "listingDate": "2026-10-01",
@@ -1008,7 +1005,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-24",
       "closeDate": "2026-10-01",
       "listingDate": "2026-10-07",
@@ -1031,7 +1028,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-23",
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
@@ -1054,7 +1051,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-23",
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
@@ -1077,7 +1074,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-23",
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
@@ -1100,7 +1097,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-23",
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
@@ -1123,7 +1120,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-23",
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
@@ -1146,7 +1143,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-23",
       "closeDate": "2026-09-25",
       "listingDate": "2026-09-30",
@@ -1169,7 +1166,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-22",
       "closeDate": "2026-09-24",
       "listingDate": "2026-09-29",
@@ -1192,7 +1189,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-18",
       "closeDate": "2026-09-22",
       "listingDate": "2026-09-25",
@@ -1215,7 +1212,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-17",
       "closeDate": "2026-09-21",
       "listingDate": "2026-09-24",
@@ -1238,7 +1235,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-17",
       "closeDate": "2026-09-21",
       "listingDate": "2026-09-24",
@@ -1261,7 +1258,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-17",
       "closeDate": "2026-09-21",
       "listingDate": "2026-09-24",
@@ -1284,7 +1281,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-16",
       "closeDate": "2026-09-18",
       "listingDate": "2026-09-23",
@@ -1307,7 +1304,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-16",
       "closeDate": "2026-09-18",
       "listingDate": "2026-09-23",
@@ -1330,7 +1327,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-16",
       "closeDate": "2026-09-18",
       "listingDate": "2026-09-23",
@@ -1353,7 +1350,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-11",
       "closeDate": "2026-09-16",
       "listingDate": "2026-09-21",
@@ -1376,7 +1373,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-10",
       "closeDate": "2026-09-15",
       "listingDate": "2026-09-18",
@@ -1399,7 +1396,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-09",
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
@@ -1422,7 +1419,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-09",
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
@@ -1445,7 +1442,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-09",
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
@@ -1468,7 +1465,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-09",
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
@@ -1491,7 +1488,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-09",
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
@@ -1514,7 +1511,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-09",
       "closeDate": "2026-09-11",
       "listingDate": "2026-09-17",
@@ -1537,7 +1534,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-08",
       "closeDate": "2026-09-10",
       "listingDate": "2026-09-16",
@@ -1560,7 +1557,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-08",
       "closeDate": "2026-09-10",
       "listingDate": "2026-09-16",
@@ -1583,7 +1580,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-08",
       "closeDate": "2026-09-10",
       "listingDate": "2026-09-16",
@@ -1606,7 +1603,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-07",
       "closeDate": "2026-09-09",
       "listingDate": "2026-09-15",
@@ -1629,7 +1626,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-04",
       "closeDate": "2026-09-08",
       "listingDate": "2026-09-11",
@@ -1652,7 +1649,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-09-01",
       "closeDate": "2026-09-03",
       "listingDate": "2026-09-08",
@@ -1675,7 +1672,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-31",
       "closeDate": "2026-09-02",
       "listingDate": "2026-09-07",
@@ -1698,7 +1695,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-31",
       "closeDate": "2026-09-02",
       "listingDate": "2026-09-07",
@@ -1721,7 +1718,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-31",
       "closeDate": "2026-09-02",
       "listingDate": "2026-09-07",
@@ -1744,7 +1741,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-28",
       "closeDate": "2026-09-01",
       "listingDate": "2026-09-04",
@@ -1767,7 +1764,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-28",
       "closeDate": "2026-09-01",
       "listingDate": "2026-09-04",
@@ -1790,7 +1787,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-27",
       "closeDate": "2026-08-31",
       "listingDate": "2026-09-03",
@@ -1813,7 +1810,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-25",
       "closeDate": "2026-08-28",
       "listingDate": "2026-09-02",
@@ -1836,7 +1833,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-25",
       "closeDate": "2026-08-28",
       "listingDate": "2026-09-02",
@@ -1859,7 +1856,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-24",
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
@@ -1882,7 +1879,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-24",
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
@@ -1905,7 +1902,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-24",
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
@@ -1928,7 +1925,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-24",
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
@@ -1951,7 +1948,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-24",
       "closeDate": "2026-08-27",
       "listingDate": "2026-09-01",
@@ -1974,7 +1971,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-21",
       "closeDate": "2026-08-25",
       "listingDate": "2026-08-31",
@@ -1997,7 +1994,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-20",
       "closeDate": "2026-08-24",
       "listingDate": "2026-08-28",
@@ -2020,7 +2017,7 @@
       "exchanges": [
         "NSE"
       ],
-      "status": "listed",
+      "status": "closed",
       "openDate": "2026-08-19",
       "closeDate": "2026-08-21",
       "listingDate": "2026-08-26",

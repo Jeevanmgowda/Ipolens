@@ -72,12 +72,10 @@ export function isListingDatePastClient(dateStr?: string | null): boolean {
 }
 
 export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
-  // Permanent rule: If listed from any origin, listing date reached/passed, or trading active, move strictly to Listed Market
   const isListed =
     ipo.status === 'Listed' ||
     ipo.isListed === true ||
     (ipo.remainingTime || '').toLowerCase().includes('listed') ||
-    Boolean(ipo.listingDate && isListingDatePastClient(ipo.listingDate)) ||
     (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined);
 
   if (isListed) {
