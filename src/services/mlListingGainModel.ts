@@ -612,3 +612,105 @@ export function computeEvaluationMetrics(
     errorReductionPct,
   };
 }
+
+export interface GmpPredictionParams {
+  symbol: string;
+  companyName: string;
+  price: number;
+  series?: string;
+  issueSizeCr?: number;
+  currentSubscription?: number;
+  qibSubscription?: number;
+  retailSubscription?: number;
+  niiSubscription?: number;
+  status?: string;
+}
+
+export interface PredictedGmpResult {
+  predictedGmp: number;
+  predictedGainPct: number;
+  isAiPredicted: boolean;
+  predictedListingPrice: number;
+  sentiment: 'STRONG_POP' | 'MODERATE_POP' | 'FLAT' | 'DISCOUNT_RISK';
+}
+
+/**
+ * Predicts expected Grey Market Premium (GMP) and listing gain % for Open or Upcoming IPOs
+ * where live OTC desk grey quotes are unquoted, missing, or flat zero.
+ */
+export function predictGmpForIpo(params: GmpPredictionParams): PredictedGmpResult {
+  const p = Math.max(1, params.price || 100);
+  const isSme = params.series === 'SME' || /sme/i.test(params.companyName || '');
+  const isDebt = params.series === 'DEBT';
+
+  if (isDebt) {
+    return {
+      predictedGmp: 0,
+      predictedGainPct: 0,
+      isAiPredicted: false,
+      predictedListingPrice: p,
+      sentiment: 'FLAT',
+    };
+  }
+
+  // 1. Base econometric intercept
+  let baseGainPct = 7.5; // Baseline Indian primary market historical average
+
+  // 2. SME platform premium vs Mainboard
+  if (isSme) {
+    // SME issues feature high retail/HNI bid clustering and tight float (~₹20-50 Cr)
+    baseGainPct += 8.0; // 15.5% base
+  } else {
+    // Mainboard scale
+    const size = params.issueSizeCr || 500;
+    if (size < 500) {
+      baseGainPct += 4.0;
+    } else if (size > 3000) {
+      baseGainPct -= 2.5; // Large supply drag
+    }
+  }
+
+  // 3. Sector sentiment boost
+  const nameUpper = (params.companyName || params.symbol || '').toUpperCase();
+  if (/GREEN|SOLAR|RENEWABLE|EV|ELECTRIC|CLEAN|HYDROGEN|ENERGY/i.test(nameUpper)) {
+    baseGainPct += 4.5;
+  } else if (/TECH|DEFENCE|AI|SEMICONDUCTOR|DATA|SOFTWARE/i.test(nameUpper)) {
+    baseGainPct += 5.0;
+  } else if (/FINTECH|FINANCE|HEALTHCARE|PHARMA|BIO/i.test(nameUpper)) {
+    baseGainPct += 3.0;
+  }
+
+  // 4. Live subscription traction (if bidding is underway)
+  const totalSub = params.currentSubscription || 0;
+  const qibSub = params.qibSubscription || 0;
+
+  if (totalSub > 0) {
+    if (totalSub >= 10) baseGainPct += Math.min(25, totalSub * 0.4);
+    else if (totalSub >= 2) baseGainPct += (totalSub - 1) * 2.0;
+    else if (totalSub < 0.8 && params.status === 'Open') baseGainPct -= 3.0;
+  }
+  if (qibSub > 2) {
+    baseGainPct += Math.min(20, qibSub * 1.5);
+  }
+
+  // Bound predicted percentage gain realistically
+  const minGain = isSme ? 5.0 : 2.5;
+  const maxGain = isSme ? 45.0 : 85.0;
+  const finalGainPct = Number(Math.max(minGain, Math.min(maxGain, baseGainPct)).toFixed(1));
+
+  // Compute Rupee GMP
+  const rawGmp = (p * finalGainPct) / 100;
+  const predictedGmp = Math.max(1, Math.round(rawGmp));
+  const predictedListingPrice = Math.round((p + predictedGmp) * 100) / 100;
+
+  const sentiment: 'STRONG_POP' | 'MODERATE_POP' | 'FLAT' | 'DISCOUNT_RISK' =
+    finalGainPct >= 20 ? 'STRONG_POP' : finalGainPct >= 8 ? 'MODERATE_POP' : 'FLAT';
+
+  return {
+    predictedGmp,
+    predictedGainPct: finalGainPct,
+    isAiPredicted: true,
+    predictedListingPrice,
+    sentiment,
+  };
+}

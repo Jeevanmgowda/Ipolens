@@ -28,6 +28,8 @@ export interface LiveMarketIpoItem {
   // GMP metrics
   gmp: number;
   gmpPercent: number;
+  isAiPredictedGmp?: boolean;
+  predictedListingPrice?: number;
 
   // Subscription breakdown
   currentSubscription: number;

@@ -1098,18 +1098,29 @@ export async function extractLiveMarketFeed(): Promise<{
           const rawName = cells[0];
           if (!rawName || rawName.toLowerCase().includes('ipo name') || rawName.toLowerCase().includes('company')) continue;
 
-          const isClosed = /\bclosed\b/i.test(rawName) || (cells[5] && /\bclosed\b/i.test(cells[5]));
-          const isOpen = !isClosed && (/\bopen\b/i.test(rawName) || (cells[5] && /\bopen\b/i.test(cells[5])) || (cells[5] && /closes/i.test(cells[5])));
+          const rawStatusCell = cells[7] || cells[6] || '';
+          const isClosed = /\bclosed\b/i.test(rawName) || /\bclosed\b/i.test(rawStatusCell) || (cells[5] && /\bclosed\b/i.test(cells[5]));
+          const isUpcomingExplicit = /\bupcoming\b/i.test(rawName) || /\bupcoming\b/i.test(rawStatusCell) || /\bforthcoming\b/i.test(rawStatusCell);
 
           const name = rawName.replace(/open|upcoming|closed/gi, '').trim();
           const gmpMatch = cells[1].replace(/,/g, '').match(/(\d+(?:\.\d+)?)/);
           const gmp = gmpMatch ? parseFloat(gmpMatch[1]) : 0;
           const price = cleanPriceText(cells[3] || cells[2] || '');
           const dates = cells[5] || cells[4] || '';
+
+          // Parse start and end date from dates string e.g. "25 Nov - 27 Nov"
+          const dateParts = dates.split(/\s*[-–—to]+\s*/i).map(s => s.trim()).filter(Boolean);
+          const openDate = dateParts[0] || dates;
+          const closeDate = dateParts[dateParts.length - 1] || dates;
+
+          const isStarted = isBiddingStarted(openDate);
+          const isEnded = isBiddingClosed(closeDate);
+          const isOpen = !isClosed && !isEnded && (isStarted || (!isUpcomingExplicit && /\bopen\b/i.test(rawName)));
+
           const meta = findMarketMetadata(name);
           const series: IpoSeries = meta?.series || (/sme/i.test(name) || /sme/i.test(rawName) ? 'SME' : defaultSeries);
 
-          if (isClosed) {
+          if (isClosed || isEnded) {
             // Est Gain or price
             const cleanListPrice = cells[4] ? cleanPriceText(cells[4].split('(')[0]) : price;
             closed.push({ name, price, gmp, listingPrice: cleanListPrice });
@@ -1463,8 +1474,11 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       const gmp = series === 'DEBT' ? 0 : (meta?.gmp ?? item.gmp);
       const gmpPercent = series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (upperBand > 0 ? Math.round((gmp / upperBand) * 100) : 0));
 
-      const openDate = meta?.openDate || item.dates;
-      const closeDate = meta?.closeDate || item.dates;
+      const dateParts = (item.dates || '').split(/\s*[-–—to]+\s*/i).map(s => s.trim()).filter(Boolean);
+      const parsedOpen = dateParts.length > 1 ? dateParts[0] : (item.dates || '');
+      const parsedClose = dateParts.length > 1 ? dateParts[dateParts.length - 1] : (item.dates || '');
+      const openDate = meta?.openDate || parsedOpen;
+      const closeDate = meta?.closeDate || parsedClose;
       const lifecycleStatus = resolveIpoLifecycleStatus(openDate, closeDate, false);
 
       map.set(sym, {

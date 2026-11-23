@@ -23,6 +23,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { getCanonicalSymbol, isSameIpo, isFalseOrDemoSymbol } from '@/lib/utils/ipoDeduplication';
 
 export default function LiveMarketPage() {
   const router = useRouter();
@@ -109,14 +110,36 @@ export default function LiveMarketPage() {
         if (lJson.success && Array.isArray(lJson.data)) allItems.push(...lJson.data);
       }
 
-      // Deduplicate by symbol
-      const uniqueMap = new Map<string, LiveMarketIpoItem>();
-      allItems.forEach((item) => {
-        if (!uniqueMap.has(item.symbol)) {
-          uniqueMap.set(item.symbol, item);
+      // Deduplicate by canonical symbol and company name across all category feeds
+      const uniqueList: LiveMarketIpoItem[] = [];
+      for (const item of allItems) {
+        if (isFalseOrDemoSymbol(item.symbol)) continue;
+        const canonical = getCanonicalSymbol(item.symbol);
+        const dupIdx = uniqueList.findIndex((u) =>
+          isSameIpo(u.symbol, u.companyName, canonical, item.companyName)
+        );
+        if (dupIdx === -1) {
+          uniqueList.push({
+            ...item,
+            symbol: canonical || item.symbol,
+            id: (canonical || item.symbol).toLowerCase(),
+          });
+        } else {
+          // Merge details prioritizing richer record
+          const existing = uniqueList[dupIdx];
+          uniqueList[dupIdx] = {
+            ...existing,
+            ...item,
+            symbol: canonical || existing.symbol,
+            id: (canonical || existing.symbol).toLowerCase(),
+            status: existing.status === 'Listed' || item.status === 'Listed' ? 'Listed' : (item.status === 'Open' || existing.status === 'Open' ? 'Open' : item.status),
+            isListed: Boolean(existing.isListed || item.isListed),
+            gmp: (item.gmp && item.gmp > 0) ? item.gmp : existing.gmp,
+            gmpPercent: (item.gmpPercent && item.gmpPercent > 0) ? item.gmpPercent : existing.gmpPercent,
+            isAiPredictedGmp: item.isAiPredictedGmp ?? existing.isAiPredictedGmp,
+          };
         }
-      });
-      const uniqueList = Array.from(uniqueMap.values());
+      }
       setIpos(uniqueList);
 
       // Dynamically initialize multi-apply modal with first real open IPO

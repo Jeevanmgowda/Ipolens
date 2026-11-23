@@ -6,6 +6,11 @@ import {
   IpoCategoryTab,
 } from '@/types/liveMarket';
 import {
+  getCanonicalSymbol,
+  isSameIpo,
+  isFalseOrDemoSymbol,
+} from '@/lib/utils/ipoDeduplication';
+import {
   Search,
   Filter,
   Star,
@@ -71,6 +76,45 @@ export function isListingDatePastClient(dateStr?: string | null): boolean {
   return false;
 }
 
+export function isBiddingStartedClient(dateStr?: string | null): boolean {
+  if (!dateStr || dateStr === 'TBD' || dateStr === '—' || dateStr === '-') return false;
+  const lower = dateStr.toLowerCase();
+  if (lower.includes('past') || lower.includes('closed') || lower.includes('allotted') || lower.includes('listed')) {
+    return true;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const isoParsed = Date.parse(dateStr);
+    if (!isNaN(isoParsed)) {
+      return Date.now() >= isoParsed;
+    }
+  }
+  const regex = /(\d{1,2})[-/ ]([a-zA-Z]{3,9})(?:[-/ ](\d{2,4}))?/g;
+  let match: RegExpExecArray | null;
+  const matches: { day: number; month: number; year: number }[] = [];
+  const months: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  };
+  while ((match = regex.exec(dateStr)) !== null) {
+    const day = parseInt(match[1], 10);
+    const mStr = match[2].toLowerCase().slice(0, 3);
+    let year = match[3] ? parseInt(match[3], 10) : 2026;
+    if (year < 100) year += 2000;
+    const m = months[mStr];
+    if (m !== undefined && day >= 1 && day <= 31) {
+      matches.push({ day, month: m, year });
+    }
+  }
+  if (matches.length > 0) {
+    const target = matches[0];
+    const openMs = Date.UTC(target.year, target.month, target.day, 4, 30, 0); // 10:00 AM IST
+    return Date.now() >= openMs;
+  }
+  const parsed = Date.parse(dateStr);
+  if (!isNaN(parsed)) return Date.now() >= parsed;
+  return false;
+}
+
 export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
   const sym = (ipo.symbol || '').toUpperCase().trim();
   const isJio = sym === 'JIOPLAT' || sym === 'JIOFIN';
@@ -88,15 +132,30 @@ export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcomin
     return 'listed';
   }
   const rem = (ipo.remainingTime || '').toLowerCase();
-  if (rem.includes('bidding closed') || rem.includes('closed') || ipo.status === 'Closed') {
+  const isClosed =
+    rem.includes('bidding closed') ||
+    rem.includes('closed') ||
+    ipo.status === 'Closed' ||
+    (ipo.closeDate && isListingDatePastClient(ipo.closeDate));
+
+  if (isClosed) {
     return 'closed';
   }
-  if (ipo.status === 'Open') return 'open';
-  if (ipo.status === 'Upcoming') {
-    if (ipo.closeDate && isListingDatePastClient(ipo.closeDate)) return 'closed';
+
+  // If bidding start date is in the future, it is strictly UPCOMING!
+  if (ipo.openDate && ipo.openDate !== 'TBD' && !isBiddingStartedClient(ipo.openDate)) {
     return 'upcoming';
   }
-  return 'closed';
+
+  if (ipo.status === 'Upcoming') {
+    return 'upcoming';
+  }
+
+  if (ipo.status === 'Open' || (ipo.openDate && isBiddingStartedClient(ipo.openDate))) {
+    return 'open';
+  }
+
+  return 'upcoming';
 }
 
 export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
@@ -115,13 +174,33 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
   const [sortBy, setSortBy] = useState<'gmp' | 'subscription' | 'issuesize' | 'listingdate' | 'price' | 'change'>('gmp');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
+  // Deduplicate ipos by canonical symbol and company name so NO tab or grid ever renders duplicate cards!
+  const deduplicatedIpos = useMemo(() => {
+    const result: LiveMarketIpoItem[] = [];
+    for (const ipo of ipos) {
+      if (isFalseOrDemoSymbol(ipo.symbol)) continue;
+      const canonical = getCanonicalSymbol(ipo.symbol);
+      const isDup = result.some((existing) =>
+        isSameIpo(existing.symbol, existing.companyName, canonical, ipo.companyName)
+      );
+      if (!isDup) {
+        result.push({
+          ...ipo,
+          symbol: canonical || ipo.symbol,
+          id: (canonical || ipo.symbol).toLowerCase(),
+        });
+      }
+    }
+    return result;
+  }, [ipos]);
+
   // Counts by category (strictly categorized by effective bidding lifecycle)
   const counts = useMemo(() => {
     let upcoming = 0;
     let open = 0;
     let closed = 0;
     let listed = 0;
-    for (const ipo of ipos) {
+    for (const ipo of deduplicatedIpos) {
       const eff = getEffectiveIpoStatus(ipo);
       if (eff === 'open') open++;
       else if (eff === 'upcoming') upcoming++;
@@ -129,11 +208,11 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
       else if (eff === 'listed') listed++;
     }
     return { upcoming, open, closed, listed };
-  }, [ipos]);
+  }, [deduplicatedIpos]);
 
   // Filter & Sort
   const filteredIpos = useMemo(() => {
-    return ipos
+    return deduplicatedIpos
       .filter((ipo) => {
         const eff = getEffectiveIpoStatus(ipo);
         // Tab matching
@@ -166,7 +245,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
         if (sortBy === 'issuesize') return b.priceHigh * b.lotSize - a.priceHigh * a.lotSize;
         return 0;
       });
-  }, [ipos, activeTab, seriesFilter, watchlistOnly, searchQuery, sortBy, watchlist]);
+  }, [deduplicatedIpos, activeTab, seriesFilter, watchlistOnly, searchQuery, sortBy, watchlist]);
 
   return (
     <div className="space-y-5">
@@ -598,17 +677,23 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                       {/* GMP Metric */}
                       <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-xs">
                         <span className="text-slate-400 flex items-center gap-1">
-                          <Flame className="w-3.5 h-3.5 text-purple-400" />
-                          Estimated GMP
+                          <Flame className={`w-3.5 h-3.5 ${ipo.isAiPredictedGmp ? 'text-cyan-400' : 'text-purple-400'}`} />
+                          <span>{ipo.isAiPredictedGmp ? 'AI Predicted GMP' : 'Estimated GMP'}</span>
+                          {ipo.isAiPredictedGmp && (
+                            <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-0.5 ml-0.5">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              ML Model
+                            </span>
+                          )}
                         </span>
                         {ipo.series === 'DEBT' ? (
                           <span className="font-mono text-xs text-slate-400">
                             N/A (Debt Instrument)
                           </span>
                         ) : ipo.gmp > 0 ? (
-                          <div className="flex items-center gap-1 font-mono font-bold text-purple-300">
+                          <div className={`flex items-center gap-1 font-mono font-bold ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
                             <span>+₹{ipo.gmp}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/15 border border-purple-500/25">
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded ${ipo.isAiPredictedGmp ? 'bg-cyan-500/15 border border-cyan-500/25 text-cyan-300' : 'bg-purple-500/15 border border-purple-500/25'}`}>
                               +{ipo.gmpPercent}%
                             </span>
                           </div>
@@ -843,8 +928,13 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             {ipo.series === 'DEBT' ? (
                               <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
                             ) : ipo.gmp > 0 ? (
-                              <div className="font-mono font-bold text-purple-300">
-                                +₹{ipo.gmp} ({ipo.gmpPercent}%)
+                              <div className={`font-mono font-bold flex items-center gap-1.5 ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
+                                <span>+₹{ipo.gmp} ({ipo.gmpPercent}%)</span>
+                                {ipo.isAiPredictedGmp && (
+                                  <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                                    AI
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>
@@ -878,8 +968,13 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             {ipo.series === 'DEBT' ? (
                               <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
                             ) : ipo.gmp > 0 ? (
-                              <div className="font-mono font-bold text-purple-300">
-                                +₹{ipo.gmp} ({ipo.gmpPercent}%)
+                              <div className={`font-mono font-bold flex items-center gap-1.5 ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
+                                <span>+₹{ipo.gmp} ({ipo.gmpPercent}%)</span>
+                                {ipo.isAiPredictedGmp && (
+                                  <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                                    AI
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>

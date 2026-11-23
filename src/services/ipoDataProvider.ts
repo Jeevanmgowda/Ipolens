@@ -2,6 +2,7 @@ import { LiveMarketIpoItem } from '@/types/liveMarket';
 import {
   fetchLiveNseIpos,
   calculateRemainingTime,
+  isBiddingStarted,
   isBiddingClosed,
   isListingDatePast,
   findMarketMetadata,
@@ -12,6 +13,7 @@ import { fetchLiveListedIpos, LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { UpstoxIpoService } from '@/lib/services/upstox-ipo.service';
 import { isFalseOrDemoSymbol, normalizeCompanyName, isSameIpo, getCanonicalSymbol } from '@/lib/utils/ipoDeduplication';
+import { predictGmpForIpo } from './mlListingGainModel';
 
 /**
  * Universal evaluator to determine if an IPO is officially listed on the secondary market.
@@ -129,18 +131,7 @@ export class NSEIPOProvider implements IPODataProvider {
                   u.issueType || 'regular'
                 );
             const maxPrice = u.priceBandMax || issuePriceNum;
-            const gmpPercent = isListed && currentPriceNum && issuePriceNum > 0
-              ? Number((((currentPriceNum - issuePriceNum) / issuePriceNum) * 100).toFixed(2))
-              : (maxPrice > 0 ? Number(((gmp / maxPrice) * 100).toFixed(2)) : 0);
-
-            const statusStr: 'Upcoming' | 'Open' | 'Closed' | 'Listed' =
-              u.status === 'open'
-                ? 'Open'
-                : u.status === 'upcoming'
-                ? 'Upcoming'
-                : u.status === 'listed'
-                ? 'Listed'
-                : 'Closed';
+            const uSeries = u.issueType === 'sme' ? 'SME' : 'EQ';
 
             const formattedDates = {
               open: u.openDate || 'TBD',
@@ -148,7 +139,44 @@ export class NSEIPOProvider implements IPODataProvider {
               listing: u.listingDate || (isListed ? 'Recent Listing' : 'TBD'),
             };
 
-            const uSeries = u.issueType === 'sme' ? 'SME' : 'EQ';
+            const isUpcomingByDate = Boolean(formattedDates.open && formattedDates.open !== 'TBD' && !isBiddingStarted(formattedDates.open));
+
+            const statusStr: 'Upcoming' | 'Open' | 'Closed' | 'Listed' =
+              isListed
+                ? 'Listed'
+                : isUpcomingByDate
+                ? 'Upcoming'
+                : u.status === 'open'
+                ? 'Open'
+                : u.status === 'upcoming'
+                ? 'Upcoming'
+                : u.status === 'listed'
+                ? 'Listed'
+                : 'Closed';
+
+            let finalGmp = gmp;
+            let finalGmpPercent = isListed && currentPriceNum && issuePriceNum > 0
+              ? Number((((currentPriceNum - issuePriceNum) / issuePriceNum) * 100).toFixed(2))
+              : (maxPrice > 0 ? Number(((finalGmp / maxPrice) * 100).toFixed(2)) : 0);
+            let isAiPredicted = false;
+            let predListingPrice: number | undefined = undefined;
+
+            if (!isListed && (statusStr === 'Open' || statusStr === 'Upcoming') && finalGmp <= 0) {
+              const mlPred = predictGmpForIpo({
+                symbol: u.symbol || 'IPO',
+                companyName: u.companyName || u.symbol || '',
+                price: maxPrice,
+                series: uSeries,
+                issueSizeCr: u.issueSizeInCrores,
+                currentSubscription: u.subscriptionTotal || 0,
+                status: statusStr,
+              });
+              finalGmp = mlPred.predictedGmp;
+              finalGmpPercent = mlPred.predictedGainPct;
+              isAiPredicted = true;
+              predListingPrice = mlPred.predictedListingPrice;
+            }
+
             const uLot = (u.lotSize && u.lotSize > 0 && !(u.lotSize === 14 && maxPrice < 700 && uSeries === 'EQ'))
               ? u.lotSize
               : calculateDefaultLotSize(maxPrice, uSeries);
@@ -175,8 +203,10 @@ export class NSEIPOProvider implements IPODataProvider {
               listingDate: formattedDates.listing,
               expectedListingDate: formattedDates.listing,
               registrar: u.registrar || 'Official Registrar',
-              gmp,
-              gmpPercent,
+              gmp: finalGmp,
+              gmpPercent: finalGmpPercent,
+              isAiPredictedGmp: isAiPredicted,
+              predictedListingPrice: predListingPrice,
               currentSubscription: u.subscriptionTotal || 0,
               retailSubscription: u.subscriptionRetail || 0,
               niiSubscription: u.subscriptionHni || 0,
@@ -245,11 +275,15 @@ export class NSEIPOProvider implements IPODataProvider {
           computedRemainingTime === 'Bidding Closed' ||
           isBiddingClosed(raw.issueEndDate));
 
+      const isUpcomingByDate = Boolean(raw.issueStartDate && raw.issueStartDate !== 'TBD' && !isBiddingStarted(raw.issueStartDate));
+
       let status: 'Upcoming' | 'Open' | 'Closed' | 'Listed' = 'Closed';
       if (isActuallyListed) {
         status = 'Listed';
       } else if (isClosedIssue) {
         status = 'Closed';
+      } else if (isUpcomingByDate) {
+        status = 'Upcoming';
       } else if (raw.status === 'Active') {
         status = 'Open';
       } else if (raw.status === 'Forthcoming') {
@@ -301,8 +335,30 @@ export class NSEIPOProvider implements IPODataProvider {
       const volumeVal = isActuallyListed ? ((listedMatch as any)?.volume || 0) : undefined;
 
       const isDebt = raw.series === 'DEBT';
-      const gmp = isDebt ? 0 : (raw.gmpEstimate || 0);
-      const gmpPercent = isDebt ? 0 : (raw.gmpPercent || 0);
+      let gmp = isDebt ? 0 : (raw.gmpEstimate || 0);
+      let gmpPercent = isDebt ? 0 : (raw.gmpPercent || 0);
+      let isAiPredictedGmp = false;
+      let predictedListingPrice: number | undefined = undefined;
+
+      // For Open and Upcoming IPOs: if live OTC desk grey quote is missing or 0, predict using ML model!
+      if (!isDebt && !isActuallyListed && (status === 'Open' || status === 'Upcoming') && gmp <= 0) {
+        const mlPred = predictGmpForIpo({
+          symbol: raw.symbol,
+          companyName: raw.companyName,
+          price: priceHigh,
+          series,
+          issueSizeCr: meta?.issueSizeCr || (raw.issueSize ? parseFloat(raw.issueSize) : undefined),
+          currentSubscription: totalSub,
+          qibSubscription: qibSub,
+          retailSubscription: retailSub,
+          niiSubscription: niiSub,
+          status,
+        });
+        gmp = mlPred.predictedGmp;
+        gmpPercent = mlPred.predictedGainPct;
+        isAiPredictedGmp = true;
+        predictedListingPrice = mlPred.predictedListingPrice;
+      }
 
       const effectiveRemainingTime = isActuallyListed
         ? 'Listed on Exchange'
@@ -339,6 +395,8 @@ export class NSEIPOProvider implements IPODataProvider {
         registrarUrl: raw.registrarUrl,
         gmp,
         gmpPercent,
+        isAiPredictedGmp,
+        predictedListingPrice,
         currentSubscription: totalSub,
         retailSubscription: retailSub,
         niiSubscription: niiSub,
