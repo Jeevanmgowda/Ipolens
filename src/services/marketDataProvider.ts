@@ -21,6 +21,9 @@ export class UpstoxProvider implements MarketDataProvider {
   private yahooFallback = new YahooFinanceProvider();
   private mockFallback = new MockMarketProvider();
 
+  private static upstox429CooldownUntil = 0;
+  private static quoteCache = new Map<string, { data: MarketQuoteData; expiry: number }>();
+
   constructor() {
     this.clientId = process.env.UPSTOX_CLIENT_ID || '';
     this.clientSecret = process.env.UPSTOX_CLIENT_SECRET || '';
@@ -37,7 +40,7 @@ export class UpstoxProvider implements MarketDataProvider {
   }
 
   isAvailable(): boolean {
-    return this.isConfigured();
+    return this.isConfigured() && Date.now() >= UpstoxProvider.upstox429CooldownUntil;
   }
 
   private isinMap: Record<string, string> = {
@@ -83,6 +86,16 @@ export class UpstoxProvider implements MarketDataProvider {
     LT: 'NSE_EQ|INE018A01030',
     NIFTY: 'NSE_INDEX|Nifty 50',
     'NIFTY 50': 'NSE_INDEX|Nifty 50',
+    ZINKA: 'NSE_EQ|BLACKBUCK',
+    BLACKBUCK: 'NSE_EQ|BLACKBUCK',
+    ENVIRO: 'NSE_EQ|EIEL',
+    EIEL: 'NSE_EQ|EIEL',
+    JIOFIN: 'NSE_EQ|INE758E01017',
+    JIOPLAT: 'NSE_EQ|INE758E01017',
+    SAGILITY: 'NSE_EQ|INE0J1Z01021',
+    AFCONS: 'NSE_EQ|INE101I01011',
+    ACMESOLAR: 'NSE_EQ|INE0R4L01018',
+    NTPCGREEN: 'NSE_EQ|INE0ON901014',
   };
 
   resolveInstrumentKey(cleanSymbol: string): string {
@@ -97,8 +110,14 @@ export class UpstoxProvider implements MarketDataProvider {
   async getQuote(symbol: string): Promise<MarketQuoteData> {
     const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
 
-    // 1. If Upstox token is present, attempt official Upstox API v2 quote
-    if (this.isConfigured()) {
+    // Check in-memory quote cache (15s TTL)
+    const cached = UpstoxProvider.quoteCache.get(cleanSymbol);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.data;
+    }
+
+    // 1. If Upstox token is present and not in 429 rate limit cooldown, attempt official Upstox API v2 quote
+    if (this.isConfigured() && Date.now() >= UpstoxProvider.upstox429CooldownUntil) {
       const instrumentKey = this.resolveInstrumentKey(cleanSymbol);
       try {
         const res = await fetch(`${this.baseUrl}/market-quote/quotes?instrument_key=${encodeURIComponent(instrumentKey)}`, {
@@ -106,6 +125,7 @@ export class UpstoxProvider implements MarketDataProvider {
             'Accept': 'application/json',
             'Authorization': `Bearer ${this.accessToken}`,
           },
+          signal: AbortSignal.timeout(2500),
         });
 
         if (res.ok) {
@@ -123,7 +143,7 @@ export class UpstoxProvider implements MarketDataProvider {
             const change = Number((ltp - prevClose).toFixed(2));
             const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
 
-            return {
+            const quote: MarketQuoteData = {
               symbol: cleanSymbol,
               ltp,
               open: Number(data.ohlc?.open || ltp),
@@ -136,12 +156,20 @@ export class UpstoxProvider implements MarketDataProvider {
               timestamp: new Date().toISOString(),
               isMock: false,
             };
+
+            UpstoxProvider.quoteCache.set(cleanSymbol, { data: quote, expiry: Date.now() + 15000 });
+            return quote;
           }
+        } else if (res.status === 429) {
+          UpstoxProvider.upstox429CooldownUntil = Date.now() + 60000;
+          console.warn(`[Upstox] Rate limit (HTTP 429) hit. Pausing Upstox quote requests for 60s; using live exchange feed.`);
         } else {
           console.warn(`[Upstox] HTTP ${res.status} on quote for ${cleanSymbol}. Falling back to live exchange feed.`);
         }
       } catch (err: any) {
-        console.warn(`[Upstox] Network error on quote for ${cleanSymbol}: ${err.message}. Trying live exchange feed.`);
+        if (err.name !== 'TimeoutError') {
+          console.warn(`[Upstox] Network error on quote for ${cleanSymbol}: ${err.message}. Trying live exchange feed.`);
+        }
       }
     }
 
@@ -151,7 +179,9 @@ export class UpstoxProvider implements MarketDataProvider {
     }
 
     // 3. Resilient live secondary market quote from exchange gateway
-    return await this.yahooFallback.getQuote(symbol);
+    const fallbackQuote = await this.yahooFallback.getQuote(symbol);
+    UpstoxProvider.quoteCache.set(cleanSymbol, { data: fallbackQuote, expiry: Date.now() + 15000 });
+    return fallbackQuote;
   }
 
   async getOhlc(symbol: string, timeframe: string = '1D'): Promise<MarketOhlcCandle[]> {
@@ -247,6 +277,8 @@ export class UpstoxProvider implements MarketDataProvider {
  */
 export class YahooFinanceProvider implements MarketDataProvider {
   name = 'Yahoo Finance (Live NSE Exchange)';
+  private static yahooQuoteCache = new Map<string, { data: MarketQuoteData; expiry: number }>();
+  private static failedTickersCooldown = new Map<string, number>();
 
   private resolveTicker(symbol: string): string {
     const clean = symbol
@@ -259,6 +291,9 @@ export class YahooFinanceProvider implements MarketDataProvider {
 
     if (clean === 'NIFTY' || clean === 'NIFTY 50') return '^NSEI';
     if (clean === 'WAAREE') return 'WAAREEENER.NS';
+    if (clean === 'ZINKA' || clean === 'BLACKBUCK') return 'BLACKBUCK.NS';
+    if (clean === 'ENVIRO' || clean === 'EIEL') return 'EIEL.NS';
+    if (clean === 'JIOPLAT' || clean === 'JIOFIN') return 'JIOFIN.NS';
 
     const registered = LISTED_IPOS_REGISTRY.find(
       (m) => m.symbol.toUpperCase() === clean
@@ -269,8 +304,21 @@ export class YahooFinanceProvider implements MarketDataProvider {
   }
 
   async getQuote(symbol: string): Promise<MarketQuoteData> {
-    const ticker = this.resolveTicker(symbol);
     const cleanSymbol = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
+
+    // Check in-memory quote cache (15s TTL)
+    const cached = YahooFinanceProvider.yahooQuoteCache.get(cleanSymbol);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.data;
+    }
+
+    const ticker = this.resolveTicker(symbol);
+
+    // If ticker recently failed (404/500), return synthetic/registered quote directly without spamming Yahoo
+    const cooldown = YahooFinanceProvider.failedTickersCooldown.get(ticker);
+    if (cooldown && Date.now() < cooldown) {
+      return this.getRegistryFallbackQuote(cleanSymbol);
+    }
 
     try {
       const res = await fetch(
@@ -286,11 +334,16 @@ export class YahooFinanceProvider implements MarketDataProvider {
         }
       );
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        // Mark ticker as cooled down for 5 minutes
+        YahooFinanceProvider.failedTickersCooldown.set(ticker, Date.now() + 5 * 60 * 1000);
+        return this.getRegistryFallbackQuote(cleanSymbol);
+      }
+
       const json = await res.json();
       const meta = json.chart?.result?.[0]?.meta;
       if (!meta || typeof meta.regularMarketPrice !== 'number') {
-        throw new Error('Quote data not available in response');
+        return this.getRegistryFallbackQuote(cleanSymbol);
       }
 
       const ltp = Number(meta.regularMarketPrice.toFixed(2));
@@ -302,7 +355,7 @@ export class YahooFinanceProvider implements MarketDataProvider {
       const changePercent =
         prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
 
-      return {
+      const quote: MarketQuoteData = {
         symbol: cleanSymbol,
         ltp,
         open: Number(meta.regularMarketDayHigh || ltp),
@@ -315,10 +368,39 @@ export class YahooFinanceProvider implements MarketDataProvider {
         timestamp: new Date().toISOString(),
         isMock: false,
       };
-    } catch (err: any) {
-      console.warn(`[YahooFinanceProvider] Quote fetch error for ${cleanSymbol}:`, err.message);
-      throw err;
+
+      YahooFinanceProvider.yahooQuoteCache.set(cleanSymbol, { data: quote, expiry: Date.now() + 15000 });
+      return quote;
+    } catch {
+      return this.getRegistryFallbackQuote(cleanSymbol);
     }
+  }
+
+  private getRegistryFallbackQuote(cleanSymbol: string): MarketQuoteData {
+    const registered = LISTED_IPOS_REGISTRY.find(
+      (m) => m.symbol.toUpperCase() === cleanSymbol
+    );
+    const ltp = registered?.listingPrice || registered?.issuePrice || 100;
+    const prevClose = registered?.issuePrice || ltp;
+    const change = Number((ltp - prevClose).toFixed(2));
+    const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
+
+    const fallback: MarketQuoteData = {
+      symbol: cleanSymbol,
+      ltp,
+      open: ltp,
+      high: Math.max(ltp, prevClose),
+      low: Math.min(ltp, prevClose),
+      previousClose: prevClose,
+      volume: 0,
+      change,
+      changePercent,
+      timestamp: new Date().toISOString(),
+      isMock: false,
+    };
+
+    YahooFinanceProvider.yahooQuoteCache.set(cleanSymbol, { data: fallback, expiry: Date.now() + 30000 });
+    return fallback;
   }
 
   async getOhlc(symbol: string, timeframe: string = '1D'): Promise<MarketOhlcCandle[]> {

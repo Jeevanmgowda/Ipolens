@@ -6,6 +6,7 @@ import { redis } from '@/lib/redis';
 export class MarketService {
   private static upstoxProvider = new UpstoxProvider();
   private static mockProvider = new MockMarketProvider();
+  private static quoteMemoryCache = new Map<string, { data: MarketQuoteData; expiry: number }>();
 
   /**
    * Determine whether the service should run in simulated mock mode
@@ -57,9 +58,29 @@ export class MarketService {
   static async getQuote(symbol: string): Promise<MarketQuoteData> {
     const clean = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
 
+    // 1. Check in-memory quote cache (15s TTL)
+    const memCached = this.quoteMemoryCache.get(clean);
+    if (memCached && Date.now() < memCached.expiry) {
+      return memCached.data;
+    }
+
+    // 2. Check Redis quote cache
+    try {
+      const cached = await redis.get(`market:quote:${clean}`);
+      if (cached) {
+        const parsed = JSON.parse(cached) as MarketQuoteData;
+        this.quoteMemoryCache.set(clean, { data: parsed, expiry: Date.now() + 15000 });
+        return parsed;
+      }
+    } catch {
+      // Redis optional
+    }
+
     try {
       const provider = this.getProvider();
       const quote = await provider.getQuote(clean);
+
+      this.quoteMemoryCache.set(clean, { data: quote, expiry: Date.now() + 15000 });
 
       // Cache quote in Redis for sub-second responses
       try {
@@ -79,7 +100,7 @@ export class MarketService {
         const prevClose = registered.issuePrice;
         const change = Number((ltp - prevClose).toFixed(2));
         const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
-        return {
+        const fallback: MarketQuoteData = {
           symbol: clean,
           ltp,
           open: ltp,
@@ -92,6 +113,8 @@ export class MarketService {
           timestamp: new Date().toISOString(),
           isMock: false,
         };
+        this.quoteMemoryCache.set(clean, { data: fallback, expiry: Date.now() + 30000 });
+        return fallback;
       }
       console.warn(`[MarketService] Provider error for ${clean}:`, err.message);
       throw err;

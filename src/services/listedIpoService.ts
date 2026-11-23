@@ -286,7 +286,7 @@ export const LISTED_IPOS_REGISTRY: ListedIpoMetadata[] = [
   },
   {
     symbol: 'ZINKA',
-    ticker: 'ZINKA.NS',
+    ticker: 'BLACKBUCK.NS',
     companyName: 'Zinka Logistics Solutions Limited (BlackBuck)',
     series: 'EQ',
     listingDate: '22-Nov-2024',
@@ -296,7 +296,7 @@ export const LISTED_IPOS_REGISTRY: ListedIpoMetadata[] = [
   },
   {
     symbol: 'ENVIRO',
-    ticker: 'ENVIRO.NS',
+    ticker: 'EIEL.NS',
     companyName: 'Enviro Infra Engineers Limited',
     series: 'EQ',
     listingDate: '29-Nov-2024',
