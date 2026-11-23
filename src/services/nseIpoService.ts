@@ -1,5 +1,6 @@
 import { LiveIpoSummary, LiveIpoDetail, BidCategoryDetail, IpoGraphPoint, IpoSeries, IpoStatus } from '../types/ipo';
 import { LISTED_IPOS_REGISTRY } from './listedIpoService';
+import { getCanonicalSymbol, isSameIpo } from '@/lib/utils/ipoDeduplication';
 
 // In-memory live cache to ensure responsive client interactions and prevent spamming exchange rate-limits
 interface CacheEntry<T> {
@@ -1013,17 +1014,26 @@ function deriveTicker(name: string): string {
   const meta = findMarketMetadata(name);
   if (meta) return meta.symbol;
 
-  const clean = name.replace(/Limited|Ltd\.?|India|Private|Pvt\.?|Holding|Holdings|Solutions|Services/gi, '').trim();
+  const upper = name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (upper.includes('WATRANA')) return 'WATRANA';
+  if (upper.includes('CRYSTALCROP') || upper.includes('CRYSTAL')) return 'CRYSTCP';
+  if (upper.includes('MAHANADI') || upper.includes('MAHANACOAL')) return 'MAHANACOAL';
+  if (upper.includes('JIOPLAT') || upper.includes('JIOPLATFORMS')) return 'JIOPLAT';
+  if (upper.includes('JIOFIN')) return 'JIOFIN';
+  if (upper.includes('BLACKBUCK') || upper.includes('ZINKA')) return 'BLACKBUCK';
+  if (upper.includes('EIEL') || upper.includes('ENVIROINFRA')) return 'EIEL';
+
+  const clean = name.replace(/Limited|Ltd\.?|India|Private|Pvt\.?|Holding|Holdings|Solutions|Services|IPO|Issue|Offering/gi, '').trim();
   const words = clean.split(/[\s\-_]+/).filter(Boolean);
   if (words.length === 0) return 'IPO';
-  if (words.length === 1) return words[0].replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10);
+  if (words.length === 1) return getCanonicalSymbol(words[0].replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10));
   if (words.length === 2) {
     const w1 = words[0].replace(/[^a-zA-Z0-9]/g, '');
     const w2 = words[1].replace(/[^a-zA-Z0-9]/g, '');
-    return (w1.slice(0, 6) + w2.slice(0, 4)).toUpperCase();
+    return getCanonicalSymbol((w1.slice(0, 6) + w2.slice(0, 4)).toUpperCase());
   }
   const initials = words.map((w) => w[0]).join('').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  return (words[0].replace(/[^a-zA-Z0-9]/g, '').slice(0, 5) + initials.slice(1, 4)).toUpperCase();
+  return getCanonicalSymbol((words[0].replace(/[^a-zA-Z0-9]/g, '').slice(0, 5) + initials.slice(1, 4)).toUpperCase());
 }
 
 interface LiveScrapedItem {
@@ -1489,6 +1499,15 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       const sym = meta?.symbol || deriveTicker(item.name);
       if (map.has(sym)) continue;
 
+      let alreadyExists = false;
+      for (const existing of map.values()) {
+        if (isSameIpo(existing.symbol, existing.companyName, sym, item.name)) {
+          alreadyExists = true;
+          break;
+        }
+      }
+      if (alreadyExists) continue;
+
       const registrar = getRegistrarInfo(sym, item.name);
       const cleanPrice = cleanPriceText(meta?.priceBand || item.price || '');
       const priceMatches = cleanPrice.match(/(\d+(?:\.\d+)?)/g) || [];
@@ -1783,9 +1802,10 @@ export async function fetchLiveIpoDetail(symbol: string): Promise<LiveIpoDetail 
       if (res.ok) {
         const data = await res.json();
         const registrar = getRegistrarInfo(cleanSymbol, summary?.companyName || data.companyName || '');
-        const lotSize = meta?.lotSize || (summary?.lotSize ? Number(summary.lotSize) : (summary?.series === 'SME' ? 1600 : 14));
-        const upperBand = meta?.priceHigh || 100;
-        const minInvestment = meta?.minInvestment || lotSize * upperBand;
+        const upperBand: number = meta?.priceHigh ?? summary?.priceHigh ?? 100;
+        const series: IpoSeries = meta?.series || summary?.series || 'EQ';
+        const lotSize = meta?.lotSize || (summary?.lotSize && Number(summary.lotSize) > 0 && !(Number(summary.lotSize) === 14 && upperBand < 700 && series === 'EQ') ? Number(summary.lotSize) : calculateDefaultLotSize(upperBand, series));
+        const minInvestment = meta?.minInvestment || calculateDefaultMinInvestment(upperBand, lotSize, series);
 
         const bidDetails: BidCategoryDetail[] = Array.isArray(data.bidDetails) && data.bidDetails.length > 0
           ? data.bidDetails.map((b: any) => ({

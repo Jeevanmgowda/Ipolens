@@ -72,11 +72,17 @@ export function isListingDatePastClient(dateStr?: string | null): boolean {
 }
 
 export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
+  const sym = (ipo.symbol || '').toUpperCase().trim();
+  const isJio = sym === 'JIOPLAT' || sym === 'JIOFIN';
+
   const isListed =
     ipo.status === 'Listed' ||
     ipo.isListed === true ||
+    isJio ||
     (ipo.remainingTime || '').toLowerCase().includes('listed') ||
-    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined);
+    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined) ||
+    isListingDatePastClient(ipo.listingDate) ||
+    isListingDatePastClient(ipo.expectedListingDate);
 
   if (isListed) {
     return 'listed';
@@ -86,7 +92,10 @@ export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcomin
     return 'closed';
   }
   if (ipo.status === 'Open') return 'open';
-  if (ipo.status === 'Upcoming') return 'upcoming';
+  if (ipo.status === 'Upcoming') {
+    if (ipo.closeDate && isListingDatePastClient(ipo.closeDate)) return 'closed';
+    return 'upcoming';
+  }
   return 'closed';
 }
 

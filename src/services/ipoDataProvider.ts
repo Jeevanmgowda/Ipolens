@@ -11,7 +11,7 @@ import {
 import { fetchLiveListedIpos, LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { UpstoxIpoService } from '@/lib/services/upstox-ipo.service';
-import { isFalseOrDemoSymbol, normalizeCompanyName, isSameIpo } from '@/lib/utils/ipoDeduplication';
+import { isFalseOrDemoSymbol, normalizeCompanyName, isSameIpo, getCanonicalSymbol } from '@/lib/utils/ipoDeduplication';
 
 /**
  * Universal evaluator to determine if an IPO is officially listed on the secondary market.
@@ -34,7 +34,16 @@ export function isIpoListed(ipo: {
   if (rem.includes('listed')) return true;
 
   const sym = (ipo.symbol || '').toUpperCase().trim();
+  if (sym === 'JIOPLAT' || sym === 'JIOFIN') return true;
+
   if (sym && LISTED_IPOS_REGISTRY.some((l) => isSameIpo(l.symbol, l.companyName, ipo.symbol, ipo.companyName))) {
+    return true;
+  }
+
+  if (ipo.listingDate && isListingDatePast(ipo.listingDate)) {
+    return true;
+  }
+  if (ipo.expectedListingDate && isListingDatePast(ipo.expectedListingDate)) {
     return true;
   }
 
@@ -139,19 +148,26 @@ export class NSEIPOProvider implements IPODataProvider {
               listing: u.listingDate || (isListed ? 'Recent Listing' : 'TBD'),
             };
 
+            const uSeries = u.issueType === 'sme' ? 'SME' : 'EQ';
+            const uLot = (u.lotSize && u.lotSize > 0 && !(u.lotSize === 14 && maxPrice < 700 && uSeries === 'EQ'))
+              ? u.lotSize
+              : calculateDefaultLotSize(maxPrice, uSeries);
+            const uMinInv = calculateDefaultMinInvestment(maxPrice, uLot, uSeries);
+
             return {
               id: u.id || `${(u.symbol || 'ipo').toLowerCase()}-ipo`,
               symbol: (u.symbol || 'IPO').toUpperCase(),
               companyName: u.companyName || u.symbol || 'Unknown Company',
               status: statusStr,
-              series: u.issueType === 'sme' ? 'SME' : 'EQ',
+              series: uSeries,
               priceBand:
                 u.priceBandMin === u.priceBandMax
                   ? `₹${u.priceBandMax}`
                   : `₹${u.priceBandMin} – ₹${u.priceBandMax}`,
               priceLow: u.priceBandMin || 100,
               priceHigh: u.priceBandMax || 100,
-              lotSize: u.lotSize || 14,
+              lotSize: uLot,
+              minInvestment: uMinInv,
               issueSize: u.issueSizeInCrores ? `₹${u.issueSizeInCrores} Cr` : '—',
               openDate: formattedDates.open,
               closeDate: formattedDates.close,
@@ -370,17 +386,23 @@ export class NSEIPOProvider implements IPODataProvider {
         continue;
       }
 
+      const listedSeries = l.series || 'EQ';
+      const listedLot = (l.lotSize && l.lotSize > 0 && !(l.lotSize === 14 && l.issuePrice < 700 && listedSeries === 'EQ'))
+        ? l.lotSize
+        : calculateDefaultLotSize(l.issuePrice, listedSeries);
+      const listedMinInv = calculateDefaultMinInvestment(l.issuePrice, listedLot, listedSeries);
+
       items.push({
         id: l.symbol.toLowerCase(),
         symbol: l.symbol.toUpperCase(),
         companyName: l.companyName,
         status: 'Listed',
-        series: l.series || 'EQ',
+        series: listedSeries,
         priceBand: `₹${l.issuePrice}`,
         priceLow: l.issuePrice,
         priceHigh: l.issuePrice,
-        lotSize: l.lotSize || 14,
-        minInvestment: l.issuePrice * (l.lotSize || 14),
+        lotSize: listedLot,
+        minInvestment: listedMinInv,
         issueSize: l.issueSize || '—',
         openDate: 'Past Issue',
         closeDate: 'Past Issue',
@@ -407,25 +429,47 @@ export class NSEIPOProvider implements IPODataProvider {
       });
     }
 
-    // 3. Final Multi-Key Deduplication Pass
-    const deduplicatedItems: LiveMarketIpoItem[] = [];
-    for (const item of items) {
-      if (isFalseOrDemoSymbol(item.symbol)) continue;
-      const dupIdx = deduplicatedItems.findIndex((d) =>
-        isSameIpo(d.symbol, d.companyName, item.symbol, item.companyName)
-      );
-      if (dupIdx === -1) {
-        deduplicatedItems.push(item);
-      } else {
-        const existing = deduplicatedItems[dupIdx];
-        const isItemListed = item.status === 'Listed' || item.isListed || (typeof item.currentPrice === 'number' && item.currentPrice > 0);
-        if (isItemListed) {
-          deduplicatedItems[dupIdx] = { ...existing, ...item };
+      // 3. Final Multi-Key Deduplication Pass
+      const deduplicatedItems: LiveMarketIpoItem[] = [];
+      for (const item of items) {
+        if (isFalseOrDemoSymbol(item.symbol)) continue;
+        const dupIdx = deduplicatedItems.findIndex((d) =>
+          isSameIpo(d.symbol, d.companyName, item.symbol, item.companyName)
+        );
+        if (dupIdx === -1) {
+          const canonical = getCanonicalSymbol(item.symbol);
+          if (canonical && canonical !== item.symbol) {
+            item.symbol = canonical;
+            item.id = canonical.toLowerCase();
+          }
+          if (isIpoListed(item)) {
+            item.status = 'Listed';
+            item.isListed = true;
+            item.remainingTime = 'Listed on Exchange';
+          }
+          deduplicatedItems.push(item);
         } else {
-          deduplicatedItems[dupIdx] = { ...item, ...existing };
+          const existing = deduplicatedItems[dupIdx];
+          const isMergedListed = isIpoListed(item) || isIpoListed(existing);
+          const canonicalSym = getCanonicalSymbol(existing.symbol) || getCanonicalSymbol(item.symbol);
+          const chosenSeries = (existing.series === 'SME' || item.series === 'SME') ? 'SME' : (existing.series === 'DEBT' || item.series === 'DEBT' ? 'DEBT' : 'EQ');
+
+          const merged: LiveMarketIpoItem = isMergedListed
+            ? { ...existing, ...item, symbol: canonicalSym, id: canonicalSym.toLowerCase(), status: 'Listed', isListed: true, remainingTime: 'Listed on Exchange', series: chosenSeries }
+            : { ...item, ...existing, symbol: canonicalSym, id: canonicalSym.toLowerCase(), series: chosenSeries };
+
+          if (chosenSeries === 'SME') {
+            const smeLot = (existing.series === 'SME' && existing.lotSize >= 600) ? existing.lotSize : ((item.series === 'SME' && item.lotSize >= 600) ? item.lotSize : 1200);
+            merged.lotSize = smeLot;
+            merged.minInvestment = calculateDefaultMinInvestment(merged.priceHigh || 100, smeLot, 'SME');
+          } else {
+            merged.lotSize = calculateDefaultLotSize(merged.priceHigh || 100, chosenSeries);
+            merged.minInvestment = calculateDefaultMinInvestment(merged.priceHigh || 100, merged.lotSize, chosenSeries);
+          }
+
+          deduplicatedItems[dupIdx] = merged;
         }
       }
-    }
 
     return deduplicatedItems;
   }
