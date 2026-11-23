@@ -559,6 +559,90 @@ export const MARKET_IPO_REGISTRY: MarketIpoMetadata[] = [
       'Registrar': 'Link Intime India Pvt Ltd',
     },
   },
+  {
+    symbol: 'CRYSTCP',
+    aliases: ['crystcp', 'crystal crop', 'crystal crop protection', 'crystal crop protection limited'],
+    companyName: 'Crystal Crop Protection Limited',
+    series: 'EQ',
+    priceBand: '₹259 – ₹272',
+    priceLow: 259,
+    priceHigh: 272,
+    lotSize: 55,
+    minInvestment: 14960,
+    issueSize: '₹1,500 Cr',
+    issueSizeCr: 1500.0,
+    openDate: '18-Nov-2024',
+    closeDate: '20-Nov-2024',
+    allotmentDate: '21-Nov-2024',
+    listingDate: '25-Nov-2024',
+    registrar: 'Link Intime India Pvt Ltd',
+    registrarUrl: 'https://linkintime.co.in/initial_offer/public-issues.html',
+    registrarSlug: 'linkintime',
+    gmp: 14,
+    gmpPercent: 5.15,
+    currentSubscription: 1.0,
+    biddingDetails: {
+      'Issue Type': 'Agrochemicals Mainboard Issue',
+      'Listing At': 'NSE, BSE',
+      'Registrar': 'Link Intime India Pvt Ltd',
+    },
+  },
+  {
+    symbol: 'MAHANACOAL',
+    aliases: ['mahanacoal', 'mahanadi', 'mahanadi coalfields', 'mahanadi coalfields limited'],
+    companyName: 'Mahanadi Coalfields Limited',
+    series: 'EQ',
+    priceBand: '₹129 – ₹136',
+    priceLow: 129,
+    priceHigh: 136,
+    lotSize: 110,
+    minInvestment: 14960,
+    issueSize: '₹4,500 Cr',
+    issueSizeCr: 4500.0,
+    openDate: '19-Nov-2024',
+    closeDate: '23-Nov-2024',
+    allotmentDate: '24-Nov-2024',
+    listingDate: '28-Nov-2024',
+    registrar: 'KFin Technologies Limited',
+    registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
+    registrarSlug: 'kfintech',
+    gmp: 0,
+    gmpPercent: 0,
+    currentSubscription: 1.0,
+    biddingDetails: {
+      'Issue Type': 'PSU Mining Mainboard Issue',
+      'Listing At': 'NSE, BSE',
+      'Registrar': 'KFin Technologies Limited',
+    },
+  },
+  {
+    symbol: 'WATRANA',
+    aliases: ['watrana', 'watranrent', 'watrana rentals', 'watrana rentals limited'],
+    companyName: 'Watrana Rentals Limited',
+    series: 'SME',
+    priceBand: '₹232 – ₹245',
+    priceLow: 232,
+    priceHigh: 245,
+    lotSize: 1200,
+    minInvestment: 294000,
+    issueSize: '₹44.00 Cr',
+    issueSizeCr: 44.0,
+    openDate: '19-Nov-2024',
+    closeDate: '23-Nov-2024',
+    allotmentDate: '24-Nov-2024',
+    listingDate: '27-Nov-2024',
+    registrar: 'Bigshare Services Pvt Ltd',
+    registrarUrl: 'https://www.bigshareonline.com/ipo_Allotment.html',
+    registrarSlug: 'bigshare',
+    gmp: 25,
+    gmpPercent: 10.2,
+    currentSubscription: 149.76,
+    biddingDetails: {
+      'Issue Type': 'NSE SME Emerge Issue',
+      'Listing At': 'NSE SME',
+      'Registrar': 'Bigshare Services Pvt Ltd',
+    },
+  },
 ];
 
 export function findMarketMetadata(symbolOrName: string): MarketIpoMetadata | undefined {
@@ -897,6 +981,34 @@ export function cleanPriceText(str: string): string {
   return `₹${low.toLocaleString('en-IN')} - ₹${high.toLocaleString('en-IN')}`;
 }
 
+/**
+ * Calculates compliant, realistic default lot size for Indian IPOs based on SEBI regulations:
+ * - Mainboard (EQ): SEBI ICDR retail application must be between ₹14,000 and ₹15,000.
+ *   Calculated as Math.floor(15000 / priceHigh).
+ * - SME: Retail application minimum is >= ₹1,00,000 (usually ₹1,00,000 to ₹1,40,000).
+ * - DEBT: 1 unit.
+ */
+export function calculateDefaultLotSize(price: number, series?: string): number {
+  const p = Math.max(1, price);
+  if (series === 'DEBT') return 1;
+  if (series === 'SME') {
+    const raw = Math.round(120000 / p / 100) * 100;
+    return Math.max(100, raw || 1200);
+  }
+  // Mainboard EQ: SEBI mandates retail bid value ~ ₹14,000 - ₹15,000
+  return Math.max(1, Math.floor(15000 / p));
+}
+
+export function calculateDefaultMinInvestment(price: number, lotSize: number, series?: string): number {
+  const p = Math.max(1, price);
+  const l = lotSize > 0 ? lotSize : calculateDefaultLotSize(p, series);
+  if (series === 'DEBT') return p * l;
+  if (series === 'SME') return p * l >= 90000 ? p * l : 120000;
+  // Mainboard EQ: ensure minimum retail application is >= ₹10,000
+  const total = p * l;
+  return total >= 10000 ? total : (p * calculateDefaultLotSize(p, series));
+}
+
 function deriveTicker(name: string): string {
   const meta = findMarketMetadata(name);
   if (meta) return meta.symbol;
@@ -1134,9 +1246,10 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       let gmp = series === 'DEBT' ? 0 : (meta?.gmp ?? marketMatch?.gmp ?? 0);
       let gmpPercent = series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (upperBand > 0 ? Math.round((gmp / upperBand) * 100) : 0));
 
+      const defaultLot = calculateDefaultLotSize(upperBand, series);
       const lotSize = meta?.lotSize
         ? String(meta.lotSize)
-        : (item.lotSize ? String(item.lotSize) : (series === 'DEBT' ? '1' : series === 'SME' ? '1200' : '14'));
+        : (item.lotSize ? String(item.lotSize) : String(defaultLot));
 
       // Real Issue Size in Crores
       let issueSizeFormatted = meta?.issueSize || '';
@@ -1170,7 +1283,7 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
         priceLow: meta?.priceLow || upperBand,
         priceHigh: meta?.priceHigh || upperBand,
         lotSize,
-        minInvestment: meta?.minInvestment || (lotSize ? Number(lotSize) * upperBand : undefined),
+        minInvestment: meta?.minInvestment || calculateDefaultMinInvestment(upperBand, Number(lotSize), series),
         issueSize: issueSizeFormatted,
         noOfSharesOffered: item.noOfSharesOffered ? String(item.noOfSharesOffered) : undefined,
         noOfsharesBid: item.noOfsharesBid ? String(item.noOfsharesBid) : undefined,
@@ -1216,9 +1329,10 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       const gmp = series === 'DEBT' ? 0 : (meta?.gmp ?? marketMatch?.gmp ?? 0);
       const gmpPercent = series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (upperBand > 0 ? Math.round((gmp / upperBand) * 100) : 0));
 
+      const defaultLot = calculateDefaultLotSize(upperBand, series);
       const lotSize = meta?.lotSize
         ? String(meta.lotSize)
-        : (item.lotSize ? String(item.lotSize) : (series === 'DEBT' ? '1' : series === 'SME' ? '1200' : '14'));
+        : (item.lotSize ? String(item.lotSize) : String(defaultLot));
 
       const openDate = meta?.openDate || item.issueStartDate || '';
       const closeDate = meta?.closeDate || item.issueEndDate || '';
@@ -1236,7 +1350,7 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
         priceLow: meta?.priceLow || upperBand,
         priceHigh: meta?.priceHigh || upperBand,
         lotSize,
-        minInvestment: meta?.minInvestment || (lotSize ? Number(lotSize) * upperBand : undefined),
+        minInvestment: meta?.minInvestment || calculateDefaultMinInvestment(upperBand, Number(lotSize), series),
         issueSize: meta?.issueSize || '',
         noOfTime: '0.00',
         gmpEstimate: gmp,
@@ -1263,6 +1377,9 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       const priceLow = meta?.priceLow || parseFloat(prices[0]) || 100;
       const priceHigh = meta?.priceHigh || parseFloat(prices[prices.length - 1]) || priceLow;
       const isSme = item.securityType === 'SME' || item.series === 'SME' || meta?.series === 'SME';
+      const series: IpoSeries = isSme ? 'SME' : 'EQ';
+      const defaultLot = calculateDefaultLotSize(priceHigh, series);
+      const lotSize = meta?.lotSize ? String(meta.lotSize) : String(defaultLot);
 
       const openDate = meta?.openDate || item.ipoStartDate || item.issueStartDate || '';
       const closeDate = meta?.closeDate || item.ipoEndDate || item.issueEndDate || '';
@@ -1271,7 +1388,7 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       map.set(sym, {
         symbol: sym,
         companyName: compName,
-        series: isSme ? 'SME' : 'EQ',
+        series,
         status: 'Closed',
         issueStartDate: openDate,
         issueEndDate: closeDate,
@@ -1281,8 +1398,8 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
         priceBand: cleanPrice,
         priceLow,
         priceHigh,
-        lotSize: meta?.lotSize ? String(meta.lotSize) : (isSme ? '1200' : '14'),
-        minInvestment: meta?.minInvestment || (priceHigh * (isSme ? 1200 : 14)),
+        lotSize,
+        minInvestment: meta?.minInvestment || calculateDefaultMinInvestment(priceHigh, Number(lotSize), series),
         issueSize: meta?.issueSize || '',
         noOfTime: '0.00',
         gmpEstimate: meta?.gmp || 0,
@@ -1322,9 +1439,19 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       }
 
       const registrar = getRegistrarInfo(sym, item.name);
-      const upperBand = meta?.priceHigh || 100;
-      const gmp = meta?.series === 'DEBT' ? 0 : (meta?.gmp ?? item.gmp);
-      const gmpPercent = meta?.series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (upperBand > 0 ? Math.round((gmp / upperBand) * 100) : 0));
+      const cleanPrice = cleanPriceText(meta?.priceBand || item.price || '');
+      const priceMatches = cleanPrice.match(/(\d+(?:\.\d+)?)/g) || [];
+      const parsedLow = priceMatches.length > 0 ? (parseFloat(priceMatches[0] || '100') || 100) : 100;
+      const parsedHigh = priceMatches.length > 0 ? (parseFloat(priceMatches[priceMatches.length - 1] || '100') || parsedLow) : parsedLow;
+      const upperBand = meta?.priceHigh || parsedHigh;
+      const lowerBand = meta?.priceLow || parsedLow;
+      const series: IpoSeries = meta?.series || item.series;
+      const defaultLot = calculateDefaultLotSize(upperBand, series);
+      const lotSize = meta?.lotSize ? String(meta.lotSize) : String(defaultLot);
+      const minInvestment = meta?.minInvestment || calculateDefaultMinInvestment(upperBand, Number(lotSize), series);
+
+      const gmp = series === 'DEBT' ? 0 : (meta?.gmp ?? item.gmp);
+      const gmpPercent = series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (upperBand > 0 ? Math.round((gmp / upperBand) * 100) : 0));
 
       const openDate = meta?.openDate || item.dates;
       const closeDate = meta?.closeDate || item.dates;
@@ -1333,16 +1460,16 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       map.set(sym, {
         symbol: sym,
         companyName: meta?.companyName || item.name,
-        series: meta?.series || item.series,
+        series,
         status: lifecycleStatus,
         issueStartDate: openDate,
         issueEndDate: closeDate,
-        issuePrice: meta?.priceBand || cleanPriceText(item.price),
-        priceBand: meta?.priceBand || cleanPriceText(item.price),
-        priceLow: meta?.priceLow || upperBand,
-        priceHigh: meta?.priceHigh || upperBand,
-        lotSize: meta?.lotSize ? String(meta.lotSize) : (item.series === 'SME' ? '1200' : '14'),
-        minInvestment: meta?.minInvestment,
+        issuePrice: meta?.priceBand || cleanPrice,
+        priceBand: meta?.priceBand || cleanPrice,
+        priceLow: lowerBand,
+        priceHigh: upperBand,
+        lotSize,
+        minInvestment,
         issueSize: meta?.issueSize || '',
         noOfTime: meta?.currentSubscription ? meta.currentSubscription.toFixed(2) : '0.00',
         gmpEstimate: gmp,
@@ -1363,25 +1490,35 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
       if (map.has(sym)) continue;
 
       const registrar = getRegistrarInfo(sym, item.name);
-      const issuePriceNum = meta?.priceHigh || parseFloat(item.price.replace(/[^0-9.]/g, '')) || 100;
-      const gmp = meta?.series === 'DEBT' ? 0 : (meta?.gmp ?? item.gmp);
-      const gmpPercent = meta?.series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (issuePriceNum > 0 ? Math.max(0, Math.round((gmp / issuePriceNum) * 100)) : 0));
+      const cleanPrice = cleanPriceText(meta?.priceBand || item.price || '');
+      const priceMatches = cleanPrice.match(/(\d+(?:\.\d+)?)/g) || [];
+      const parsedLow = priceMatches.length > 0 ? (parseFloat(priceMatches[0] || '100') || 100) : 100;
+      const parsedHigh = priceMatches.length > 0 ? (parseFloat(priceMatches[priceMatches.length - 1] || '100') || parsedLow) : parsedLow;
+      const issuePriceNum = meta?.priceHigh || parsedHigh;
+      const lowerBand = meta?.priceLow || parsedLow;
+      const series: IpoSeries = meta?.series || (/sme/i.test(item.name) ? 'SME' : 'EQ');
+      const defaultLot = calculateDefaultLotSize(issuePriceNum, series);
+      const lotSize = meta?.lotSize ? String(meta.lotSize) : String(defaultLot);
+      const minInvestment = meta?.minInvestment || calculateDefaultMinInvestment(issuePriceNum, Number(lotSize), series);
+
+      const gmp = series === 'DEBT' ? 0 : (meta?.gmp ?? item.gmp);
+      const gmpPercent = series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (issuePriceNum > 0 ? Math.max(0, Math.round((gmp / issuePriceNum) * 100)) : 0));
 
       map.set(sym, {
         symbol: sym,
         companyName: meta?.companyName || item.name,
-        series: meta?.series || (/sme/i.test(item.name) ? 'SME' : 'EQ'),
+        series,
         status: 'Closed',
         issueStartDate: meta?.openDate || 'Recent Offering',
         issueEndDate: meta?.closeDate || 'Bidding Closed',
-        issuePrice: meta?.priceBand || cleanPriceText(item.price),
-        priceBand: meta?.priceBand || cleanPriceText(item.price),
-        priceLow: meta?.priceLow || issuePriceNum,
-        priceHigh: meta?.priceHigh || issuePriceNum,
+        issuePrice: meta?.priceBand || cleanPrice,
+        priceBand: meta?.priceBand || cleanPrice,
+        priceLow: lowerBand,
+        priceHigh: issuePriceNum,
         listingPrice: item.listingPrice && !item.listingPrice.includes('(') ? cleanPriceText(item.listingPrice) : undefined,
         isListed: false,
-        lotSize: meta?.lotSize ? String(meta.lotSize) : (meta?.series === 'SME' ? '1000' : '14'),
-        minInvestment: meta?.minInvestment,
+        lotSize,
+        minInvestment,
         issueSize: meta?.issueSize || '',
         noOfTime: meta?.currentSubscription ? meta.currentSubscription.toFixed(2) : '1.00',
         gmpEstimate: gmp,
@@ -1468,10 +1605,15 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
                 ? 'Listed on Exchange'
                 : calculateRemainingTime(closeDate);
 
+            const series: IpoSeries = isSme ? 'SME' : 'EQ';
+            const defaultLot = calculateDefaultLotSize(pBand.max, series);
+            const lotSize = String(item.lotSize || defaultLot);
+            const minInvestment = calculateDefaultMinInvestment(pBand.max, Number(lotSize), series);
+
             map.set(sym, {
               symbol: sym,
               companyName: item.companyName || sym,
-              series: isSme ? 'SME' : 'EQ',
+              series,
               status,
               isListed: isItemListed,
               issueStartDate: openDate,
@@ -1482,7 +1624,8 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
               priceBand: pStr,
               priceLow: pBand.min,
               priceHigh: pBand.max,
-              lotSize: String(item.lotSize || (isSme ? 1200 : 14)),
+              lotSize,
+              minInvestment,
               issueSize: item.issueSize || '',
               noOfTime: item.subscriptionTimes || '0.00',
               isBse: item.exchanges?.includes('BSE') ? 'Y' : 'N',
@@ -1757,9 +1900,13 @@ function createComprehensiveDetail(summary?: LiveIpoSummary, meta?: MarketIpoMet
   const sym = meta?.symbol || summary?.symbol || symbolInput || 'IPO';
   const companyName = meta?.companyName || summary?.companyName || sym;
   const series: IpoSeries = meta?.series || summary?.series || 'EQ';
-  const lotSize = meta?.lotSize || (summary?.lotSize ? Number(summary.lotSize) : (series === 'SME' ? 1600 : 14));
-  const upperBand = meta?.priceHigh || (summary ? parseFloat(summary.issuePrice.replace(/[^0-9.]/g, '')) || 100 : 100);
-  const minInvestment = meta?.minInvestment || lotSize * upperBand;
+  const cleanPrice = cleanPriceText(meta?.priceBand || summary?.issuePrice || '100');
+  const priceMatches = cleanPrice.match(/(\d+(?:\.\d+)?)/g) || [];
+  const parsedPrice = priceMatches.length > 0 ? (parseFloat(priceMatches[priceMatches.length - 1] || '100') || 100) : 100;
+  const upperBand = meta?.priceHigh || parsedPrice;
+  const defaultLot = calculateDefaultLotSize(upperBand, series);
+  const lotSize = meta?.lotSize || (summary?.lotSize ? Number(summary.lotSize) : defaultLot);
+  const minInvestment = meta?.minInvestment || calculateDefaultMinInvestment(upperBand, lotSize, series);
   const registrar = getRegistrarInfo(sym, companyName);
 
   return {

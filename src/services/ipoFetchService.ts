@@ -10,7 +10,7 @@
 
 import { LiveIpoSummary, LiveIpoDetail, IpoSeries, IpoStatus, UnifiedIPO } from '@/types/ipo';
 import { getRedisClient } from '@/lib/redis';
-import { getRegistrarInfo, calculateRemainingTime, cleanPriceText, findMarketMetadata } from './nseIpoService';
+import { getRegistrarInfo, calculateRemainingTime, cleanPriceText, findMarketMetadata, calculateDefaultLotSize } from './nseIpoService';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -527,8 +527,8 @@ export class IpoFetchService {
 
     // Fill in default lotSize and minInvestment if missing
     for (const item of mergedList) {
-      if (!item.lotSize || item.lotSize <= 0) {
-        item.lotSize = item.series === 'SME' ? 1200 : 14;
+      if (!item.lotSize || item.lotSize <= 0 || (item.lotSize === 14 && item.priceBand.max < 700 && item.series !== 'DEBT')) {
+        item.lotSize = calculateDefaultLotSize(item.priceBand.max, item.series);
       }
     }
 

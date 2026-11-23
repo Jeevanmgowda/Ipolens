@@ -5,6 +5,8 @@ import {
   isBiddingClosed,
   isListingDatePast,
   findMarketMetadata,
+  calculateDefaultLotSize,
+  calculateDefaultMinInvestment,
 } from './nseIpoService';
 import { fetchLiveListedIpos, LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
@@ -245,9 +247,16 @@ export class NSEIPOProvider implements IPODataProvider {
       const prices = cleanPriceStr.match(/\d+(?:\.\d+)?/g) || ['100'];
       const priceLow = raw.priceLow !== undefined ? raw.priceLow : (parseFloat(prices[0]) || 100);
       const priceHigh = raw.priceHigh !== undefined ? raw.priceHigh : (parseFloat(prices[prices.length - 1]) || priceLow);
-      const lotSize = typeof raw.lotSize === 'number'
+      const series = raw.series || 'EQ';
+      const defaultLot = calculateDefaultLotSize(priceHigh, series);
+      const parsedLot = typeof raw.lotSize === 'number'
         ? raw.lotSize
-        : parseInt(String(raw.lotSize || '14').replace(/,/g, ''), 10) || 14;
+        : parseInt(String(raw.lotSize || '').replace(/,/g, ''), 10);
+      
+      // If lot size is missing or legacy hardcoded fallback (14 when price < 700), use SEBI standard
+      const lotSize = (parsedLot && parsedLot > 0 && !(parsedLot === 14 && priceHigh < 700 && series === 'EQ'))
+        ? parsedLot
+        : defaultLot;
 
       const totalSub = typeof raw.noOfTime === 'string'
         ? (parseFloat(raw.noOfTime) || 0)
@@ -289,9 +298,9 @@ export class NSEIPOProvider implements IPODataProvider {
             : `₹${raw.issueSize} Cr`)
         : '—';
 
-      const minInvestment = raw.minInvestment !== undefined
+      const minInvestment = (raw.minInvestment !== undefined && (series === 'DEBT' || raw.minInvestment >= 10000))
         ? raw.minInvestment
-        : (priceHigh * lotSize);
+        : calculateDefaultMinInvestment(priceHigh, lotSize, series);
 
       items.push({
         id: raw.symbol.toLowerCase(),
