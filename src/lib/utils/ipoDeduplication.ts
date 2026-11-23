@@ -35,6 +35,8 @@ export const KNOWN_SYMBOL_ALIASES: Record<string, string[]> = {
   BLACKBUCK: ['ZINKA'],
   ENVIRO: ['EIEL'],
   EIEL: ['ENVIRO'],
+  SHREESIDHI: ['SHREESGI'],
+  SHREESGI: ['SHREESIDHI'],
 };
 
 /**
@@ -49,6 +51,7 @@ export function getCanonicalSymbol(symbol?: string | null): string {
     MAHACOAL: 'MAHANACOAL',
     ZINKA: 'BLACKBUCK',
     ENVIRO: 'EIEL',
+    SHREESGI: 'SHREESIDHI',
   };
   return canonicalMap[clean] || clean;
 }

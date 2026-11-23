@@ -529,6 +529,31 @@ export class NSEIPOProvider implements IPODataProvider {
         }
       }
 
+      // 4. Guaranteed ML GMP Prediction Pass for All Primary Open & Upcoming IPOs
+      for (const item of deduplicatedItems) {
+        const isListed = isIpoListed(item);
+        if (!isListed && item.series !== 'DEBT' && (!item.gmp || item.gmp <= 0)) {
+          const ml = predictGmpForIpo({
+            symbol: item.symbol,
+            companyName: item.companyName,
+            price: item.priceHigh || item.priceLow || 100,
+            series: item.series,
+            issueSizeCr: parseFloat(String(item.issueSize || '').replace(/[^0-9.]/g, '')) || undefined,
+            currentSubscription: item.currentSubscription || 0,
+            retailSubscription: item.retailSubscription || 0,
+            qibSubscription: item.qibSubscription || 0,
+            niiSubscription: item.niiSubscription || 0,
+            status: item.status === 'Open' ? 'Open' : 'Upcoming',
+          });
+          if (ml.predictedGmp > 0) {
+            item.gmp = ml.predictedGmp;
+            item.gmpPercent = ml.predictedGainPct;
+            item.isAiPredictedGmp = true;
+            item.predictedListingPrice = ml.predictedListingPrice;
+          }
+        }
+      }
+
     return deduplicatedItems;
   }
 

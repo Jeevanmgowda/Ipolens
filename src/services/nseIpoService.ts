@@ -644,6 +644,34 @@ export const MARKET_IPO_REGISTRY: MarketIpoMetadata[] = [
       'Registrar': 'Bigshare Services Pvt Ltd',
     },
   },
+  {
+    symbol: 'SHREESIDHI',
+    aliases: ['shreesidhi', 'shreesgi', 'shree siddhivinayak', 'shree siddhivinayak greentech', 'shree siddhivinayak greentech industries', 'shree siddhivinayak greentech industries ipo'],
+    companyName: 'Shree Siddhivinayak Greentech Industries Limited',
+    series: 'SME',
+    priceBand: '₹130 – ₹142',
+    priceLow: 130,
+    priceHigh: 142,
+    lotSize: 1200,
+    minInvestment: 170400,
+    issueSize: '₹42.60 Cr',
+    issueSizeCr: 42.6,
+    openDate: '2026-11-20',
+    closeDate: '2026-11-27',
+    allotmentDate: '2026-11-28',
+    listingDate: '2026-12-02',
+    registrar: 'Link Intime India Pvt Ltd',
+    registrarUrl: 'https://linkintime.co.in/initial_offer/public-issues.html',
+    registrarSlug: 'linkintime',
+    gmp: 28,
+    gmpPercent: 19.7,
+    currentSubscription: 1.0,
+    biddingDetails: {
+      'Issue Type': 'NSE SME Greentech Issue',
+      'Listing At': 'NSE SME',
+      'Registrar': 'Link Intime India Pvt Ltd',
+    },
+  },
 ];
 
 export function findMarketMetadata(symbolOrName: string): MarketIpoMetadata | undefined {
@@ -1022,6 +1050,7 @@ function deriveTicker(name: string): string {
   if (upper.includes('JIOFIN')) return 'JIOFIN';
   if (upper.includes('BLACKBUCK') || upper.includes('ZINKA')) return 'BLACKBUCK';
   if (upper.includes('EIEL') || upper.includes('ENVIROINFRA')) return 'EIEL';
+  if (upper.includes('SHREESIDHI') || upper.includes('SIDDHIVINAYAK') || upper.includes('SHREESGI')) return 'SHREESIDHI';
 
   const clean = name.replace(/Limited|Ltd\.?|India|Private|Pvt\.?|Holding|Holdings|Solutions|Services|IPO|Issue|Offering/gi, '').trim();
   const words = clean.split(/[\s\-_]+/).filter(Boolean);

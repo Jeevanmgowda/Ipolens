@@ -353,8 +353,8 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
               <LiveGmpTrendChart
                 symbol={selectedIpoForGmp.symbol}
                 companyName={selectedIpoForGmp.companyName}
-                baseGmp={selectedIpoForGmp.gmp || 75}
-                issuePrice={selectedIpoForGmp.priceHigh || 450}
+                baseGmp={selectedIpoForGmp.gmp ?? 0}
+                issuePrice={selectedIpoForGmp.priceHigh || selectedIpoForGmp.priceLow || 100}
               />
             </div>
           </div>
@@ -390,7 +390,13 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
                 instrumentKey={selectedIpoForStockChart.symbol}
                 symbol={selectedIpoForStockChart.symbol}
                 companyName={selectedIpoForStockChart.companyName}
-                initialPrice={selectedIpoForStockChart.currentPrice || selectedIpoForStockChart.listingPrice || 450}
+                initialPrice={
+                  selectedIpoForStockChart.currentPrice ||
+                  selectedIpoForStockChart.listingPrice ||
+                  selectedIpoForStockChart.priceHigh ||
+                  selectedIpoForStockChart.priceLow ||
+                  100
+                }
               />
             </div>
           </div>

@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { LiveMarketHeader } from '@/components/live-market/LiveMarketHeader';
 import { IpoMarketOverview } from '@/components/live-market/IpoMarketOverview';
-import { IpoCategoriesTabs } from '@/components/live-market/IpoCategoriesTabs';
+import { IpoCategoriesTabs, getEffectiveIpoStatus } from '@/components/live-market/IpoCategoriesTabs';
 import { IpoDetailModal } from '@/components/radar/IpoDetailModal';
 import { LiveGmpTrendChart } from '@/components/live-market/LiveGmpTrendChart';
 import { LiveStockPriceChart } from '@/components/live-market/LiveStockPriceChart';
@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getCanonicalSymbol, isSameIpo, isFalseOrDemoSymbol } from '@/lib/utils/ipoDeduplication';
+import { predictGmpForIpo } from '@/services/mlListingGainModel';
 
 export default function LiveMarketPage() {
   const router = useRouter();
@@ -118,26 +119,86 @@ export default function LiveMarketPage() {
         const dupIdx = uniqueList.findIndex((u) =>
           isSameIpo(u.symbol, u.companyName, canonical, item.companyName)
         );
+
+        const rawPrices = String(item.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
+        const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
+        const parsedMin = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[0]) : parsedMax;
+        const pHigh = item.priceHigh || item.issuePrice || item.priceLow || parsedMax || 100;
+        const pLow = item.priceLow || parsedMin || pHigh;
+
+        const series = item.series === 'DEBT' ? 'DEBT' : (item.series === 'SME' ? 'SME' : 'EQ');
+        const lot = series === 'DEBT'
+          ? 1
+          : series === 'SME'
+          ? (item.lotSize && item.lotSize >= 600 ? item.lotSize : 1200)
+          : (item.lotSize && item.lotSize > 0 && !(item.lotSize === 14 && pHigh < 700) && (item.lotSize * pHigh >= 10000))
+          ? item.lotSize
+          : Math.max(1, Math.floor(15000 / pHigh));
+        const minInv = series === 'DEBT'
+          ? (pHigh * lot)
+          : series === 'SME'
+          ? (item.minInvestment && item.minInvestment >= 90000 ? item.minInvestment : (pHigh * lot))
+          : (item.minInvestment && item.minInvestment >= 10000 ? item.minInvestment : (pHigh * lot));
+
+        const sanitizedItem: LiveMarketIpoItem = {
+          ...item,
+          symbol: canonical || item.symbol,
+          id: (canonical || item.symbol).toLowerCase(),
+          priceHigh: pHigh,
+          priceLow: pLow,
+          series,
+          lotSize: lot,
+          minInvestment: minInv,
+        };
+
         if (dupIdx === -1) {
-          uniqueList.push({
-            ...item,
-            symbol: canonical || item.symbol,
-            id: (canonical || item.symbol).toLowerCase(),
-          });
+          uniqueList.push(sanitizedItem);
         } else {
           // Merge details prioritizing richer record
           const existing = uniqueList[dupIdx];
+          const isMergedListed = Boolean(existing.isListed || item.isListed || existing.status === 'Listed' || item.status === 'Listed');
+          const chosenSeries = (existing.series === 'SME' || sanitizedItem.series === 'SME') ? 'SME' : (existing.series === 'DEBT' || sanitizedItem.series === 'DEBT' ? 'DEBT' : 'EQ');
+          const chosenLot = chosenSeries === 'DEBT' ? 1 : chosenSeries === 'SME' ? (existing.lotSize >= 600 ? existing.lotSize : (sanitizedItem.lotSize >= 600 ? sanitizedItem.lotSize : 1200)) : (existing.lotSize > 0 ? existing.lotSize : sanitizedItem.lotSize);
+          const chosenMinInv = chosenSeries === 'DEBT' ? (existing.priceHigh * chosenLot) : chosenSeries === 'SME' ? Math.max(90000, existing.priceHigh * chosenLot) : Math.max(10000, existing.priceHigh * chosenLot);
+
           uniqueList[dupIdx] = {
             ...existing,
-            ...item,
+            ...sanitizedItem,
             symbol: canonical || existing.symbol,
             id: (canonical || existing.symbol).toLowerCase(),
-            status: existing.status === 'Listed' || item.status === 'Listed' ? 'Listed' : (item.status === 'Open' || existing.status === 'Open' ? 'Open' : item.status),
-            isListed: Boolean(existing.isListed || item.isListed),
-            gmp: (item.gmp && item.gmp > 0) ? item.gmp : existing.gmp,
-            gmpPercent: (item.gmpPercent && item.gmpPercent > 0) ? item.gmpPercent : existing.gmpPercent,
-            isAiPredictedGmp: item.isAiPredictedGmp ?? existing.isAiPredictedGmp,
+            series: chosenSeries,
+            lotSize: chosenLot,
+            minInvestment: chosenMinInv,
+            status: isMergedListed ? 'Listed' : (item.status === 'Open' || existing.status === 'Open' ? 'Open' : (sanitizedItem.status || existing.status)),
+            isListed: isMergedListed,
+            gmp: (sanitizedItem.gmp && sanitizedItem.gmp > 0) ? sanitizedItem.gmp : existing.gmp,
+            gmpPercent: (sanitizedItem.gmpPercent && sanitizedItem.gmpPercent > 0) ? sanitizedItem.gmpPercent : existing.gmpPercent,
+            isAiPredictedGmp: sanitizedItem.isAiPredictedGmp ?? existing.isAiPredictedGmp,
           };
+        }
+      }
+
+      // Guaranteed ML GMP prediction for open and upcoming IPOs
+      for (const ipo of uniqueList) {
+        const eff = getEffectiveIpoStatus(ipo);
+        if (eff !== 'listed' && ipo.series !== 'DEBT' && (!ipo.gmp || ipo.gmp <= 0)) {
+          const ml = predictGmpForIpo({
+            symbol: ipo.symbol,
+            companyName: ipo.companyName,
+            price: ipo.priceHigh || ipo.priceLow || 100,
+            series: ipo.series,
+            currentSubscription: ipo.currentSubscription || 0,
+            qibSubscription: ipo.qibSubscription || 0,
+            retailSubscription: ipo.retailSubscription || 0,
+            niiSubscription: ipo.niiSubscription || 0,
+            status: eff === 'open' ? 'Open' : 'Upcoming',
+          });
+          if (ml.predictedGmp > 0) {
+            ipo.gmp = ml.predictedGmp;
+            ipo.gmpPercent = ml.predictedGainPct;
+            ipo.isAiPredictedGmp = true;
+            ipo.predictedListingPrice = ml.predictedListingPrice;
+          }
         }
       }
       setIpos(uniqueList);
@@ -218,12 +279,66 @@ export default function LiveMarketPage() {
     router.push(`/?tab=analyst&symbol=${encodeURIComponent(symbol)}`);
   };
 
+  // Dynamically compute live KPIs strictly synchronized with deduplicated effective IPO statuses
+  const liveOverview = useMemo(() => {
+    let upcomingCount = 0;
+    let openCount = 0;
+    let closedCount = 0;
+    let recentlyListedCount = 0;
+    let closingSoonCount = 0;
+
+    for (const item of ipos) {
+      const eff = getEffectiveIpoStatus(item);
+      if (eff === 'open') {
+        openCount++;
+        if (item.isClosingSoon || (item.remainingTime && item.remainingTime.includes('Hours Left'))) {
+          closingSoonCount++;
+        }
+      } else if (eff === 'upcoming') {
+        upcomingCount++;
+      } else if (eff === 'closed') {
+        closedCount++;
+      } else if (eff === 'listed') {
+        recentlyListedCount++;
+      }
+    }
+
+    const listed = ipos.filter((i) => getEffectiveIpoStatus(i) === 'listed');
+    const primary = ipos.filter((i) => getEffectiveIpoStatus(i) !== 'listed');
+
+    const validGainers = listed.filter((i) => i.currentPrice && i.dayChangePercent !== undefined);
+    const topGainer = validGainers.length > 0
+      ? [...validGainers].sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))[0]
+      : listed[0];
+
+    const validSubscribed = primary.filter((i) => (i.currentSubscription || 0) > 0);
+    const topSubscribed = validSubscribed.length > 0
+      ? [...validSubscribed].sort((a, b) => (b.currentSubscription || 0) - (a.currentSubscription || 0))[0]
+      : primary[0];
+
+    const validGmp = primary.filter((i) => (i.gmp || 0) > 0);
+    const topGmp = validGmp.length > 0
+      ? [...validGmp].sort((a, b) => (b.gmpPercent || 0) - (a.gmpPercent || 0))[0]
+      : primary[0];
+
+    return {
+      upcomingCount,
+      openCount,
+      closingSoonCount,
+      recentlyListedCount,
+      totalTrackedCount: ipos.length,
+      topGainer,
+      topSubscribed,
+      topGmp,
+    };
+  }, [ipos]);
+
   return (
     <div className="min-h-screen flex flex-col bg-[#060913] text-slate-100 selection:bg-emerald-500/30 selection:text-white">
       {/* Global Navigation Bar */}
       <Navbar
         activeTab="radar"
-        activeIpoCount={overviewData?.overview.openCount || ipos.filter((i) => i.status === 'Open').length}
+        activeIpoCount={liveOverview.openCount}
         isRefreshing={isRefreshing}
         onRefresh={() => fetchMarketData(false)}
         lastUpdatedTime={lastUpdated}
@@ -261,7 +376,10 @@ export default function LiveMarketPage() {
 
         {/* 2. IPO MARKET OVERVIEW STATS */}
         <IpoMarketOverview
-          data={overviewData}
+          overview={liveOverview}
+          topGainer={liveOverview.topGainer}
+          topSubscribed={liveOverview.topSubscribed}
+          topGmp={liveOverview.topGmp}
           loading={loading && !overviewData}
           onSelectIpo={(ipo) => handleOpenDetails(ipo, 'overview')}
         />
@@ -330,8 +448,8 @@ export default function LiveMarketPage() {
               <LiveGmpTrendChart
                 symbol={selectedIpoForGmp.symbol}
                 companyName={selectedIpoForGmp.companyName}
-                baseGmp={selectedIpoForGmp.gmp || 75}
-                issuePrice={selectedIpoForGmp.priceHigh || 450}
+                baseGmp={selectedIpoForGmp.gmp ?? 0}
+                issuePrice={selectedIpoForGmp.priceHigh || selectedIpoForGmp.priceLow || 100}
               />
             </div>
           </div>
@@ -351,7 +469,11 @@ export default function LiveMarketPage() {
                   <h3 className="text-base font-bold text-white leading-tight">
                     {selectedIpoForStockChart.companyName} ({selectedIpoForStockChart.symbol})
                   </h3>
-                  <p className="text-xs text-slate-400">Live Listed Market Feed • Real-Time NSE Exchange Feed</p>
+                  <p className="text-xs text-slate-400">
+                    {getEffectiveIpoStatus(selectedIpoForStockChart) === 'listed'
+                      ? 'Live Listed Market Feed • Real-Time NSE Exchange Feed'
+                      : 'Primary Offering • Secondary Exchange Trading Commences on Listing Day'}
+                  </p>
                 </div>
               </div>
               <button
@@ -366,7 +488,13 @@ export default function LiveMarketPage() {
               <LiveStockPriceChart
                 symbol={selectedIpoForStockChart.symbol}
                 companyName={selectedIpoForStockChart.companyName}
-                initialPrice={selectedIpoForStockChart.currentPrice || selectedIpoForStockChart.listingPrice || 450}
+                initialPrice={
+                  selectedIpoForStockChart.currentPrice ||
+                  selectedIpoForStockChart.listingPrice ||
+                  selectedIpoForStockChart.priceHigh ||
+                  selectedIpoForStockChart.priceLow ||
+                  100
+                }
               />
             </div>
           </div>

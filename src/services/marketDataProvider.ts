@@ -1,5 +1,6 @@
 import { MarketQuoteData, MarketOhlcCandle } from '@/types/liveMarket';
 import { LISTED_IPOS_REGISTRY } from './listedIpoService';
+import { findMarketMetadata } from './nseIpoService';
 
 export interface MarketDataProvider {
   name: string;
@@ -525,11 +526,12 @@ export class MockMarketProvider implements MarketDataProvider {
   async getQuote(symbol: string): Promise<MarketQuoteData> {
     const clean = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
     const listed = LISTED_IPOS_REGISTRY.find((l) => l.symbol.toUpperCase() === clean);
+    const meta = findMarketMetadata(clean);
 
     const base = this.basePrices[clean] || {
-      price: listed ? listed.listingPrice * 1.2 : 450,
-      issue: listed ? listed.issuePrice : 350,
-      prevClose: listed ? listed.listingPrice * 1.18 : 442,
+      price: listed ? listed.listingPrice * 1.2 : (meta?.priceHigh || 100),
+      issue: listed ? listed.issuePrice : (meta?.priceLow || 100),
+      prevClose: listed ? listed.listingPrice * 1.18 : (meta?.priceHigh || 100),
     };
 
     // Add gentle intraday random walk variance (±0.8%)

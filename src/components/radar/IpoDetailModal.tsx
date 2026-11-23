@@ -1024,7 +1024,7 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
                 <button
                   onClick={() => {
                     onClose();
-                    const price = detail?.minInvestment && detail?.lotSize ? detail.minInvestment / detail.lotSize : 450;
+                    const price = cutoffPrice > 0 ? cutoffPrice : (detail?.minInvestment && detail?.lotSize ? detail.minInvestment / detail.lotSize : 100);
                     onApplyWithPans(symbol, companyName, price, lotSize);
                   }}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-xs cursor-pointer transition shadow-md shadow-cyan-500/20"
@@ -1056,7 +1056,7 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
                 <button
                   onClick={() => {
                     onClose();
-                    const price = detail?.minInvestment && detail?.lotSize ? detail.minInvestment / detail.lotSize : 450;
+                    const price = cutoffPrice > 0 ? cutoffPrice : (detail?.minInvestment && detail?.lotSize ? detail.minInvestment / detail.lotSize : 100);
                     onApplyWithPans(symbol, companyName, price, lotSize);
                   }}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-500 hover:bg-blue-400 text-black font-semibold text-xs cursor-pointer transition shadow-md shadow-blue-500/20"

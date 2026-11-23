@@ -11,6 +11,7 @@
 import { LiveIpoSummary, LiveIpoDetail, IpoSeries, IpoStatus, UnifiedIPO } from '@/types/ipo';
 import { getRedisClient } from '@/lib/redis';
 import { getRegistrarInfo, calculateRemainingTime, cleanPriceText, findMarketMetadata, calculateDefaultLotSize } from './nseIpoService';
+import { getCanonicalSymbol } from '@/lib/utils/ipoDeduplication';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -94,6 +95,16 @@ export class IpoFetchService {
   static deriveTicker(name: string): string {
     const meta = findMarketMetadata(name);
     if (meta) return meta.symbol;
+
+    const upper = name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (upper.includes('WATRANA')) return 'WATRANA';
+    if (upper.includes('CRYSTALCROP') || upper.includes('CRYSTAL')) return 'CRYSTCP';
+    if (upper.includes('MAHANADI') || upper.includes('MAHANACOAL')) return 'MAHANACOAL';
+    if (upper.includes('JIOPLAT') || upper.includes('JIOPLATFORMS')) return 'JIOPLAT';
+    if (upper.includes('JIOFIN')) return 'JIOFIN';
+    if (upper.includes('BLACKBUCK') || upper.includes('ZINKA')) return 'BLACKBUCK';
+    if (upper.includes('EIEL') || upper.includes('ENVIROINFRA')) return 'EIEL';
+    if (upper.includes('SHREESIDHI') || upper.includes('SIDDHIVINAYAK') || upper.includes('SHREESGI')) return 'SHREESIDHI';
 
     const clean = name.replace(/Limited|Ltd\.?|India|Private|Pvt\.?|Holding|Holdings|Solutions|Services/gi, '').trim();
     const words = clean.split(/[\s\-_]+/).filter(Boolean);
@@ -343,7 +354,7 @@ export class IpoFetchService {
           listingDate: undefined,
           priceBand: { min: 100, max: 100 },
           priceBandStr: 'TBD',
-          lotSize: 14,
+          lotSize: calculateDefaultLotSize(100, 'EQ'),
           registrarName: registrar.name,
           registrarUrl: registrar.url,
         });
@@ -587,7 +598,7 @@ export class IpoFetchService {
           listingDate: r.listingDate,
           priceBand: pBand,
           priceBandStr: priceStr,
-          lotSize: r.lotSize || (isSme ? 1200 : 14),
+          lotSize: r.lotSize || (isSme ? 1200 : calculateDefaultLotSize(pBand.max, isSme ? 'SME' : 'EQ')),
           faceValue: r.faceValue,
           issueSizeStr: r.issueSize,
           gmp: r.gmp,

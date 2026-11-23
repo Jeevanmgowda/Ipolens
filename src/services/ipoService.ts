@@ -35,25 +35,28 @@ export class IpoService {
     this.latestIposCache = all;
 
     const listed = all.filter((i) => isIpoListed(i));
-    const upcoming = all.filter((i) => !isIpoListed(i) && i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
-    const open = all.filter((i) => !isIpoListed(i) && i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
-    const closingSoon = all.filter((i) => !isIpoListed(i) && i.status === 'Open' && i.isClosingSoon && i.remainingTime !== 'Bidding Closed');
+    const primary = all.filter((i) => !isIpoListed(i));
+    const upcoming = primary.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
+    const open = primary.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
+    const closingSoon = primary.filter((i) => i.status === 'Open' && i.isClosingSoon && i.remainingTime !== 'Bidding Closed');
 
-    // Top Gainer among listed IPOs
+    // Top Gainer strictly among listed secondary market stocks
     const validGainers = listed.filter((i) => i.currentPrice && i.dayChangePercent !== undefined);
     const topGainer = validGainers.length > 0
       ? [...validGainers].sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))[0]
       : (listed.length > 0 ? listed[0] : undefined);
 
-    // Highest Subscribed among open/closed IPOs
-    const topSubscribed = all.length > 0
-      ? [...all].sort((a, b) => b.currentSubscription - a.currentSubscription)[0]
-      : undefined;
+    // Highest Subscribed strictly among primary market offerings
+    const validSubscribed = primary.filter((i) => (i.currentSubscription || 0) > 0);
+    const topSubscribed = validSubscribed.length > 0
+      ? [...validSubscribed].sort((a, b) => (b.currentSubscription || 0) - (a.currentSubscription || 0))[0]
+      : (primary.length > 0 ? primary[0] : undefined);
 
-    // Highest estimated GMP
-    const topGmp = all.length > 0
-      ? [...all].sort((a, b) => b.gmpPercent - a.gmpPercent)[0]
-      : undefined;
+    // Highest estimated GMP strictly among primary market offerings
+    const validGmp = primary.filter((i) => (i.gmp || 0) > 0);
+    const topGmp = validGmp.length > 0
+      ? [...validGmp].sort((a, b) => (b.gmpPercent || 0) - (a.gmpPercent || 0))[0]
+      : (primary.length > 0 ? primary[0] : undefined);
 
     return {
       success: true,

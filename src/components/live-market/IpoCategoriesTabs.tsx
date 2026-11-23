@@ -10,6 +10,7 @@ import {
   isSameIpo,
   isFalseOrDemoSymbol,
 } from '@/lib/utils/ipoDeduplication';
+import { predictGmpForIpo } from '@/services/mlListingGainModel';
 import {
   Search,
   Filter,
@@ -177,21 +178,98 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
   // Deduplicate ipos by canonical symbol and company name so NO tab or grid ever renders duplicate cards!
   const deduplicatedIpos = useMemo(() => {
     const result: LiveMarketIpoItem[] = [];
-    for (const ipo of ipos) {
-      if (isFalseOrDemoSymbol(ipo.symbol)) continue;
-      const canonical = getCanonicalSymbol(ipo.symbol);
-      const isDup = result.some((existing) =>
-        isSameIpo(existing.symbol, existing.companyName, canonical, ipo.companyName)
+    for (const rawIpo of ipos) {
+      if (isFalseOrDemoSymbol(rawIpo.symbol)) continue;
+      const canonical = getCanonicalSymbol(rawIpo.symbol);
+      const isDupIdx = result.findIndex((existing) =>
+        isSameIpo(existing.symbol, existing.companyName, canonical, rawIpo.companyName)
       );
-      if (!isDup) {
-        result.push({
-          ...ipo,
-          symbol: canonical || ipo.symbol,
-          id: (canonical || ipo.symbol).toLowerCase(),
-        });
+
+      const rawPrices = String(rawIpo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
+      const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
+      const parsedMin = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[0]) : parsedMax;
+      const pHigh = rawIpo.priceHigh || rawIpo.issuePrice || rawIpo.priceLow || parsedMax || 100;
+      const pLow = rawIpo.priceLow || parsedMin || pHigh;
+
+      const series: 'EQ' | 'SME' | 'DEBT' = rawIpo.series === 'DEBT' ? 'DEBT' : (rawIpo.series === 'SME' ? 'SME' : 'EQ');
+      const lot = series === 'DEBT'
+        ? 1
+        : series === 'SME'
+        ? (rawIpo.lotSize && rawIpo.lotSize >= 600 ? rawIpo.lotSize : 1200)
+        : (rawIpo.lotSize && rawIpo.lotSize > 0 && !(rawIpo.lotSize === 14 && pHigh < 700) && (rawIpo.lotSize * pHigh >= 10000))
+        ? rawIpo.lotSize
+        : Math.max(1, Math.floor(15000 / pHigh));
+      const minInv = series === 'DEBT'
+        ? (pHigh * lot)
+        : series === 'SME'
+        ? (rawIpo.minInvestment && rawIpo.minInvestment >= 90000 ? rawIpo.minInvestment : (pHigh * lot))
+        : (rawIpo.minInvestment && rawIpo.minInvestment >= 10000 ? rawIpo.minInvestment : (pHigh * lot));
+
+      const sanitized: LiveMarketIpoItem = {
+        ...rawIpo,
+        symbol: canonical || rawIpo.symbol,
+        id: (canonical || rawIpo.symbol).toLowerCase(),
+        priceHigh: pHigh,
+        priceLow: pLow,
+        series,
+        lotSize: lot,
+        minInvestment: minInv,
+      };
+
+      if (isDupIdx === -1) {
+        result.push(sanitized);
+      } else {
+        const existing = result[isDupIdx];
+        const isMergedListed = getEffectiveIpoStatus(existing) === 'listed' || getEffectiveIpoStatus(sanitized) === 'listed';
+        const chosenSeries: 'EQ' | 'SME' | 'DEBT' = (existing.series === 'SME' || sanitized.series === 'SME') ? 'SME' : (existing.series === 'DEBT' || sanitized.series === 'DEBT' ? 'DEBT' : 'EQ');
+        const chosenLot = chosenSeries === 'DEBT' ? 1 : chosenSeries === 'SME' ? (existing.lotSize >= 600 ? existing.lotSize : (sanitized.lotSize >= 600 ? sanitized.lotSize : 1200)) : (existing.lotSize > 0 ? existing.lotSize : sanitized.lotSize);
+        const chosenMinInv = chosenSeries === 'DEBT' ? (existing.priceHigh * chosenLot) : chosenSeries === 'SME' ? Math.max(90000, existing.priceHigh * chosenLot) : Math.max(10000, existing.priceHigh * chosenLot);
+
+        result[isDupIdx] = {
+          ...existing,
+          ...sanitized,
+          symbol: canonical || existing.symbol,
+          id: (canonical || existing.symbol).toLowerCase(),
+          series: chosenSeries,
+          lotSize: chosenLot,
+          minInvestment: chosenMinInv,
+          status: isMergedListed ? 'Listed' : (existing.status === 'Open' || sanitized.status === 'Open' ? 'Open' : (sanitized.status || existing.status)),
+          isListed: isMergedListed,
+          gmp: (sanitized.gmp && sanitized.gmp > 0) ? sanitized.gmp : existing.gmp,
+          gmpPercent: (sanitized.gmpPercent && sanitized.gmpPercent > 0) ? sanitized.gmpPercent : existing.gmpPercent,
+          isAiPredictedGmp: sanitized.isAiPredictedGmp ?? existing.isAiPredictedGmp,
+        };
       }
     }
-    return result;
+
+    // Pass 2: Predict GMP for any Open or Upcoming IPO with flat 0 or missing GMP!
+    return result.map((item) => {
+      const eff = getEffectiveIpoStatus(item);
+      if (eff !== 'listed' && item.series !== 'DEBT' && (!item.gmp || item.gmp <= 0)) {
+        const pHigh = item.priceHigh || item.priceLow || item.issuePrice || 100;
+        const ml = predictGmpForIpo({
+          symbol: item.symbol,
+          companyName: item.companyName,
+          price: pHigh,
+          series: item.series,
+          currentSubscription: item.currentSubscription || 0,
+          qibSubscription: item.qibSubscription || 0,
+          retailSubscription: item.retailSubscription || 0,
+          niiSubscription: item.niiSubscription || 0,
+          status: eff === 'open' ? 'Open' : 'Upcoming',
+        });
+        if (ml.predictedGmp > 0) {
+          return {
+            ...item,
+            gmp: ml.predictedGmp,
+            gmpPercent: ml.predictedGainPct,
+            isAiPredictedGmp: true,
+            predictedListingPrice: ml.predictedListingPrice,
+          };
+        }
+      }
+      return item;
+    });
   }, [ipos]);
 
   // Counts by category (strictly categorized by effective bidding lifecycle)
@@ -531,12 +609,23 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     </div>
 
                     {(() => {
-                      const displayLot = (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && ipo.priceHigh < 700 && ipo.series !== 'DEBT'))
+                      const rawPrices = String(ipo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
+                      const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
+                      const effectivePrice = Math.max(1, ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 100);
+
+                      const displayLot = ipo.series === 'DEBT'
+                        ? 1
+                        : ipo.series === 'SME'
+                        ? (ipo.lotSize && ipo.lotSize >= 600 ? ipo.lotSize : 1200)
+                        : (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && effectivePrice < 700) && (ipo.lotSize * effectivePrice >= 10000))
                         ? ipo.lotSize
-                        : (ipo.series === 'DEBT' ? 1 : ipo.series === 'SME' ? 1200 : Math.max(1, Math.floor(15000 / Math.max(1, ipo.priceHigh || 100))));
-                      const displayMinInv = (ipo.minInvestment && (ipo.series === 'DEBT' || ipo.minInvestment >= 10000))
-                        ? ipo.minInvestment
-                        : ((ipo.priceHigh || 100) * displayLot);
+                        : Math.max(1, Math.floor(15000 / effectivePrice));
+
+                      const displayMinInv = ipo.series === 'DEBT'
+                        ? (effectivePrice * displayLot)
+                        : ipo.series === 'SME'
+                        ? (ipo.minInvestment && ipo.minInvestment >= 90000 ? ipo.minInvestment : (effectivePrice * displayLot))
+                        : (ipo.minInvestment && ipo.minInvestment >= 10000 ? ipo.minInvestment : (effectivePrice * displayLot));
 
                       return (
                         <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
@@ -982,9 +1071,17 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           </td>
                           <td className="py-3.5 px-4 text-slate-300">
                             {(() => {
-                              const tblLot = (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && ipo.priceHigh < 700 && ipo.series !== 'DEBT'))
+                              const rawPrices = String(ipo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
+                              const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
+                              const effectivePrice = Math.max(1, ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 100);
+
+                              const tblLot = ipo.series === 'DEBT'
+                                ? 1
+                                : ipo.series === 'SME'
+                                ? (ipo.lotSize && ipo.lotSize >= 600 ? ipo.lotSize : 1200)
+                                : (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && effectivePrice < 700) && (ipo.lotSize * effectivePrice >= 10000))
                                 ? ipo.lotSize
-                                : (ipo.series === 'DEBT' ? 1 : ipo.series === 'SME' ? 1200 : Math.max(1, Math.floor(15000 / Math.max(1, ipo.priceHigh || 100))));
+                                : Math.max(1, Math.floor(15000 / effectivePrice));
                               return (
                                 <span className="font-mono font-medium block">
                                   {ipo.series === 'DEBT'
