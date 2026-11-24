@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { FamilyPanProfile, PanRelationship } from '@/types/pan';
 import { maskPan, isValidPan } from '@/services/duplicateEnforcer';
-import { SmartAllocationModal } from './SmartAllocationModal';
 import {
   Users,
   UserPlus,
@@ -14,7 +13,6 @@ import {
   CheckCircle2,
   CreditCard,
   Sparkles,
-  Zap,
   TrendingUp,
   RefreshCw,
 } from 'lucide-react';
@@ -27,7 +25,6 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
   const [profiles, setProfiles] = useState<FamilyPanProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [isSmartOptimizerOpen, setIsSmartOptimizerOpen] = useState<boolean>(false);
   const [loadingSample, setLoadingSample] = useState<boolean>(false);
 
   // Form inputs
@@ -153,41 +150,6 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
         </div>
       </div>
 
-      {/* Probability Maximizer Feature Card */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-purple-950/50 via-slate-900/80 to-cyan-950/50 border border-purple-500/30 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-        <div className="space-y-2 max-w-2xl">
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-purple-400" />
-              Smart Multi-PAN Allocation Engine
-            </span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Live NSE/BSE Telemetry
-            </span>
-          </div>
-
-          <h3 className="text-lg font-bold text-white tracking-wide">
-            Maximize Allotment Odds with Live Exchange Bidding Multiples
-          </h3>
-
-          <p className="text-xs text-slate-300 leading-relaxed">
-            SEBI allocates Retail and Small NII (sNII) lots strictly by computerized lottery. IPOLENS solves the combinatorial probability equation <code className="text-cyan-300">1 - Π(1 - P_i)</code> to distribute lots across your family PANs (Retail 1-Lot vs. sNII vs. bNII) for up to <strong className="text-emerald-400">+350% higher allotment probability</strong> before bidding closes.
-          </p>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsSmartOptimizerOpen(true)}
-            className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500 hover:from-cyan-400 hover:to-purple-400 text-white font-bold text-xs shadow-lg shadow-purple-500/25 transition cursor-pointer"
-          >
-            <Zap className="w-4 h-4" />
-            <span>Launch Probability Maximizer</span>
-          </button>
-        </div>
-      </div>
-
       {/* Header with Add Button and Multi-Apply Trigger */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/60 border border-white/10">
         <div>
@@ -201,14 +163,6 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => setIsSmartOptimizerOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold text-xs border border-purple-500/30 transition cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            <span>Probability Maximizer</span>
-          </button>
-
           {profiles.length > 0 && (
             <button
               onClick={onOpenMultiApply}
@@ -432,13 +386,6 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
           </div>
         </div>
       )}
-
-      {/* Smart Probability Maximizer Modal */}
-      <SmartAllocationModal
-        isOpen={isSmartOptimizerOpen}
-        onClose={() => setIsSmartOptimizerOpen(false)}
-        onApplicationsSubmitted={() => fetchProfiles()}
-      />
     </div>
   );
 };
