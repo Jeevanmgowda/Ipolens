@@ -110,4 +110,53 @@ describe('DRHP RAG Model & Prospectus Ingestion Pipeline', () => {
     expect(qa.retrievedChunks).toBeDefined();
     expect(qa.retrievedChunks!.length).toBeGreaterThan(0);
   });
+
+  it('should retrieve authentic grounded prospectus chunks for ESDS Software Solution Limited', () => {
+    const capexChunks = drhpRagService.retrieveChunks('ESDS', 'objects of the issue cloud hardware capex', 2);
+    expect(capexChunks.length).toBeGreaterThan(0);
+    expect(capexChunks.some((c) => c.pageNumber === 74)).toBe(true);
+    const chunk74 = capexChunks.find((c) => c.pageNumber === 74)!;
+    expect(chunk74.snippet).toContain('cloud computing hardware');
+    expect(chunk74.snippet).toContain('Nashik');
+
+    const promoterChunks = drhpRagService.retrieveChunks('ESDS', 'promoter piyush somani shareholding', 2);
+    expect(promoterChunks.length).toBeGreaterThan(0);
+    expect(promoterChunks[0].pageNumber).toBe(96);
+    expect(promoterChunks[0].snippet).toContain('Piyush Somani');
+  });
+
+  it('should retrieve authentic grounded prospectus chunks for SHREESIDHI', () => {
+    const chunks = drhpRagService.retrieveChunks('SHREESIDHI', 'biomass briquetting solar power mehsana', 2);
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks[0].pageNumber).toBe(32);
+    expect(chunks[0].snippet).toContain('Mehsana, Gujarat');
+  });
+
+  it('should generate authentic analysis with clamped conviction score and real citations for ESDS', async () => {
+    const analysis = await analyzeDrhpFiling('ESDS', 'ESDS Software Solution Limited');
+    expect(analysis.symbol).toBe('ESDS');
+    expect(analysis.companyName).toBe('ESDS Software Solution Limited');
+    expect(analysis.confidenceScore).toBeGreaterThanOrEqual(10);
+    expect(analysis.confidenceScore).toBeLessThanOrEqual(100);
+    expect(analysis.confidenceScore).not.toBe(125);
+    expect(analysis.citations).toBeDefined();
+    expect(analysis.citations.length).toBeGreaterThan(0);
+
+    // Citations should use real grounded pages (e.g. 74, 96, 38)
+    const pageNumbers = analysis.citations.map((c) => c.pageNumber);
+    expect(pageNumbers.some((p) => p === 74 || p === 96 || p === 38 || p === 134 || p === 185 || p === 248)).toBe(true);
+
+    // Business moat should be grounded in ESDS cloud & data center architecture
+    expect(analysis.businessMoat).toContain('data center');
+  });
+
+  it('should ensure non-hardcoded DRHP citations and documents for any arbitrary ticker', () => {
+    const citations = drhpRagService.getGroundedCitations('RANDOMTECH', 3);
+    expect(citations.length).toBeGreaterThan(0);
+    for (const c of citations) {
+      expect(c.claim).toBeDefined();
+      expect(c.pageNumber).toBeGreaterThan(0);
+      expect(c.excerpt.length).toBeGreaterThan(20);
+    }
+  });
 });

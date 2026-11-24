@@ -38,6 +38,7 @@ import {
   Radio,
   ArrowLeft,
   ExternalLink,
+  ChevronLeft,
   ChevronRight,
   Database,
   BarChart3,
@@ -82,6 +83,15 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
   const [liveIpos, setLiveIpos] = useState<LiveMarketIpoItem[]>([]);
   const [radarCategory, setRadarCategory] = useState<IpoCategoryTab>('open');
   const [seriesFilter, setSeriesFilter] = useState<'all' | 'EQ' | 'SME'>('all');
+  const [tickerSearch, setTickerSearch] = useState<string>('');
+  const carouselRef = useRef<HTMLDivElement>(null);
+
+  const scrollCarousel = (direction: 'left' | 'right') => {
+    if (carouselRef.current) {
+      const scrollAmount = direction === 'left' ? -350 : 350;
+      carouselRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   // Q&A Copilot State
   const [questionInput, setQuestionInput] = useState<string>('');
@@ -107,17 +117,24 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
     return { upcoming, open, closed, listed };
   }, [liveIpos]);
 
-  // Exact same category and series filtering as in IpoCategoriesTabs
+  // Exact same category and series filtering as in IpoCategoriesTabs with optional search filter
   const categorizedIpos = useMemo(() => {
     return liveIpos
       .filter((ipo) => {
         const eff = getEffectiveIpoStatus(ipo);
         if (eff !== radarCategory) return false;
         if (seriesFilter !== 'all' && ipo.series !== seriesFilter) return false;
+        if (tickerSearch.trim()) {
+          const q = tickerSearch.trim().toLowerCase();
+          return (
+            ipo.symbol.toLowerCase().includes(q) ||
+            ipo.companyName.toLowerCase().includes(q)
+          );
+        }
         return true;
       })
       .sort((a, b) => (b.gmpPercent || 0) - (a.gmpPercent || 0));
-  }, [liveIpos, radarCategory, seriesFilter]);
+  }, [liveIpos, radarCategory, seriesFilter, tickerSearch]);
 
   // Fetch live IPOs directly from Live IPO Radar (Open, Upcoming, Closed, Listed)
   useEffect(() => {
@@ -483,7 +500,10 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setRadarCategory(tab.id as IpoCategoryTab)}
+                    onClick={() => {
+                      setRadarCategory(tab.id as IpoCategoryTab);
+                      if (carouselRef.current) carouselRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-2 ${
                       radarCategory === tab.id
                         ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-md shadow-cyan-500/25'
@@ -509,89 +529,138 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                 ))}
               </div>
 
-              {/* Series Filter: All, Mainboard, SME */}
-              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-white/10 text-xs">
-                {(['all', 'EQ', 'SME'] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSeriesFilter(s)}
-                    className={`px-2.5 py-1 rounded-lg font-mono text-[11px] transition cursor-pointer ${
-                      seriesFilter === s ? 'bg-purple-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {s === 'all' ? 'All Series' : s === 'EQ' ? 'Mainboard' : 'SME'}
-                  </button>
-                ))}
+              {/* Search Filter & Series Filter: All, Mainboard, SME */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Quick filter..."
+                    value={tickerSearch}
+                    onChange={(e) => setTickerSearch(e.target.value)}
+                    className="pl-8 pr-2.5 py-1 rounded-xl bg-slate-950 border border-white/10 text-[11px] text-white placeholder-slate-500 font-mono focus:outline-none focus:border-purple-500 w-28 sm:w-36 transition"
+                  />
+                  {tickerSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTickerSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-white/10 text-xs">
+                  {(['all', 'EQ', 'SME'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSeriesFilter(s)}
+                      className={`px-2.5 py-1 rounded-lg font-mono text-[11px] transition cursor-pointer ${
+                        seriesFilter === s ? 'bg-purple-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {s === 'all' ? 'All Series' : s === 'EQ' ? 'Mainboard' : 'SME'}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {/* Categorized Chips Grid */}
+            {/* Categorized Chips Carousel with Nav Controls */}
             {categorizedIpos.length === 0 ? (
               <div className="py-6 text-center text-xs text-slate-500 font-mono">
-                No IPOs currently in {radarCategory} category matching {seriesFilter === 'all' ? 'selected' : seriesFilter} series.
+                No IPOs found in {radarCategory} category matching criteria.
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-1.5 max-h-48 overflow-y-auto pr-1">
-                {categorizedIpos.map((chip) => {
-                  const isSelected = symbol === chip.symbol;
-                  const effStatus = getEffectiveIpoStatus(chip);
-                  const isListed = effStatus === 'listed';
-                  const isOpen = effStatus === 'open';
-                  const isUpcoming = effStatus === 'upcoming';
-                  const gmpVal = chip.gmp ?? 0;
-                  const gmpPct = chip.gmpPercent ?? 0;
-                  const dayChangePct = chip.dayChangePercent;
+              <div className="relative flex items-center">
+                {/* Left Scroll Button */}
+                <button
+                  type="button"
+                  onClick={() => scrollCarousel('left')}
+                  className="shrink-0 mr-1.5 w-7 h-7 rounded-lg bg-slate-900 border border-white/10 text-slate-300 hover:text-white hover:bg-slate-800 hover:border-purple-500/40 flex items-center justify-center shadow-md transition cursor-pointer z-10"
+                  title="Scroll left"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
 
-                  return (
-                    <button
-                      key={chip.symbol}
-                      type="button"
-                      onClick={() => handleQuickSelect(chip)}
-                      className={`px-2.5 py-1.5 rounded-lg font-mono text-[11px] font-bold cursor-pointer transition flex items-center gap-1.5 ${
-                        isSelected
-                          ? 'bg-purple-600 text-white border border-purple-400 shadow-md shadow-purple-600/40 ring-1 ring-purple-400'
-                          : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-white/5 hover:border-purple-500/30'
-                      }`}
-                      title={`${chip.companyName} (${chip.series || 'EQ'}) • Click to analyze DRHP`}
-                    >
-                      <span>{chip.symbol}</span>
-                      {chip.series === 'SME' && (
-                        <span className="px-1 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                          SME
-                        </span>
-                      )}
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          isOpen
-                            ? 'bg-emerald-400 animate-pulse'
-                            : isUpcoming
-                            ? 'bg-blue-400'
-                            : isListed
-                            ? 'bg-cyan-400'
-                            : 'bg-slate-500'
+                {/* Horizontal Scroll Carousel Track */}
+                <div
+                  ref={carouselRef}
+                  className="flex items-center gap-1.5 overflow-x-auto scroll-smooth py-1 scrollbar-none flex-1"
+                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                  {categorizedIpos.map((chip) => {
+                    const isSelected = symbol === chip.symbol;
+                    const effStatus = getEffectiveIpoStatus(chip);
+                    const isListed = effStatus === 'listed';
+                    const isOpen = effStatus === 'open';
+                    const isUpcoming = effStatus === 'upcoming';
+                    const gmpVal = chip.gmp ?? 0;
+                    const gmpPct = chip.gmpPercent ?? 0;
+                    const dayChangePct = chip.dayChangePercent;
+
+                    return (
+                      <button
+                        key={chip.symbol}
+                        type="button"
+                        onClick={() => handleQuickSelect(chip)}
+                        className={`px-3 py-1.5 rounded-xl font-mono text-[11px] font-bold cursor-pointer transition flex items-center gap-1.5 shrink-0 ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border border-purple-400 shadow-md shadow-purple-600/40 ring-1 ring-purple-400'
+                            : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-white/5 hover:border-purple-500/40'
                         }`}
-                      />
-                      {isListed && dayChangePct !== undefined ? (
+                        title={`${chip.companyName} (${chip.series || 'EQ'}) • Click to analyze DRHP`}
+                      >
+                        <span>{chip.symbol}</span>
+                        {chip.series === 'SME' && (
+                          <span className="px-1 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            SME
+                          </span>
+                        )}
                         <span
-                          className={`text-[10px] font-sans font-semibold ${
-                            isSelected ? 'text-white' : dayChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isOpen
+                              ? 'bg-emerald-400 animate-pulse'
+                              : isUpcoming
+                              ? 'bg-blue-400'
+                              : isListed
+                              ? 'bg-cyan-400'
+                              : 'bg-slate-500'
                           }`}
-                        >
-                          {dayChangePct >= 0 ? '+' : ''}{dayChangePct}%
-                        </span>
-                      ) : gmpPct > 0 ? (
-                        <span className={`text-[10px] font-sans font-semibold ${isSelected ? 'text-white' : 'text-emerald-400'}`}>
-                          +{gmpPct.toFixed(0)}%
-                        </span>
-                      ) : gmpVal > 0 ? (
-                        <span className={`text-[10px] font-sans font-semibold ${isSelected ? 'text-white' : 'text-emerald-400'}`}>
-                          +₹{gmpVal}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
+                        />
+                        {isListed && dayChangePct !== undefined ? (
+                          <span
+                            className={`text-[10px] font-sans font-semibold ${
+                              isSelected ? 'text-white' : dayChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
+                          >
+                            {dayChangePct >= 0 ? '+' : ''}{dayChangePct}%
+                          </span>
+                        ) : gmpPct > 0 ? (
+                          <span className={`text-[10px] font-sans font-semibold ${isSelected ? 'text-white' : 'text-emerald-400'}`}>
+                            +{gmpPct.toFixed(0)}%
+                          </span>
+                        ) : gmpVal > 0 ? (
+                          <span className={`text-[10px] font-sans font-semibold ${isSelected ? 'text-white' : 'text-emerald-400'}`}>
+                            +₹{gmpVal}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Right Scroll Button */}
+                <button
+                  type="button"
+                  onClick={() => scrollCarousel('right')}
+                  className="shrink-0 ml-1.5 w-7 h-7 rounded-lg bg-slate-900 border border-white/10 text-slate-300 hover:text-white hover:bg-slate-800 hover:border-purple-500/40 flex items-center justify-center shadow-md transition cursor-pointer z-10"
+                  title="Scroll right"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             )}
           </div>
@@ -782,18 +851,19 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
               <div>
                 <div className="flex flex-wrap items-center gap-2 mb-1.5">
                   <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    NSE:{result.symbol}
+                    NSE/BSE:{result.symbol}
                   </span>
                   <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-purple-400" />
                     {result.source}
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                    RAG Model: Grounded
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    RAG Grounded Model
                   </span>
-                  {result.extractionQuality && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                      Extraction: {result.extractionQuality}
+                  {result.pageCount && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                      {result.pageCount} Pages Ingested
                     </span>
                   )}
                 </div>
@@ -813,14 +883,44 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                   <span className="hidden sm:inline">{copied ? 'Copied!' : 'Copy Brief'}</span>
                 </button>
 
-                <div className="text-right hidden sm:block">
-                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-                    Conviction Score
-                  </span>
-                  <span className="text-xs font-mono font-bold text-slate-200">
-                    {result.confidenceScore}% / 100%
-                  </span>
-                </div>
+                {/* Institutional Conviction Meter */}
+                {(() => {
+                  const scoreVal = Math.min(100, Math.max(10, Math.round(result.confidenceScore || 75)));
+                  const tierLabel =
+                    scoreVal >= 80 ? 'High Conviction' : scoreVal >= 65 ? 'Moderate' : 'Cautious';
+                  const tierColor =
+                    scoreVal >= 80 ? 'text-emerald-400' : scoreVal >= 65 ? 'text-amber-400' : 'text-rose-400';
+                  const barGradient =
+                    scoreVal >= 80
+                      ? 'from-emerald-500 to-teal-400'
+                      : scoreVal >= 65
+                      ? 'from-amber-500 to-yellow-400'
+                      : 'from-rose-500 to-red-400';
+
+                  return (
+                    <div className="hidden sm:flex flex-col items-end px-3.5 py-2 rounded-xl bg-slate-950/80 border border-white/10 shadow-inner">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                          Conviction Score
+                        </span>
+                        <span className={`text-[10px] font-bold ${tierColor}`}>
+                          ({tierLabel})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2.5 mt-1">
+                        <div className="w-20 h-2 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-white/5">
+                          <div
+                            className={`h-full rounded-full bg-gradient-to-r ${barGradient} transition-all duration-500`}
+                            style={{ width: `${scoreVal}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-mono font-extrabold text-white">
+                          {scoreVal}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div
                   className={`px-5 py-2.5 rounded-xl font-extrabold text-sm tracking-wide uppercase border flex items-center gap-2 shadow-lg ${
@@ -1037,31 +1137,42 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                 </div>
               </div>
 
-              {/* Citations Grounding List */}
+              {/* Grounded Citations List */}
               {result.citations && result.citations.length > 0 && (
-                <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3.5 shadow-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs border-b border-white/5 pb-2.5">
+                    <span className="font-bold text-white uppercase tracking-wider flex items-center gap-2">
                       <BookOpen className="w-4 h-4 text-purple-400" />
-                      Grounded DRHP Page Citations
+                      Grounded DRHP Prospectus Citations
                     </span>
-                    <span className="text-[11px] font-mono text-slate-400">
-                      File: {result.documentName || `SEBI_${result.symbol}_DRHP_Filing.pdf`}
+                    <span className="text-[11px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                      Filing: {result.documentName || `SEBI_${result.symbol}_DRHP_Filing.pdf`}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                     {result.citations.map((c, idx) => (
-                      <div key={idx} className="p-3 rounded-xl bg-slate-950/80 border border-white/5 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-slate-200 line-clamp-1">{c.claim}</span>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
-                            Page {c.pageNumber}
+                      <div
+                        key={idx}
+                        className="p-4 rounded-xl bg-slate-950/80 border border-white/10 hover:border-purple-500/40 space-y-2 transition shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-bold text-slate-200 text-xs leading-snug">
+                            {c.claim}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 shrink-0 flex items-center gap-1">
+                            <FileText className="w-3 h-3" /> Page {c.pageNumber}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-400 italic leading-relaxed line-clamp-2">
+                        <blockquote className="text-[11px] text-slate-300 font-mono italic leading-relaxed border-l-2 border-purple-500/60 pl-2.5 py-1 bg-purple-500/5 rounded-r">
                           &quot;{c.excerpt}&quot;
-                        </p>
+                        </blockquote>
+                        {c.section && (
+                          <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1.5 pt-1">
+                            <span className="text-slate-500 font-mono">SEBI Chapter:</span>
+                            <span className="text-slate-300">{c.section}</span>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

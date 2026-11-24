@@ -12,6 +12,7 @@ export interface CitationItem {
   claim: string;
   pageNumber: number;
   excerpt: string;
+  section?: string;
 }
 
 export interface RagChunk {

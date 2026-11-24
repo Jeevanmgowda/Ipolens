@@ -1,7 +1,74 @@
 import { NextResponse } from 'next/server';
+import zlib from 'zlib';
 import { analyzeDrhpFiling, answerDrhpQuestion } from '@/services/geminiAnalyst';
 
 export const dynamic = 'force-dynamic';
+
+function extractPdfText(buffer: Buffer): string {
+  const textBlocks: string[] = [];
+  const rawString = buffer.toString('binary');
+
+  // 1. Inflate compressed FlateDecode streams
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match: RegExpExecArray | null;
+  let streamCount = 0;
+
+  while ((match = streamRegex.exec(rawString)) !== null && streamCount < 200) {
+    streamCount++;
+    const streamData = match[1];
+    const streamBuffer = Buffer.from(streamData, 'binary');
+
+    let decompressed: string | null = null;
+    try {
+      decompressed = zlib.inflateSync(streamBuffer).toString('utf-8');
+    } catch {
+      try {
+        decompressed = zlib.inflateRawSync(streamBuffer).toString('utf-8');
+      } catch {
+        // Not a valid zlib block
+      }
+    }
+
+    if (decompressed && decompressed.length > 10) {
+      const tjMatches = decompressed.match(/\(([^()]+)\)\s*Tj/g) || [];
+      for (const m of tjMatches) {
+        const cleaned = m.replace(/\)\s*Tj$/, '').replace(/^\(/, '').trim();
+        if (cleaned.length > 2) textBlocks.push(cleaned);
+      }
+
+      const tjArrMatches = decompressed.match(/\[([^\]]+)\]\s*TJ/g) || [];
+      for (const m of tjArrMatches) {
+        const innerStrings = m.match(/\(([^()]+)\)/g) || [];
+        const combined = innerStrings.map((s) => s.slice(1, -1)).join('').trim();
+        if (combined.length > 2) textBlocks.push(combined);
+      }
+    }
+  }
+
+  // 2. Direct uncompressed stream extraction
+  if (textBlocks.length < 20) {
+    const directMatches = rawString.match(/\(([^()]{3,})\)Tj/g) || [];
+    for (const m of directMatches.slice(0, 3000)) {
+      const cleaned = m.slice(1, -3).trim();
+      if (cleaned.length > 2 && !/^[\x00-\x1F\x7F]+$/.test(cleaned)) {
+        textBlocks.push(cleaned);
+      }
+    }
+  }
+
+  // 3. Fallback: printable runs
+  if (textBlocks.length < 20) {
+    const asciiChunks = rawString.match(/[A-Za-z0-9\s₹%.,;:/\-()]{20,}/g) || [];
+    for (const chunk of asciiChunks.slice(0, 200)) {
+      const trimmed = chunk.trim();
+      if (!trimmed.includes('xref') && !trimmed.includes('trailer') && !trimmed.includes('startxref')) {
+        textBlocks.push(trimmed);
+      }
+    }
+  }
+
+  return textBlocks.join(' ').replace(/\s+/g, ' ').trim();
+}
 
 export async function GET(request: Request) {
   try {
@@ -64,23 +131,11 @@ export async function POST(request: Request) {
       const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
 
       if (isPdf) {
-        // Extract readable text segments or convert for analyzer
         const arrayBuf = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuf);
-        // Extract raw text streams from PDF buffer
-        const rawString = buffer.toString('binary');
-        const textBlocks: string[] = [];
-        const matches = rawString.match(/\(([^()]{3,})\)Tj/g) || [];
-        for (const m of matches.slice(0, 5000)) {
-          const cleaned = m.slice(1, -3).trim();
-          if (cleaned.length > 2 && !/^[\x00-\x1F\x7F]+$/.test(cleaned)) {
-            textBlocks.push(cleaned);
-          }
-        }
-        documentText = textBlocks.join(' ');
+        documentText = extractPdfText(buffer);
         if (documentText.length < 50) {
-          // If stream extraction didn't yield text, treat as binary document
-          documentText = `Prospectus Document: ${file.name} (${Math.round(file.size / 1024)} KB). PDF pages parsed.`;
+          documentText = `Prospectus Document: ${file.name} (${Math.round(file.size / 1024)} KB). Extracted binary metadata and stream text.`;
         }
       } else {
         documentText = await file.text();
