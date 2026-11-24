@@ -36,7 +36,7 @@ export function isIpoListed(ipo: {
   if (rem.includes('listed')) return true;
 
   const sym = (ipo.symbol || '').toUpperCase().trim();
-  if (sym === 'JIOPLAT' || sym === 'JIOFIN') return true;
+  if (sym === 'JIOFIN') return true;
 
   if (sym && LISTED_IPOS_REGISTRY.some((l) => isSameIpo(l.symbol, l.companyName, ipo.symbol, ipo.companyName))) {
     return true;

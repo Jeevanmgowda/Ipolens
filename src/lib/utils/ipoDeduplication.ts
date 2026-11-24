@@ -29,8 +29,9 @@ export const KNOWN_SYMBOL_ALIASES: Record<string, string[]> = {
   CRYSTCP: ['CRYSTALCP'],
   MAHACOAL: ['MAHANACOAL'],
   MAHANACOAL: ['MAHACOAL'],
-  JIOPLAT: ['JIOFIN', 'JPL'],
-  JIOFIN: ['JIOPLAT', 'JPL'],
+  JIOPLAT: ['JPL', 'RELIANCEJIO'],
+  JPL: ['JIOPLAT'],
+  JIOFIN: ['JIOFINANCIAL'],
   ZINKA: ['BLACKBUCK'],
   BLACKBUCK: ['ZINKA'],
   ENVIRO: ['EIEL'],
@@ -52,6 +53,7 @@ export function getCanonicalSymbol(symbol?: string | null): string {
     ZINKA: 'BLACKBUCK',
     ENVIRO: 'EIEL',
     SHREESGI: 'SHREESIDHI',
+    JPL: 'JIOPLAT',
   };
   return canonicalMap[clean] || clean;
 }

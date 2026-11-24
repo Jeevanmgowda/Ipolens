@@ -118,14 +118,19 @@ export function isBiddingStartedClient(dateStr?: string | null): boolean {
 
 export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
   const sym = (ipo.symbol || '').toUpperCase().trim();
-  const isJio = sym === 'JIOPLAT' || sym === 'JIOFIN';
+  const isJioFin = sym === 'JIOFIN';
+
+  // An explicitly upcoming or TBD issue (such as JIOPLAT mega IPO) is never listed
+  if (sym === 'JIOPLAT' && (ipo.status === 'Upcoming' || ipo.openDate === 'TBD')) {
+    return 'upcoming';
+  }
 
   const isListed =
     ipo.status === 'Listed' ||
     ipo.isListed === true ||
-    isJio ||
+    isJioFin ||
     (ipo.remainingTime || '').toLowerCase().includes('listed') ||
-    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined) ||
+    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined && ipo.status !== 'Upcoming') ||
     isListingDatePastClient(ipo.listingDate) ||
     isListingDatePastClient(ipo.expectedListingDate);
 

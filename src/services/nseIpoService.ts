@@ -44,9 +44,9 @@ export interface MarketIpoMetadata {
 // Ground-truth verified market primary registry for current and upcoming issues
 export const MARKET_IPO_REGISTRY: MarketIpoMetadata[] = [
   {
-    symbol: 'JIOPLAT',
-    aliases: ['jioplat', 'jio', 'jio platforms', 'jio platforms limited', 'jpl', 'jiofin', 'jio financial'],
-    companyName: 'Jio Platforms Limited',
+    symbol: 'JIOFIN',
+    aliases: ['jiofin', 'jio financial', 'jio financial services', 'jio financial services limited'],
+    companyName: 'Jio Financial Services Limited',
     series: 'EQ',
     priceBand: '₹261.85',
     priceLow: 261.85,
@@ -64,6 +64,37 @@ export const MARKET_IPO_REGISTRY: MarketIpoMetadata[] = [
     registrarSlug: 'kfintech',
     gmp: 0,
     gmpPercent: 0,
+    currentSubscription: 1.0,
+    retailSubscription: 1.0,
+    niiSubscription: 1.0,
+    qibSubscription: 1.0,
+    biddingDetails: {
+      'Issue Type': 'NSE Demerger & Exchange Listing',
+      'Listing At': 'NSE, BSE',
+      'Registrar': 'KFin Technologies Limited',
+    },
+  },
+  {
+    symbol: 'JIOPLAT',
+    aliases: ['jioplat', 'jio platforms', 'jio platforms limited', 'reliance jio', 'reliance jio ipo', 'jpl'],
+    companyName: 'Jio Platforms Limited',
+    series: 'EQ',
+    priceBand: '₹400 – ₹450',
+    priceLow: 400,
+    priceHigh: 450,
+    lotSize: 33,
+    minInvestment: 14850,
+    issueSize: '₹50,000 Cr',
+    issueSizeCr: 50000,
+    openDate: 'TBD',
+    closeDate: 'TBD',
+    allotmentDate: 'TBD',
+    listingDate: 'TBD',
+    registrar: 'KFin Technologies Limited',
+    registrarUrl: 'https://kosmic.kfintech.com/ipostatus/',
+    registrarSlug: 'kfintech',
+    gmp: 85,
+    gmpPercent: 18.89,
     currentSubscription: 0,
     retailSubscription: 0,
     niiSubscription: 0,
@@ -1046,8 +1077,8 @@ function deriveTicker(name: string): string {
   if (upper.includes('WATRANA')) return 'WATRANA';
   if (upper.includes('CRYSTALCROP') || upper.includes('CRYSTAL')) return 'CRYSTCP';
   if (upper.includes('MAHANADI') || upper.includes('MAHANACOAL')) return 'MAHANACOAL';
-  if (upper.includes('JIOPLAT') || upper.includes('JIOPLATFORMS')) return 'JIOPLAT';
-  if (upper.includes('JIOFIN')) return 'JIOFIN';
+  if (upper.includes('JIOFIN') || upper.includes('JIOFINANCIAL')) return 'JIOFIN';
+  if (upper.includes('JIOPLAT') || upper.includes('JIOPLATFORMS') || upper.includes('RELIANCEJIO') || upper === 'JPL') return 'JIOPLAT';
   if (upper.includes('BLACKBUCK') || upper.includes('ZINKA')) return 'BLACKBUCK';
   if (upper.includes('EIEL') || upper.includes('ENVIROINFRA')) return 'EIEL';
   if (upper.includes('SHREESIDHI') || upper.includes('SIDDHIVINAYAK') || upper.includes('SHREESGI')) return 'SHREESIDHI';
