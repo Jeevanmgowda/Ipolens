@@ -1,7 +1,8 @@
 import { DrhpAnalysisResult, AnalystVerdict, LiveIpoTelemetry, RetrievedChunk } from '@/types/ai';
 import { GoogleGenAI } from '@google/genai';
 import { drhpRagService } from '@/lib/services/drhp-rag.service';
-import { findMarketMetadata, fetchLiveNseIpos, resolveIpoLifecycleStatus } from './nseIpoService';
+import { findMarketMetadata, fetchLiveNseIpos, resolveIpoLifecycleStatus, getRegistrarInfo } from './nseIpoService';
+import { LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoService } from './ipoService';
 
 const withTimeout = <T>(promise: Promise<T>, ms: number = 7000): Promise<T> => {
@@ -709,9 +710,45 @@ const PROSPECTUS_KNOWLEDGE_BASE: Record<string, Partial<DrhpAnalysisResult>> = {
  */
 export function buildLiveTelemetry(symbol: string, companyName?: string): LiveIpoTelemetry | undefined {
   const meta = findMarketMetadata(symbol) || (companyName ? findMarketMetadata(companyName) : undefined);
-  if (!meta) return undefined;
+  if (!meta) {
+    const cleanSym = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cleanName = (companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const listed = LISTED_IPOS_REGISTRY.find(
+      (l) =>
+        l.symbol.toUpperCase().replace(/[^A-Z0-9]/g, '') === cleanSym ||
+        (cleanName && l.companyName.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanName))
+    );
+    if (listed) {
+      const reg = getRegistrarInfo(listed.symbol, listed.companyName);
+      const issuePrice = listed.issuePrice || 100;
+      const listingPrice = listed.listingPrice || issuePrice;
+      const listingGainPct = issuePrice > 0 ? Number((((listingPrice - issuePrice) / issuePrice) * 100).toFixed(1)) : 0;
+      return {
+        status: 'Listed',
+        priceBand: `₹${issuePrice}`,
+        issueSizeCr: 0,
+        lotSize: 1,
+        minInvestment: issuePrice,
+        subscriptionTotal: undefined,
+        gmpEstimate: Math.max(0, listingPrice - issuePrice),
+        expectedListingGainPct: listingGainPct,
+        registrarName: listed.allotmentRegistrar || reg.name,
+        registrarUrl: reg.url,
+        issueDates: listed.listingDate ? `Listed: ${listed.listingDate}` : undefined,
+        listingDate: listed.listingDate,
+        series: listed.series || 'EQ',
+        currentPrice: listed.currentPrice || listingPrice,
+        listingPrice,
+        issuePrice,
+        dayChange: listed.dayChange,
+        dayChangePercent: listed.dayChangePercent,
+        tradedVolume: listed.volume || listed.tradedVolume,
+      };
+    }
+    return undefined;
+  }
 
-  const resolvedStatus = resolveIpoLifecycleStatus(meta.openDate, meta.closeDate);
+  const resolvedStatus = resolveIpoLifecycleStatus(meta.openDate, meta.closeDate, false, meta.listingDate);
 
   return {
     status: resolvedStatus,
@@ -722,12 +759,23 @@ export function buildLiveTelemetry(symbol: string, companyName?: string): LiveIp
     subscriptionTotal: meta.currentSubscription,
     subscriptionRetail: meta.retailSubscription,
     subscriptionNii: meta.niiSubscription,
+    subscriptionQib: meta.qibSubscription,
     gmpEstimate: meta.gmp,
     expectedListingGainPct: meta.gmpPercent,
     registrarName: meta.registrar,
     registrarUrl: meta.registrarUrl,
     issueDates: meta.openDate && meta.closeDate ? `${meta.openDate} – ${meta.closeDate}` : undefined,
+    openDate: meta.openDate,
+    closeDate: meta.closeDate,
+    listingDate: meta.listingDate,
+    allotmentDate: meta.allotmentDate,
     series: meta.series,
+    currentPrice: meta.currentPrice,
+    listingPrice: meta.listingPrice,
+    issuePrice: meta.priceHigh || meta.priceLow,
+    dayChange: meta.dayChange,
+    dayChangePercent: meta.dayChangePercent,
+    tradedVolume: meta.volume,
   };
 }
 
@@ -758,20 +806,30 @@ export async function analyzeDrhpFiling(
       });
       if (match) {
         liveTelemetry = {
-          status: match.status,
+          status: match.status || resolveIpoLifecycleStatus(match.openDate, match.closeDate, false, match.listingDate),
           priceBand: match.priceBand || (match.priceLow && match.priceHigh ? `₹${match.priceLow} – ₹${match.priceHigh}` : 'TBD'),
           issueSizeCr: match.issueSizeCr || 0,
-          lotSize: match.lotSize,
+          lotSize: match.lotSize || 0,
           minInvestment: match.minInvestment || 0,
           subscriptionTotal: match.currentSubscription,
           subscriptionRetail: match.retailSubscription,
           subscriptionNii: match.niiSubscription,
+          subscriptionQib: match.qibSubscription,
           gmpEstimate: match.gmp,
           expectedListingGainPct: match.gmpPercent,
           registrarName: match.registrar,
           registrarUrl: match.registrarUrl,
           issueDates: match.openDate && match.closeDate ? `${match.openDate} – ${match.closeDate}` : undefined,
+          openDate: match.openDate,
+          closeDate: match.closeDate,
+          listingDate: match.listingDate,
+          allotmentDate: match.allotmentDate,
           series: match.series,
+          currentPrice: match.currentPrice,
+          listingPrice: match.listingPrice,
+          dayChange: match.dayChange,
+          dayChangePercent: match.dayChangePercent,
+          tradedVolume: match.volume,
         };
       }
     } catch {

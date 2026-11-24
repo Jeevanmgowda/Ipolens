@@ -10,6 +10,11 @@ export interface ListedIpoMetadata {
   issuePrice: number;
   listingPrice: number;
   allotmentRegistrar: string;
+  currentPrice?: number;
+  dayChange?: number;
+  dayChangePercent?: number;
+  volume?: number | string;
+  tradedVolume?: number | string;
 }
 
 // Registry of known landmark Indian IPOs with official tickers

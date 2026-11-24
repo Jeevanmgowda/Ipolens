@@ -140,10 +140,10 @@ describe('DRHP RAG Model & Prospectus Ingestion Pipeline', () => {
     expect(analysis.confidenceScore).toBeLessThanOrEqual(100);
     expect(analysis.confidenceScore).not.toBe(125);
     expect(analysis.citations).toBeDefined();
-    expect(analysis.citations.length).toBeGreaterThan(0);
+    expect(analysis.citations!.length).toBeGreaterThan(0);
 
     // Citations should use real grounded pages (e.g. 74, 96, 38)
-    const pageNumbers = analysis.citations.map((c) => c.pageNumber);
+    const pageNumbers = (analysis.citations || []).map((c) => c.pageNumber);
     expect(pageNumbers.some((p) => p === 74 || p === 96 || p === 38 || p === 134 || p === 185 || p === 248)).toBe(true);
 
     // Business moat should be grounded in ESDS cloud & data center architecture

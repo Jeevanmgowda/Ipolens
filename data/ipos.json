@@ -1749,11 +1749,14 @@
         "min": 429,
         "max": 429
       },
-      "lotSize": null,
-      "faceValue": null,
-      "issueSize": null,
-      "gmp": null,
-      "subscriptionTimes": null
+      "lotSize": 34,
+      "faceValue": 10,
+      "issueSize": "₹322.00 Cr",
+      "gmp": {
+        "value": 42,
+        "percent": 9.79
+      },
+      "subscriptionTimes": "18.42"
     },
     {
       "symbol": "PRIORITY",

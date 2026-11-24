@@ -39,6 +39,11 @@ export interface MarketIpoMetadata {
   niiSubscription?: number;
   qibSubscription?: number;
   biddingDetails?: Record<string, string>;
+  currentPrice?: number;
+  listingPrice?: number;
+  dayChange?: number;
+  dayChangePercent?: number;
+  volume?: number | string;
 }
 
 // Ground-truth verified market primary registry for current and upcoming issues
@@ -703,6 +708,38 @@ export const MARKET_IPO_REGISTRY: MarketIpoMetadata[] = [
       'Registrar': 'Link Intime India Pvt Ltd',
     },
   },
+  {
+    symbol: 'ESDS',
+    aliases: ['esds', 'esds software', 'esds software solution', 'esds software solution limited', 'esds ipo'],
+    companyName: 'ESDS Software Solution Limited',
+    series: 'EQ',
+    priceBand: '₹429',
+    priceLow: 429,
+    priceHigh: 429,
+    lotSize: 34,
+    minInvestment: 14586,
+    issueSize: '₹322.00 Cr',
+    issueSizeCr: 322.0,
+    openDate: '2026-08-28',
+    closeDate: '2026-09-01',
+    allotmentDate: '2026-09-02',
+    listingDate: '2026-09-04',
+    registrar: 'Link Intime India Pvt Ltd',
+    registrarUrl: 'https://linkintime.co.in/initial_offer/public-issues.html',
+    registrarSlug: 'linkintime',
+    gmp: 42,
+    gmpPercent: 9.79,
+    currentSubscription: 18.42,
+    retailSubscription: 12.25,
+    niiSubscription: 22.84,
+    qibSubscription: 24.60,
+    biddingDetails: {
+      'Issue Type': 'Book Built Issue (NSE Mainboard)',
+      'Listing At': 'NSE, BSE',
+      'Registrar': 'Link Intime India Pvt Ltd',
+      'Bidding Cut-off': '₹429 per share',
+    },
+  },
 ];
 
 export function findMarketMetadata(symbolOrName: string): MarketIpoMetadata | undefined {
@@ -1082,6 +1119,7 @@ function deriveTicker(name: string): string {
   if (upper.includes('BLACKBUCK') || upper.includes('ZINKA')) return 'BLACKBUCK';
   if (upper.includes('EIEL') || upper.includes('ENVIROINFRA')) return 'EIEL';
   if (upper.includes('SHREESIDHI') || upper.includes('SIDDHIVINAYAK') || upper.includes('SHREESGI')) return 'SHREESIDHI';
+  if (upper.includes('ESDS')) return 'ESDS';
 
   const clean = name.replace(/Limited|Ltd\.?|India|Private|Pvt\.?|Holding|Holdings|Solutions|Services|IPO|Issue|Offering/gi, '').trim();
   const words = clean.split(/[\s\-_]+/).filter(Boolean);
@@ -1646,24 +1684,33 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
             rawStatus === 'listed' ||
             LISTED_IPOS_REGISTRY.some((l) => l.symbol.toUpperCase() === sym);
           const existing = map.get(sym);
+          const meta = findMarketMetadata(sym) || findMarketMetadata(item.companyName || '');
           if (existing) {
-            if (item.gmp?.value !== undefined && item.gmp?.value !== null) {
+            if (meta?.gmp !== undefined) {
+              existing.gmpEstimate = meta.gmp;
+              existing.gmpPercent = meta.gmpPercent;
+            } else if (item.gmp?.value !== undefined && item.gmp?.value !== null) {
               existing.gmpEstimate = item.gmp.value;
               const pHigh = existing.priceHigh || 100;
               existing.gmpPercent = item.gmp.percent || (pHigh > 0 ? Math.round(((existing.gmpEstimate || 0) / pHigh) * 100) : 0);
             }
-            if (item.subscriptionTimes && item.subscriptionTimes !== '-' && item.subscriptionTimes !== '—') {
+            if (meta?.currentSubscription !== undefined) {
+              existing.noOfTime = meta.currentSubscription.toFixed(2);
+              existing.retailSubscription = meta.retailSubscription;
+              existing.niiSubscription = meta.niiSubscription;
+              existing.qibSubscription = meta.qibSubscription;
+            } else if (item.subscriptionTimes && item.subscriptionTimes !== '-' && item.subscriptionTimes !== '—') {
               existing.noOfTime = item.subscriptionTimes;
             }
-            if ((!existing.listingDate || existing.listingDate === 'TBD' || existing.listingDate === '') && item.listingDate) {
-              existing.listingDate = item.listingDate;
-              existing.expectedListingDate = item.listingDate;
+            if ((!existing.listingDate || existing.listingDate === 'TBD' || existing.listingDate === '') && (meta?.listingDate || item.listingDate)) {
+              existing.listingDate = meta?.listingDate || item.listingDate;
+              existing.expectedListingDate = existing.listingDate;
             }
-            if ((!existing.issueSize || existing.issueSize === '—' || existing.issueSize === '') && item.issueSize) {
-              existing.issueSize = item.issueSize;
+            if ((!existing.issueSize || existing.issueSize === '—' || existing.issueSize === '') && (meta?.issueSize || item.issueSize)) {
+              existing.issueSize = meta?.issueSize || item.issueSize;
             }
-            if ((!existing.lotSize || existing.lotSize === '14' || existing.lotSize === '0' || existing.lotSize === '') && item.lotSize) {
-              existing.lotSize = String(item.lotSize);
+            if ((!existing.lotSize || existing.lotSize === '14' || existing.lotSize === '0' || existing.lotSize === '') && (meta?.lotSize || item.lotSize)) {
+              existing.lotSize = String(meta?.lotSize || item.lotSize);
             }
             if ((!existing.priceHigh || existing.priceHigh === 0) && item.priceBand) {
               existing.priceLow = item.priceBand.min;
@@ -1682,48 +1729,56 @@ export async function fetchLiveNseIpos(): Promise<LiveIpoSummary[]> {
             }
           } else {
             const registrar = getRegistrarInfo(sym, item.companyName || '');
-            const pBand = item.priceBand || { min: 100, max: 100 };
-            const pStr = pBand.min === pBand.max ? `₹${pBand.min}` : `₹${pBand.min} – ₹${pBand.max}`;
-            const isSme = item.platform === 'SME' || item.series === 'SME';
-            const openDate = item.openDate || '';
-            const closeDate = item.closeDate || '';
+            const pBand = item.priceBand || { min: meta?.priceLow || 100, max: meta?.priceHigh || 100 };
+            const pStr = meta?.priceBand || (pBand.min === pBand.max ? `₹${pBand.min}` : `₹${pBand.min} – ₹${pBand.max}`);
+            const isSme = meta?.series === 'SME' || item.platform === 'SME' || item.series === 'SME';
+            const openDate = meta?.openDate || item.openDate || '';
+            const closeDate = meta?.closeDate || item.closeDate || '';
+            const listingDate = meta?.listingDate || item.listingDate;
             const status: IpoStatus = rawStatus === 'closed'
               ? 'Closed'
               : isItemListed
                 ? 'Listed'
-                : resolveIpoLifecycleStatus(openDate, closeDate, false);
+                : resolveIpoLifecycleStatus(openDate, closeDate, false, listingDate);
             const remainingTime = status === 'Closed'
               ? 'Bidding Closed'
               : isItemListed
                 ? 'Listed on Exchange'
                 : calculateRemainingTime(closeDate);
 
-            const series: IpoSeries = isSme ? 'SME' : 'EQ';
+            const series: IpoSeries = meta?.series || (isSme ? 'SME' : 'EQ');
             const defaultLot = calculateDefaultLotSize(pBand.max, series);
-            const lotSize = String(item.lotSize || defaultLot);
-            const minInvestment = calculateDefaultMinInvestment(pBand.max, Number(lotSize), series);
+            const lotSize = String(meta?.lotSize || item.lotSize || defaultLot);
+            const minInvestment = meta?.minInvestment || calculateDefaultMinInvestment(pBand.max, Number(lotSize), series);
+
+            const gmp = series === 'DEBT' ? 0 : (meta?.gmp ?? (item.gmp?.value || 0));
+            const gmpPercent = series === 'DEBT' ? 0 : (meta?.gmpPercent ?? (item.gmp?.percent || 0));
+            const subTotal = meta?.currentSubscription ? meta.currentSubscription.toFixed(2) : (item.subscriptionTimes || '0.00');
 
             map.set(sym, {
               symbol: sym,
-              companyName: item.companyName || sym,
+              companyName: meta?.companyName || item.companyName || sym,
               series,
               status,
               isListed: isItemListed,
               issueStartDate: openDate,
               issueEndDate: closeDate,
-              listingDate: item.listingDate,
-              expectedListingDate: item.listingDate,
+              listingDate,
+              expectedListingDate: listingDate,
               issuePrice: pStr,
               priceBand: pStr,
               priceLow: pBand.min,
               priceHigh: pBand.max,
               lotSize,
               minInvestment,
-              issueSize: item.issueSize || '',
-              noOfTime: item.subscriptionTimes || '0.00',
+              issueSize: meta?.issueSize || item.issueSize || '',
+              noOfTime: subTotal,
               isBse: item.exchanges?.includes('BSE') ? 'Y' : 'N',
-              gmpEstimate: item.gmp?.value || 0,
-              gmpPercent: item.gmp?.percent || 0,
+              gmpEstimate: gmp,
+              gmpPercent: gmpPercent,
+              retailSubscription: meta?.retailSubscription,
+              niiSubscription: meta?.niiSubscription,
+              qibSubscription: meta?.qibSubscription,
               remainingTime,
               registrarName: registrar.name,
               registrarUrl: registrar.url,

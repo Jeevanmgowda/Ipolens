@@ -82,7 +82,18 @@ export interface LiveIpoTelemetry {
   registrarName?: string;
   registrarUrl?: string;
   issueDates?: string;
+  openDate?: string;
+  closeDate?: string;
+  listingDate?: string;
+  allotmentDate?: string;
   series?: string;
+  currentPrice?: number;
+  listingPrice?: number;
+  issuePrice?: number;
+  dayChange?: number;
+  dayChangePercent?: number;
+  listingGainPercent?: number;
+  tradedVolume?: number | string;
 }
 
 export interface DrhpAnalysisResult {
