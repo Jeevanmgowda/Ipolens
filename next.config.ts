@@ -33,14 +33,15 @@ const securityHeaders = [
       "default-src 'self'",
       // React & Turbopack require 'unsafe-eval' in dev for hot reloading & callstack reconstruction
       isDev
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-        : "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client"
+        : "script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https: blob:",
       isDev
-        ? "connect-src 'self' http://localhost:* ws://localhost:* https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io wss: ws:"
-        : "connect-src 'self' https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io wss: ws:",
+        ? "connect-src 'self' http://localhost:* ws://localhost:* https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io https://accounts.google.com/gsi/ wss: ws:"
+        : "connect-src 'self' https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io https://accounts.google.com/gsi/ wss: ws:",
+      "frame-src 'self' https://accounts.google.com/gsi/",
       "frame-ancestors 'none'",
       "object-src 'none'",
       "base-uri 'self'",
