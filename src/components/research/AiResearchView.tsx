@@ -12,7 +12,7 @@ import {
 } from '@/types/ai';
 import { getEffectiveIpoStatus } from '@/components/live-market/IpoCategoriesTabs';
 import { LiveMarketIpoItem, IpoCategoryTab } from '@/types/liveMarket';
-import { isListingDatePast, isBiddingClosed, isBiddingStarted } from '@/services/nseIpoService';
+import { isListingDatePast, isBiddingClosed, isBiddingStarted } from '@/lib/utils/ipoDateUtils';
 import { isSameIpo } from '@/lib/utils/ipoDeduplication';
 import {
   Sparkles,
