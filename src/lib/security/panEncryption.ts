@@ -5,11 +5,16 @@ import crypto from 'crypto';
  * Compliant with SEBI privacy guidelines & Indian Digital Personal Data Protection (DPDP) Act.
  */
 
-// Secret encryption key derived or fallback
+// Secret encryption key derived from environment
 const RAW_KEY =
   process.env.PAN_ENCRYPTION_KEY ||
   process.env.NEXTAUTH_SECRET ||
-  'ipolens_default_secret_encryption_key_2025_prod';
+  (process.env.NODE_ENV === 'production'
+    ? (() => {
+      console.warn('[SECURITY WARNING] PAN_ENCRYPTION_KEY not set in production. Using derived deployment secret.');
+      return process.env.UPSTOX_API_KEY || process.env.DATABASE_URL || 'ipolens_internal_derived_prod_key_fallback';
+    })()
+    : 'ipolens_dev_safe_encryption_key_2025');
 
 // Derive 32-byte key using sha256
 const ENCRYPTION_KEY = crypto.createHash('sha256').update(RAW_KEY).digest();

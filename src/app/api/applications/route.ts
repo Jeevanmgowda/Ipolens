@@ -3,6 +3,7 @@ import { IpoApplication } from '@/types/pan';
 import { checkDuplicatePanBid, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser } from '@/lib/security/session';
+import { sanitizeString } from '@/lib/security/sanitize';
 
 // Server-side store for applications (clean slate)
 let applicationsStore: IpoApplication[] = [];
@@ -94,19 +95,25 @@ export async function POST(request: Request) {
       );
     }
 
+    const cleanSymbol = sanitizeString(ipoSymbol).toUpperCase().slice(0, 20);
+    const numPrice = Number(bidPrice) || 100;
+    const numLots = Math.max(1, Number(lots) || 1);
+    const computedShares = Number(shares) || Math.max(1, Math.floor(15000 / numPrice)) * numLots;
+    const computedBlocked = Number(blockedAmount) || (computedShares * numPrice);
+
     const newApp: IpoApplication = {
       id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      ipoSymbol: ipoSymbol.toUpperCase(),
-      companyName: companyName || ipoSymbol,
-      panId,
+      ipoSymbol: cleanSymbol,
+      companyName: sanitizeString(companyName || ipoSymbol).slice(0, 150),
+      panId: sanitizeString(panId).slice(0, 50),
       panNumber: maskPan(panNumber || 'ABCDE1234F'),
-      holderName: holderName || 'Family Member',
-      relationship: relationship || 'Self',
-      category: category || 'Retail',
-      lots: Number(lots),
-      shares: Number(shares) || Number(lots) * 14,
-      bidPrice: Number(bidPrice),
-      blockedAmount: Number(blockedAmount) || Number(shares) * Number(bidPrice),
+      holderName: sanitizeString(holderName || 'Family Member').slice(0, 100),
+      relationship: (sanitizeString(relationship || 'Self').slice(0, 50) as any),
+      category: (sanitizeString(category || 'Retail').slice(0, 50) as any),
+      lots: numLots,
+      shares: computedShares,
+      bidPrice: numPrice,
+      blockedAmount: computedBlocked,
       status: 'Applied',
       appliedAt: new Date().toISOString(),
     };

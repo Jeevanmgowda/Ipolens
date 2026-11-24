@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       maxAge: maxAgeSeconds,
     });
 
-    response.cookies.set('ipolens_token', `jwt_session_${result.user.id}`, {
+    response.cookies.set('ipolens_token', token, {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',

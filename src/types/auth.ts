@@ -5,7 +5,7 @@ export interface User {
   name: string;
   email: string;
   avatarUrl?: string;
-  role: 'retail' | 'hni' | 'institutional';
+  role: 'retail' | 'hni' | 'institutional' | 'admin';
   investorCategory: InvestorCategory;
   primaryPan?: string;
   panCount?: number;

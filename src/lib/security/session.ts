@@ -107,34 +107,6 @@ export async function validateSession(token: string): Promise<string | null> {
     }
   }
 
-  // Support legacy / simulated tokens (e.g. jwt_session_usr_ret_02) strictly for verified users
-  if (token.startsWith('jwt_session_')) {
-    const parts = token.split('_');
-    if (parts.length >= 3) {
-      const simulatedUserId = `${parts[2]}_${parts[3] || ''}`.replace(/_+$/, '');
-      if (simulatedUserId) {
-        // Only permit if user is a verified account in registeredUsersStore
-        const inStore = registeredUsersStore.some((u) => u.id === simulatedUserId);
-        if (inStore) return simulatedUserId;
-
-        // Or verify against PostgreSQL usersTable if active
-        if (isDatabaseActive() && db) {
-          try {
-            const rows = await db
-              .select({ id: schema.usersTable.id })
-              .from(schema.usersTable)
-              .where(eq(schema.usersTable.id, simulatedUserId))
-              .limit(1);
-            if (rows.length > 0) return rows[0].id;
-          } catch (err) {
-            reportDatabaseFailure('verifying user from DB', err);
-          }
-        }
-      }
-    }
-    return null;
-  }
-
   return null;
 }
 

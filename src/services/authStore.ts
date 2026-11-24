@@ -8,13 +8,24 @@ export interface RegisteredUserRecord extends User {
   passwordSalt?: string;
 }
 
-// Initial registered users database seeded with default demo accounts
+// Initial registered users database seeded with default demo accounts (cryptographically hashed with PBKDF2-SHA512)
 export const registeredUsersStore: RegisteredUserRecord[] = [
+  {
+    id: 'usr_admin_00',
+    name: 'Security Admin',
+    email: 'admin@ipolens.in',
+    passwordHash: 'aa54538cd1b24c58d73cf56e567d3c5740cfd5e295756db865fd70e60783b1ea55d0fd62d3243e1b319f321dc5d75be552594702da9f3b4d29acac2833b2f747',
+    passwordSalt: 'c3d4e5f6a1b20718293a4b5c6d7e8f901234567890abcdef1234567890abcdef',
+    role: 'admin',
+    investorCategory: 'Institutional',
+    createdAt: '2025-01-01T00:00:00.000Z',
+  },
   {
     id: 'usr_inst_01',
     name: 'Arjun Mehta',
     email: 'arjun.mehta@ipolens.in',
-    passwordHash: 'DemoPass123!',
+    passwordHash: '2f3360643609755e5f4ba23eace7d7bf3b0cfa3b3445af9e80c67819583884c9e5807853f71f585c6a5611ba0287bf2f2a20a12d43da5bf246330eff3fdf6e5c',
+    passwordSalt: 'a1b2c3d4e5f60718293a4b5c6d7e8f901234567890abcdef1234567890abcdef',
     role: 'institutional',
     investorCategory: 'bNII',
     primaryPan: 'AAAPM1234F',
@@ -26,7 +37,8 @@ export const registeredUsersStore: RegisteredUserRecord[] = [
     id: 'usr_ret_02',
     name: 'Priya Sharma',
     email: 'priya.sharma@investor.in',
-    passwordHash: 'DemoPass123!',
+    passwordHash: 'ccb95c8298bb48538519a5b59b94235f9260d1f1eac5413a320ee86ffe06b8694705f6a4a5070fea9c9709ef9ce5f9ccc211436a2b0adbaf2d0be8cb210f1a30',
+    passwordSalt: 'b2c3d4e5f6a10718293a4b5c6d7e8f901234567890abcdef1234567890abcdef',
     role: 'retail',
     investorCategory: 'Retail',
     primaryPan: 'ABFPS5678K',
@@ -52,13 +64,12 @@ export function validateSignInCredentials(creds: SignInCredentials): { valid: bo
     return { valid: false, error: 'No account found with this email address.' };
   }
 
-  // Check password: either via salted PBKDF2 hash or plaintext match for demo seeds
-  let passwordMatches = false;
-  if (existingUser.passwordSalt) {
-    passwordMatches = verifyPassword(password, existingUser.passwordHash, existingUser.passwordSalt);
-  } else {
-    passwordMatches = existingUser.passwordHash === password;
+  // Cryptographic constant-time verification using salted PBKDF2-SHA512
+  if (!existingUser.passwordSalt || !existingUser.passwordHash) {
+    return { valid: false, error: 'Account credentials must be reset.' };
   }
+
+  const passwordMatches = verifyPassword(password, existingUser.passwordHash, existingUser.passwordSalt);
 
   if (!passwordMatches) {
     return { valid: false, error: 'Incorrect password. Please try again.' };

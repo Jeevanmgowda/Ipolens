@@ -3,6 +3,7 @@ import { FamilyPanProfile } from '@/types/pan';
 import { isValidPan, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser } from '@/lib/security/session';
+import { sanitizeString } from '@/lib/security/sanitize';
 
 // In-memory store for server-side persistence (clean slate, zero mock dummy data)
 let userPansStore: FamilyPanProfile[] = [];
@@ -59,12 +60,12 @@ export async function POST(request: Request) {
 
     const newProfile: FamilyPanProfile = {
       id: `pan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      name: name.trim(),
-      relationship,
+      name: sanitizeString(name).slice(0, 100),
+      relationship: (sanitizeString(relationship).slice(0, 50) as any),
       pan: cleanPan,
-      broker: broker || 'Zerodha',
-      dematId: dematId ? dematId.trim() : undefined,
-      bankUpi: bankUpi ? bankUpi.trim() : undefined,
+      broker: sanitizeString(broker || 'Zerodha').slice(0, 50),
+      dematId: dematId ? sanitizeString(dematId).slice(0, 30) : undefined,
+      bankUpi: bankUpi ? sanitizeString(bankUpi).slice(0, 80) : undefined,
       createdAt: new Date().toISOString(),
     };
 

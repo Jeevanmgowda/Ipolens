@@ -6,18 +6,21 @@ import {
 import { ExchangeIngestionService } from '@/lib/services/exchange-ingestion.service';
 import { getUserPansStore } from '../route';
 import { FamilyPanProfile } from '@/types/pan';
+import { sanitizeString } from '@/lib/security/sanitize';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const cleanPrice = Number(body.price) || 500;
+    const defaultLot = Math.max(1, Math.floor(15000 / cleanPrice));
+    const cleanLotSize = Number(body.lotSize) > 0 ? Number(body.lotSize) : defaultLot;
+
     const {
-      symbol = 'NSE',
-      companyName = 'National Stock Exchange of India Ltd',
-      price = 1785,
-      lotSize = 14,
-      gmp = 450,
+      symbol = 'IPO',
+      companyName = 'IPO Offering',
+      gmp = 0,
       totalBudget = 500000,
       strategy = 'max_probability' as OptimizationStrategy,
       selectedPanIds,
@@ -25,7 +28,7 @@ export async function POST(request: Request) {
     } = body;
 
     // 1. Fetch live subscription telemetry
-    const subscription = await ExchangeIngestionService.syncLiveSubscription(symbol);
+    const subscription = await ExchangeIngestionService.syncLiveSubscription(sanitizeString(symbol));
 
     // 2. Resolve family PAN profiles
     let profiles: FamilyPanProfile[] = [];
@@ -42,10 +45,10 @@ export async function POST(request: Request) {
 
     // 3. Execute mathematical allocation optimization
     const result = AllocationOptimizerService.optimize({
-      symbol,
-      companyName,
-      price: Number(price) || 1785,
-      lotSize: Number(lotSize) || 14,
+      symbol: sanitizeString(symbol),
+      companyName: sanitizeString(companyName),
+      price: cleanPrice,
+      lotSize: cleanLotSize,
       gmp: Number(gmp) || 0,
       totalBudget: Number(totalBudget) || 500000,
       strategy,

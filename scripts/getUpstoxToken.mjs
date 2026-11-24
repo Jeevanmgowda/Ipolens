@@ -411,7 +411,7 @@ export async function runHeadlessPuppeteer(config) {
     console.log('   Awaiting 2FA prompt & computing RFC 6238 TOTP...');
     await page.waitForSelector('#otpNum', { timeout: 15000 });
     const totpCode = generateTotp(cfg.totpKey);
-    console.log(`   Generated TOTP: ${totpCode} (RFC 6238 HMAC-SHA1)`);
+    console.log(`   Generated TOTP: ****** (RFC 6238 HMAC-SHA1)`);
     await page.type('#otpNum', totpCode, { delay: 60 });
 
     // Wait for Continue button to be enabled

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { getAuthenticatedUser } from '@/lib/security/session';
 
 const execAsync = promisify(exec);
 
@@ -69,8 +70,28 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    // 1. Enforce RBAC or CRON_SECRET authentication
+    const authHeader = req.headers.get('authorization') || '';
+    const cronSecret = process.env.CRON_SECRET;
+    const isCronAuthorized = cronSecret && authHeader === `Bearer ${cronSecret}`;
+
+    const user = await getAuthenticatedUser(req);
+    const isAdminUser = user && user.role === 'admin';
+
+    if (!isCronAuthorized && !isAdminUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Access denied: Administrative privileges or a valid CRON_SECRET is required.',
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
-    const monthsBack = typeof body.months === 'number' ? body.months : 1;
+    // Strictly validate and clamp monthsBack (integer between 1 and 12)
+    const rawMonths = Number(body.months);
+    const monthsBack = Number.isInteger(rawMonths) ? Math.min(12, Math.max(1, rawMonths)) : 1;
     const scriptPath = path.resolve(process.cwd(), 'scripts', 'scraper', 'merge.py');
 
     if (!fs.existsSync(scriptPath)) {
@@ -80,7 +101,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Execute python scripts/scraper/merge.py
+    // Execute python scripts/scraper/merge.py safely
     const cmd = `python "${scriptPath}" --months ${monthsBack}`;
     const { stdout, stderr } = await execAsync(cmd, {
       timeout: 45000,
@@ -97,21 +118,24 @@ export async function POST(req: Request) {
       }
     }
 
+    const isProd = process.env.NODE_ENV === 'production';
+
     return NextResponse.json({
       success: true,
       message: 'Scraper completed successfully.',
-      stdout: stdout.trim(),
-      stderr: stderr.trim() || undefined,
+      stdout: isProd ? 'Execution completed.' : stdout.trim(),
+      stderr: isProd ? undefined : (stderr.trim() || undefined),
       generatedAt: resultPayload?.generatedAt,
       totalCount: resultPayload?.totalCount || (resultPayload?.ipos?.length ?? 0),
       summary: resultPayload?.summary,
     });
   } catch (error: any) {
+    const isProd = process.env.NODE_ENV === 'production';
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to execute scraper worker',
-        stderr: error.stderr?.toString() || undefined,
+        error: isProd ? 'Internal server error executing scraper' : (error.message || 'Failed to execute scraper worker'),
+        stderr: isProd ? undefined : (error.stderr?.toString() || undefined),
       },
       { status: 500 }
     );

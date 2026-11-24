@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import { validateAndRegisterUser } from '@/services/authStore';
 import { createSession } from '@/lib/security/session';
+import { sanitizeString } from '@/lib/security/sanitize';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const rawBody = await request.json();
+    const body = {
+      ...rawBody,
+      name: rawBody.name ? sanitizeString(rawBody.name) : '',
+      email: rawBody.email ? sanitizeString(rawBody.email) : '',
+      primaryPan: rawBody.primaryPan ? sanitizeString(rawBody.primaryPan).toUpperCase() : undefined,
+    };
     const result = validateAndRegisterUser(body);
 
     if (!result.valid || !result.user) {
@@ -33,7 +40,7 @@ export async function POST(request: Request) {
       maxAge: maxAgeSeconds,
     });
 
-    response.cookies.set('ipolens_token', `jwt_session_${result.user.id}`, {
+    response.cookies.set('ipolens_token', token, {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',
