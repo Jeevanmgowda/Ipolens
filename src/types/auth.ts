@@ -43,5 +43,6 @@ export interface GoogleAuthPayload {
   googleId?: string;
   investorCategory?: InvestorCategory;
   primaryPan?: string;
+  credential?: string;
 }
 

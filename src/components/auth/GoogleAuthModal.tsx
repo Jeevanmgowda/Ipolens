@@ -1,8 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GoogleAuthPayload, InvestorCategory } from '@/types/auth';
-import { X, Check, User as UserIcon, Plus, Shield } from 'lucide-react';
+import { X, Check, User as UserIcon, Plus, Shield, Sparkles, ExternalLink } from 'lucide-react';
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 interface GoogleAuthModalProps {
   isOpen: boolean;
@@ -33,6 +39,24 @@ const DEFAULT_GOOGLE_ACCOUNTS: MockGoogleAccount[] = [
   },
 ];
 
+function parseGoogleJwt(token: string): { name?: string; email?: string; picture?: string; sub?: string } | null {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return null;
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch (err) {
+    console.error('Failed to parse Google JWT:', err);
+    return null;
+  }
+}
+
 export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
   isOpen,
   onClose,
@@ -42,6 +66,14 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
   defaultInvestorCategory = 'Retail',
   defaultPrimaryPan = '',
 }) => {
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+  const hasRealGoogleApi = Boolean(
+    googleClientId &&
+    !googleClientId.includes('your_') &&
+    googleClientId.includes('.apps.googleusercontent.com')
+  );
+
+  const googleBtnContainerRef = useRef<HTMLDivElement>(null);
   const [selectedEmail, setSelectedEmail] = useState<string>(DEFAULT_GOOGLE_ACCOUNTS[0].email);
   const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
   const [customName, setCustomName] = useState<string>('');
@@ -49,6 +81,80 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
   const [customCategory, setCustomCategory] = useState<InvestorCategory>(defaultInvestorCategory);
   const [customPan, setCustomPan] = useState<string>(defaultPrimaryPan);
   const [error, setError] = useState<string | null>(null);
+  const [isGsiLoaded, setIsGsiLoaded] = useState<boolean>(false);
+
+  // Dynamically load Google Identity Services script
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (window.google?.accounts?.id) {
+      setIsGsiLoaded(true);
+      return;
+    }
+
+    const scriptId = 'google-identity-services-script';
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => setIsGsiLoaded(true);
+      document.body.appendChild(script);
+    } else {
+      setIsGsiLoaded(true);
+    }
+  }, [isOpen]);
+
+  // Initialize Google Identity Services when script and Client ID are ready
+  useEffect(() => {
+    if (!isOpen || !hasRealGoogleApi || !isGsiLoaded || !window.google?.accounts?.id) return;
+
+    try {
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async (response: any) => {
+          if (response?.credential) {
+            const payload = parseGoogleJwt(response.credential);
+            if (payload?.email) {
+              await onSelectAccount({
+                name: payload.name || payload.email.split('@')[0],
+                email: payload.email,
+                avatarUrl: payload.picture,
+                googleId: payload.sub,
+                credential: response.credential,
+                investorCategory: defaultInvestorCategory,
+                primaryPan: defaultPrimaryPan ? defaultPrimaryPan.trim().toUpperCase() : undefined,
+              });
+            } else {
+              setError('Google identity verification failed: No email returned.');
+            }
+          }
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true,
+      });
+
+      if (googleBtnContainerRef.current) {
+        googleBtnContainerRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
+          type: 'standard',
+          theme: 'filled_black',
+          size: 'large',
+          text: mode === 'signup' ? 'signup_with' : 'signin_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: 360,
+        });
+      }
+
+      // Prompt One-Tap
+      window.google.accounts.id.prompt();
+    } catch (err: any) {
+      console.warn('Google Identity Services init notice:', err);
+    }
+  }, [isOpen, hasRealGoogleApi, isGsiLoaded, googleClientId, mode, defaultInvestorCategory, defaultPrimaryPan, onSelectAccount]);
 
   if (!isOpen) return null;
 
@@ -114,7 +220,9 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
               <h3 className="text-base font-bold text-white tracking-tight">
                 {mode === 'signup' ? 'Sign up with Google' : 'Sign in with Google'}
               </h3>
-              <p className="text-xs text-slate-400">Choose an account to continue to IPOLENS</p>
+              <p className="text-xs text-slate-400">
+                {hasRealGoogleApi ? 'Official Google Identity Services' : 'Choose an account to continue to IPOLENS'}
+              </p>
             </div>
           </div>
 
@@ -131,6 +239,48 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
         {error && (
           <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
             {error}
+          </div>
+        )}
+
+        {/* Real Google Identity Services API Button (When NEXT_PUBLIC_GOOGLE_CLIENT_ID is active) */}
+        {hasRealGoogleApi ? (
+          <div className="space-y-4 py-2">
+            <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-xs text-cyan-200 flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-white block font-semibold">Live Google OAuth Active</strong>
+                <span>Click the official Google button below to select your Google Account with authentic 1-click verification.</span>
+              </div>
+            </div>
+
+            <div className="flex justify-center py-2">
+              <div ref={googleBtnContainerRef} className="min-h-[44px] flex items-center justify-center" />
+            </div>
+
+            <div className="relative my-3">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10" />
+              </div>
+              <div className="relative flex justify-center text-[10px] uppercase">
+                <span className="bg-[#0f172a] px-2 text-slate-500">Or use test account</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Notice informing how to connect real Google Cloud Client ID */
+          <div className="p-3 rounded-xl bg-gradient-to-r from-blue-950/40 via-purple-950/30 to-slate-900 border border-cyan-500/20 text-xs text-slate-300 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                Live Google API Integration Ready
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">
+                OAuth 2.0
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              To trigger the authentic Google account chooser popup, add <code className="text-cyan-300">NEXT_PUBLIC_GOOGLE_CLIENT_ID</code> in your <code className="text-slate-200">.env.local</code>. Below are instant simulated profiles for development.
+            </p>
           </div>
         )}
 
@@ -277,21 +427,23 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
             Cancel
           </button>
 
-          <button
-            type="button"
-            onClick={handleContinue}
-            disabled={isLoading}
-            className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-black font-bold text-xs shadow-lg shadow-cyan-500/25 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                <span>Authorizing Google...</span>
-              </>
-            ) : (
-              <span>Continue with Google</span>
-            )}
-          </button>
+          {!hasRealGoogleApi && (
+            <button
+              type="button"
+              onClick={handleContinue}
+              disabled={isLoading}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-black font-bold text-xs shadow-lg shadow-cyan-500/25 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                  <span>Authorizing Google...</span>
+                </>
+              ) : (
+                <span>Continue with Google</span>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>
