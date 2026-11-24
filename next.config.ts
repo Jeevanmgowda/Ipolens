@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV !== 'production';
+
 const securityHeaders = [
   {
     key: 'X-DNS-Prefetch-Control',
@@ -29,11 +31,16 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      // React & Turbopack require 'unsafe-eval' in dev for hot reloading & callstack reconstruction
+      isDev
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+        : "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https: blob:",
-      "connect-src 'self' https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io wss: ws:",
+      isDev
+        ? "connect-src 'self' http://localhost:* ws://localhost:* https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io wss: ws:"
+        : "connect-src 'self' https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io wss: ws:",
       "frame-ancestors 'none'",
       "object-src 'none'",
       "base-uri 'self'",
