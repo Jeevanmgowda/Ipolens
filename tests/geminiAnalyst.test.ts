@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeDrhpFiling } from '../src/services/geminiAnalyst';
+import { analyzeDrhpFiling } from '../src/lib/services/geminiAnalyst';
 
 describe('Gemini 2.5 Flash DRHP Analyst Service', () => {
   it('should return institutional pre-synthesized analysis for known symbols like NSE', async () => {

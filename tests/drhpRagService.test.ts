@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { drhpRagService } from '../src/lib/services/drhp-rag.service';
-import { answerDrhpQuestion, analyzeDrhpFiling } from '../src/services/geminiAnalyst';
+import { answerDrhpQuestion, analyzeDrhpFiling } from '../src/lib/services/geminiAnalyst';
 
 describe('DRHP RAG Model & Prospectus Ingestion Pipeline', () => {
   it('should tokenize text and filter common stop words while keeping financial tokens', () => {

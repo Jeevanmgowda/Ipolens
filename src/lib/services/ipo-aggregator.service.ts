@@ -23,7 +23,7 @@ export class IpoAggregatorService {
 
     // 2. Query live scraped grey market tracker from market websites
     try {
-      const { getLiveScrapedGmp } = await import('@/services/nseIpoService');
+      const { getLiveScrapedGmp } = await import('@/lib/services/nseIpoService');
       const liveGmp = await getLiveScrapedGmp(clean);
       if (liveGmp !== null && liveGmp !== undefined && !isNaN(liveGmp)) {
         return liveGmp;
@@ -48,7 +48,7 @@ export class IpoAggregatorService {
     // Also fetch live NSE issues if any additional live items exist
     let nseIpos: Partial<UnifiedIPO>[] = [];
     try {
-      const { fetchLiveNseIpos } = await import('@/services/nseIpoService');
+      const { fetchLiveNseIpos } = await import('@/lib/services/nseIpoService');
       const nseList = await fetchLiveNseIpos();
       nseIpos = nseList
         .filter((i) => {

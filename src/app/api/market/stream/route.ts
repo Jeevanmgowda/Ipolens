@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getRedisClient } from '@/lib/redis';
-import { MarketService } from '@/services/marketService';
+import { MarketService } from '@/lib/services/marketService';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         let targetSymbols = requestedSymbols;
         if (targetSymbols.length === 0) {
           try {
-            const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
+            const { LISTED_IPOS_REGISTRY } = await import('@/lib/services/listedIpoService');
             targetSymbols = LISTED_IPOS_REGISTRY.slice(0, 10).map((l) => l.symbol);
           } catch {
             targetSymbols = ['SWIGGY', 'HYUNDAI', 'BAJAJHFL', 'TATATECH', 'PREMIERENE', 'KRN', 'NETWEB', 'DOMS', 'WAAREEENER'];

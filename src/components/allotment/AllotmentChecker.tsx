@@ -7,14 +7,14 @@ import {
   BSE_OFFICIAL_GATEWAY,
   getRegistrarForSymbol,
   scanRegistrarText,
-} from '@/services/allotmentScanner';
+} from '@/lib/services/allotmentScanner';
 import {
   AllotmentScanResult,
   RegistrarInfo,
 } from '@/types/allotment';
 import { AllotmentCheckResult, AllotmentStatus } from '@/lib/services/allotment/types';
 import { FamilyPanProfile } from '@/types/pan';
-import { isValidPan } from '@/services/duplicateEnforcer';
+import { isValidPan } from '@/lib/services/duplicateEnforcer';
 import {
   ExternalLink,
   Search,

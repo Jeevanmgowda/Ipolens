@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveIsinOrSymbol } from '../src/services/isinResolver';
+import { resolveIsinOrSymbol } from '../src/lib/services/isinResolver';
 
 describe('ISIN Resolution Engine', () => {
   it('should resolve standard equity ISINs accurately', () => {

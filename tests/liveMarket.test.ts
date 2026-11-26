@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { IpoService } from '../src/services/ipoService';
-import { MarketService } from '../src/services/marketService';
-import { GmpService } from '../src/services/gmpService';
-import { SubscriptionService } from '../src/services/subscriptionService';
-import { MockMarketProvider, UpstoxProvider } from '../src/services/marketDataProvider';
-import { MockIPOProvider, NSEIPOProvider } from '../src/services/ipoDataProvider';
+import { IpoService } from '../src/lib/services/ipoService';
+import { MarketService } from '../src/lib/services/marketService';
+import { GmpService } from '../src/lib/services/gmpService';
+import { SubscriptionService } from '../src/lib/services/subscriptionService';
+import { MockMarketProvider, UpstoxProvider } from '../src/lib/services/marketDataProvider';
+import { MockIPOProvider, NSEIPOProvider } from '../src/lib/services/ipoDataProvider';
 import {
   iposTable,
   ipoSubscriptionsTable,

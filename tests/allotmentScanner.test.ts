@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanRegistrarText } from '../src/services/allotmentScanner';
+import { scanRegistrarText } from '../src/lib/services/allotmentScanner';
 
 describe('Automated Allotment Result Scanner', () => {
   it('should accurately classify positive allotment output from Link Intime', () => {

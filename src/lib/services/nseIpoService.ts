@@ -1,4 +1,4 @@
-import { LiveIpoSummary, LiveIpoDetail, BidCategoryDetail, IpoGraphPoint, IpoSeries, IpoStatus } from '../types/ipo';
+import { LiveIpoSummary, LiveIpoDetail, BidCategoryDetail, IpoGraphPoint, IpoSeries, IpoStatus } from '@/types/ipo';
 import { LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { getCanonicalSymbol, isSameIpo } from '@/lib/utils/ipoDeduplication';
 

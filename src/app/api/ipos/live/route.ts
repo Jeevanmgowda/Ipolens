@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchLiveNseIpos } from '@/services/nseIpoService';
+import { fetchLiveNseIpos } from '@/lib/services/nseIpoService';
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';

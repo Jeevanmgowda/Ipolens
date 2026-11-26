@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { loadUserFromDatabase, validateSignInCredentials } from '@/services/authStore';
+import { loadUserFromDatabase, validateSignInCredentials } from '@/lib/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 import { publicErrorMessage } from '@/lib/security/apiError';

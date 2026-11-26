@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { FamilyPanProfile, PanRelationship } from '@/types/pan';
-import { maskPan, isValidPan } from '@/services/duplicateEnforcer';
+import { maskPan, isValidPan } from '@/lib/services/duplicateEnforcer';
 import {
   Users,
   UserPlus,

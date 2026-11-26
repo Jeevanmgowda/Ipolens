@@ -30,7 +30,7 @@ import {
   Award,
   ChevronRight,
 } from 'lucide-react';
-import { predictListingGain } from '@/services/mlListingGainModel';
+import { predictListingGain } from '@/lib/services/mlListingGainModel';
 
 export interface IpoDetailModalProps {
   symbol: string | null;

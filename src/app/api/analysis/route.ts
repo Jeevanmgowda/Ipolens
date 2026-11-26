@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import zlib from 'zlib';
-import { analyzeDrhpFiling, answerDrhpQuestion } from '@/services/geminiAnalyst';
+import { analyzeDrhpFiling, answerDrhpQuestion } from '@/lib/services/geminiAnalyst';
 import { apiErrorResponse } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';

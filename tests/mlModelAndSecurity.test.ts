@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { hashPassword, verifyPassword } from '../src/lib/security/passwordHash';
 import { encryptPan, decryptPan, maskPan } from '../src/lib/security/panEncryption';
-import { predictListingGain, HISTORICAL_BENCHMARK_SET } from '../src/services/mlListingGainModel';
-import { getAnchorLockInSchedule } from '../src/services/anchorLockInService';
+import { predictListingGain, HISTORICAL_BENCHMARK_SET } from '../src/lib/services/mlListingGainModel';
+import { getAnchorLockInSchedule } from '../src/lib/services/anchorLockInService';
 
 describe('Security & Enterprise Auth Architecture', () => {
   describe('PBKDF2 Password Hashing Engine', () => {

@@ -1,6 +1,6 @@
 import protobuf from 'protobufjs';
 import { getRedisClient } from '@/lib/redis';
-import { LISTED_IPOS_REGISTRY } from '@/services/listedIpoService';
+import { LISTED_IPOS_REGISTRY } from '@/lib/services/listedIpoService';
 
 export type FeedConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'LIVE' | 'DEMO' | 'ERROR';
 

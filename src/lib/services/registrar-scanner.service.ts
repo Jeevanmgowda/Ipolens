@@ -6,7 +6,7 @@ import {
   MultiPanScanSummary,
   SinglePanInquiryResult,
 } from '@/types/allotment';
-import { getRegistrarForSymbol, OFFICIAL_REGISTRARS } from '@/services/allotmentScanner';
+import { getRegistrarForSymbol, OFFICIAL_REGISTRARS } from '@/lib/services/allotmentScanner';
 import { getApplicationsStore, updateApplicationStatus } from '@/app/api/applications/route';
 
 export interface MultiPanScanOptions {

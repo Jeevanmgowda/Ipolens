@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { fetchLiveIpoDetail } from '@/services/nseIpoService';
-import { IpoService } from '@/services/ipoService';
+import { fetchLiveIpoDetail } from '@/lib/services/nseIpoService';
+import { IpoService } from '@/lib/services/ipoService';
 import { LiveIpoDetail } from '@/types/ipo';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { errorDetail } from '@/lib/security/apiError';
