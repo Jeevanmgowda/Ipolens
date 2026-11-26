@@ -292,3 +292,31 @@ describe('R9 / M3: nonce-based CSP without unsafe-inline scripts', () => {
     expect(cspA).not.toMatch(/connect-src[^;]*\swss?:(\s|;|$)/);
   });
 });
+
+describe('R10 / M4: live stream limits', () => {
+  const streamReq = (query: string, ip: string, signal?: AbortSignal) =>
+    new Request(`http://localhost/api/market/stream${query}`, { headers: { 'x-forwarded-for': ip }, signal });
+
+  it('rejects too many or malformed symbols', async () => {
+    const { GET } = await import('@/app/api/market/stream/route');
+    const many = Array.from({ length: 21 }, (_, i) => `SYM${i}`).join(',');
+    expect((await GET(streamReq(`?symbols=${many}`, '203.0.113.50') as any)).status).toBe(400);
+    expect((await GET(streamReq(`?symbols=${encodeURIComponent('SWIGGY,<script>')}`, '203.0.113.50') as any)).status).toBe(400);
+  });
+
+  it('caps concurrent streams per client and frees the slot on disconnect', async () => {
+    const { GET } = await import('@/app/api/market/stream/route');
+    const ip = '203.0.113.77';
+    const controllers = [new AbortController(), new AbortController(), new AbortController()];
+    for (const c of controllers) {
+      expect((await GET(streamReq('?symbols=SWIGGY', ip, c.signal) as any)).status).toBe(200);
+    }
+    expect((await GET(streamReq('?symbols=SWIGGY', ip) as any)).status).toBe(429);
+
+    controllers[0].abort();
+    await new Promise((r) => setTimeout(r, 10));
+    const again = new AbortController();
+    expect((await GET(streamReq('?symbols=SWIGGY', ip, again.signal) as any)).status).toBe(200);
+    for (const c of [...controllers, again]) c.abort();
+  });
+});
