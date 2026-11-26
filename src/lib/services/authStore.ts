@@ -1,16 +1,9 @@
 import crypto from 'crypto';
 import { eq } from 'drizzle-orm';
-<<<<<<< HEAD:src/services/authStore.ts
-import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '../types/auth';
-import { isValidPan } from './duplicateEnforcer';
-import { hashPassword, verifyPassword } from '../lib/security/passwordHash';
-import { db, isDatabaseActive, isPostgresConfigured, reportDatabaseFailure, schema } from '../db';
-=======
 import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '@/types/auth';
 import { isValidPan } from './duplicateEnforcer';
 import { hashPassword, verifyPassword } from '@/lib/security/passwordHash';
 import { db, isDatabaseActive, isPostgresConfigured, reportDatabaseFailure, schema } from '@/db';
->>>>>>> origin/main:src/lib/services/authStore.ts
 
 export interface RegisteredUserRecord extends User {
   passwordHash: string;

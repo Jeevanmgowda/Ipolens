@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server';
-<<<<<<< HEAD
-import { loadUserFromDatabase, persistUser, registerOrLoginWithGoogle } from '@/services/authStore';
-=======
 import { loadUserFromDatabase, persistUser, registerOrLoginWithGoogle } from '@/lib/services/authStore';
->>>>>>> origin/main
 import { createSession } from '@/lib/security/session';
 import { verifyGoogleIdToken } from '@/lib/security/googleIdToken';
 import { GoogleAuthPayload } from '@/types/auth';

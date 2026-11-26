@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server';
-<<<<<<< HEAD
-import { fetchIpoLiveChart } from '@/services/listedIpoService';
-=======
 import { fetchIpoLiveChart } from '@/lib/services/listedIpoService';
->>>>>>> origin/main
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
