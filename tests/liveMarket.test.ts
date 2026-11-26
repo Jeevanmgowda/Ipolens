@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IpoService } from '../src/lib/services/ipoService';
 import { MarketService } from '../src/lib/services/marketService';
 import { GmpService } from '../src/lib/services/gmpService';
@@ -249,30 +249,44 @@ describe('Live Market Feature Test Suite', () => {
     it('should route any IPO whose bidding has closed into Closed/Past tab and never Upcoming/Open', async () => {
       process.env.USE_MOCK_MARKET_DATA = 'false';
       const nseProvider = new NSEIPOProvider();
-      const all = await nseProvider.getAllIpos();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = String(input);
+        const response = url.includes('/api/public-past-issues')
+          ? [{ symbol: 'HDFP', companyName: 'HD Fire Protect Limited', ipoStartDate: '13-Oct-2026', ipoEndDate: '15-Oct-2026' }]
+          : [];
+        return new Response(JSON.stringify(response), {
+          headers: { 'content-type': 'application/json' },
+        });
+      });
 
-      const hdfp = all.find((i) => i.symbol === 'HDFP');
-      expect(hdfp).toBeDefined();
-      expect(hdfp?.status).toBe('Closed');
-      expect(hdfp?.remainingTime).toBe('Bidding Closed');
+      try {
+        const all = await nseProvider.getAllIpos();
 
-      const upcoming = await nseProvider.getUpcomingIpos();
-      const open = await nseProvider.getOpenIpos();
-      const closed = await nseProvider.getClosedIpos();
+        const hdfp = all.find((i) => i.symbol === 'HDFP');
+        expect(hdfp).toBeDefined();
+        expect(hdfp?.status).toBe('Closed');
+        expect(hdfp?.remainingTime).toBe('Bidding Closed');
 
-      // HDFP must NOT be in upcoming or open
-      expect(upcoming.some((i) => i.symbol === 'HDFP')).toBe(false);
-      expect(open.some((i) => i.symbol === 'HDFP')).toBe(false);
-      // HDFP must be in closed
-      expect(closed.some((i) => i.symbol === 'HDFP')).toBe(true);
+        const upcoming = await nseProvider.getUpcomingIpos();
+        const open = await nseProvider.getOpenIpos();
+        const closed = await nseProvider.getClosedIpos();
 
-      // Verify for ALL IPOs: if bidding is closed, status must be Closed or Listed
-      for (const ipo of all) {
-        if (ipo.remainingTime === 'Bidding Closed') {
-          expect(['Closed', 'Listed']).toContain(ipo.status);
-          expect(upcoming.some((u) => u.symbol === ipo.symbol)).toBe(false);
-          expect(open.some((o) => o.symbol === ipo.symbol)).toBe(false);
+        // HDFP must NOT be in upcoming or open
+        expect(upcoming.some((i) => i.symbol === 'HDFP')).toBe(false);
+        expect(open.some((i) => i.symbol === 'HDFP')).toBe(false);
+        // HDFP must be in closed
+        expect(closed.some((i) => i.symbol === 'HDFP')).toBe(true);
+
+        // Verify for ALL IPOs: if bidding is closed, status must be Closed or Listed
+        for (const ipo of all) {
+          if (ipo.remainingTime === 'Bidding Closed') {
+            expect(['Closed', 'Listed']).toContain(ipo.status);
+            expect(upcoming.some((u) => u.symbol === ipo.symbol)).toBe(false);
+            expect(open.some((o) => o.symbol === ipo.symbol)).toBe(false);
+          }
         }
+      } finally {
+        fetchSpy.mockRestore();
       }
     });
 
