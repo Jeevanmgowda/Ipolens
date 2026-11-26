@@ -16,13 +16,14 @@ export interface RateLimitResult {
   resetSeconds: number;
 }
 
-export type RateLimitTier = 'auth' | 'mutating' | 'api' | 'scraper';
+export type RateLimitTier = 'auth' | 'mutating' | 'api' | 'scraper' | 'ai';
 
 const TIER_CONFIG: Record<RateLimitTier, { limit: number; windowMs: number }> = {
   auth: { limit: 10, windowMs: 60 * 1000 }, // 10 requests per minute
   mutating: { limit: 30, windowMs: 60 * 1000 }, // 30 requests per minute
   scraper: { limit: 5, windowMs: 60 * 1000 }, // 5 sync triggers per minute
   api: { limit: 120, windowMs: 60 * 1000 }, // 120 requests per minute
+  ai: { limit: 30, windowMs: 60 * 60 * 1000 }, // 30 paid-AI calls per user per hour (keyed by user, not IP)
 };
 
 // In-memory sliding window cache: key -> record

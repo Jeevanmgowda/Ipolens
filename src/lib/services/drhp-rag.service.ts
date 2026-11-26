@@ -10,6 +10,7 @@ import {
 import { GoogleGenAI } from '@google/genai';
 
 import { buildSeedCorpora, type IndexedDrhpDocument } from './drhp-rag.seed-corpora';
+import { MAX_PROMPT_DOCUMENT_CHARS, MAX_QUESTION_CHARS, UNTRUSTED_DATA_RULE, wrapUntrusted } from '@/lib/security/promptSafety';
 
 // Financial synonym mapping for query expansion
 const FINANCIAL_SYNONYMS: Record<string, string[]> = {
@@ -43,12 +44,19 @@ const STOP_WORDS = new Set([
   'which', 'while', 'who', 'whom', 'why', 'with', 'would', 'you', 'your', 'yours', 'yourself',
 ]);
 
+// User-supplied documents (pasted text / uploads) are kept per user and never
+// overwrite the shared per-symbol index (docs/security/BASELINE_AUDIT.md, H1).
+const USER_DOC_SEPARATOR = '~USER~';
+const MAX_USER_DOCS = 200;
+export const MAX_USER_DOC_CHARS = 2_000_000;
+
 /**
  * Institutional RAG Engine for SEBI Draft Red Herring Prospectus (DRHP) Filings
  */
 export class DrhpRagService {
   private static instance: DrhpRagService;
   private documentStore: Map<string, IndexedDrhpDocument> = new Map();
+  private userDocOrder: string[] = [];
 
   private constructor() {
     this.seedInstitutionalRadarCorpora();
@@ -181,20 +189,22 @@ export class DrhpRagService {
   public async queryRag(
     symbol: string,
     question: string,
-    customText?: string
+    customText?: string,
+    userId?: string
   ): Promise<RagQueryResult> {
-    const sym = symbol.trim().toUpperCase();
+    const displaySym = symbol.trim().toUpperCase();
 
-    // If custom text provided, ensure it's indexed
-    if (customText && customText.length > 50) {
-      this.indexDocument(sym, customText, `${sym}_Uploaded_DRHP.pdf`);
+    // User-supplied text goes into the caller's private slot only.
+    let sym = this.resolveDocKey(displaySym, userId);
+    if (customText && customText.length > 50 && userId) {
+      sym = this.indexUserDocument(displaySym, userId, customText, `${displaySym}_Uploaded_DRHP.pdf`);
     }
 
     const doc = this.ensureDocumentIndexed(sym);
     if (!doc) {
       return {
         question,
-        answer: `No DRHP prospectus filing found in RAG index for ${sym}. Please upload the prospectus PDF or select a Live IPO Radar ticker.`,
+        answer: `No DRHP prospectus filing found in RAG index for ${displaySym}. Please upload the prospectus PDF or select a Live IPO Radar ticker.`,
         confidenceScore: 0,
         retrievedChunks: [],
         pageCitations: [],
@@ -226,14 +236,15 @@ export class DrhpRagService {
     if (isKeyValid && rawKey) {
       try {
         const ai = new GoogleGenAI({ apiKey: rawKey });
-        const prompt = `You are a SEBI-registered institutional DRHP forensic analyst at IPOLENS.
-Answer the following question about ${doc.companyName} (${sym}) based strictly on the retrieved DRHP passages below.
+        const prompt = `You are the IPOLENS DRHP prospectus analysis assistant.
+Answer the question about ${doc.companyName} (${displaySym}) based strictly on the retrieved DRHP passages below.
+${UNTRUSTED_DATA_RULE}
 
 Retrieved DRHP Passages:
-${contextPrompt}
+${wrapUntrusted('untrusted_document', contextPrompt, MAX_PROMPT_DOCUMENT_CHARS)}
 
 User Question:
-${question}
+${wrapUntrusted('user_question', question, MAX_QUESTION_CHARS)}
 
 Instructions:
 1. Provide a direct, authoritative, factual answer in 2-4 sentences.
@@ -417,10 +428,50 @@ Instructions:
     ];
   }
 
+  /** Store key for a user's private copy of a symbol's document. */
+  public userDocKey(symbol: string, userId: string): string {
+    return `${(symbol || '').trim().toUpperCase()}${USER_DOC_SEPARATOR}${userId}`;
+  }
+
   /**
-   * Index arbitrary raw text or uploaded PDF string into the RAG vector index
+   * Key to read from: the user's private document for this symbol if they have one,
+   * otherwise the shared index.
    */
-  public indexDocument(symbol: string, text: string, documentName?: string): void {
+  public resolveDocKey(symbol: string, userId?: string): string {
+    if (userId) {
+      const key = this.userDocKey(symbol, userId);
+      if (this.documentStore.has(key)) return key;
+    }
+    return (symbol || '').trim().toUpperCase();
+  }
+
+  /**
+   * Index user-supplied text into that user's private slot (capped size, LRU-evicted).
+   * Returns the key to use for subsequent retrieval.
+   */
+  public indexUserDocument(
+    symbol: string,
+    userId: string,
+    text: string,
+    documentName?: string,
+    companyName?: string
+  ): string {
+    const key = this.userDocKey(symbol, userId);
+    this.indexDocument(key, text.slice(0, MAX_USER_DOC_CHARS), documentName, companyName || symbol.toUpperCase());
+    this.userDocOrder = this.userDocOrder.filter((k) => k !== key);
+    this.userDocOrder.push(key);
+    while (this.userDocOrder.length > MAX_USER_DOCS) {
+      const evicted = this.userDocOrder.shift();
+      if (evicted) this.documentStore.delete(evicted);
+    }
+    return key;
+  }
+
+  /**
+   * Index raw text into the RAG index under `symbol`. Server-side only: request
+   * handlers must use indexUserDocument so users cannot overwrite shared documents.
+   */
+  public indexDocument(symbol: string, text: string, documentName?: string, companyName?: string): void {
     const sym = symbol.toUpperCase().trim();
     const cleanText = text.replace(/\r\n/g, '\n').trim();
     const estimatedPages = Math.max(1, Math.ceil(cleanText.length / 1600));
@@ -468,7 +519,7 @@ Instructions:
     const docName = documentName || `SEBI_${sym}_DRHP_Filing.pdf`;
     this.documentStore.set(sym, {
       symbol: sym,
-      companyName: sym,
+      companyName: companyName || sym,
       documentName: docName,
       pageCount: estimatedPages,
       indexedAt: new Date().toISOString(),
