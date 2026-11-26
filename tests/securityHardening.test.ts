@@ -9,7 +9,7 @@ import {
   sanitizeSearchQuery,
 } from '@/lib/security/sanitize';
 import { checkRateLimit } from '@/lib/security/rateLimiter';
-import { isAllowedOrigin } from '@/lib/security/cors';
+import { isAllowedOrigin, getRequestHost } from '@/lib/security/cors';
 import { validateSignInCredentials, registeredUsersStore } from '@/lib/services/authStore';
 import { validateSession } from '@/lib/security/session';
 
@@ -96,6 +96,29 @@ describe('Security Hardening Suite', () => {
       expect(isAllowedOrigin('https://app.ipolens.in')).toBe(true);
       expect(isAllowedOrigin('https://malicious-attacker.com')).toBe(false);
       expect(isAllowedOrigin(null)).toBe(true); // Server-to-server / non-browser requests
+    });
+
+    it('should allow same-origin requests on any deployment domain without CLIENT_URL', () => {
+      expect(isAllowedOrigin('https://ipolens.vercel.app', 'ipolens.vercel.app')).toBe(true);
+      expect(isAllowedOrigin('http://localhost:3202', 'localhost:3202')).toBe(true);
+      expect(isAllowedOrigin('https://My-App.example.com', 'my-app.example.com')).toBe(true);
+    });
+
+    it('should still reject cross-site origins and malformed origins', () => {
+      expect(isAllowedOrigin('https://malicious-attacker.com', 'ipolens.vercel.app')).toBe(false);
+      expect(isAllowedOrigin('https://ipolens.vercel.app.attacker.com', 'ipolens.vercel.app')).toBe(false);
+      expect(isAllowedOrigin('http://localhost:4000', 'localhost:3202')).toBe(false);
+      expect(isAllowedOrigin('not a url', 'ipolens.vercel.app')).toBe(false);
+      expect(isAllowedOrigin('https://ipolens.vercel.app', null)).toBe(false);
+    });
+
+    it('should read the request host from x-forwarded-host behind a proxy', () => {
+      const proxied = new Request('http://10.0.0.5:3000/api/analysis', {
+        headers: { host: '10.0.0.5:3000', 'x-forwarded-host': 'ipolens.vercel.app, internal' },
+      });
+      expect(getRequestHost(proxied)).toBe('ipolens.vercel.app');
+      const direct = new Request('http://localhost:3202/api/analysis', { headers: { host: 'LOCALHOST:3202' } });
+      expect(getRequestHost(direct)).toBe('localhost:3202');
     });
   });
 

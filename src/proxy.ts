@@ -1,20 +1,21 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getClientIp, checkRateLimitDistributed, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
-import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight } from '@/lib/security/cors';
+import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight, getRequestHost } from '@/lib/security/cors';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const origin = request.headers.get('origin');
   const clientIp = getClientIp(request);
+  const requestHost = getRequestHost(request);
 
   // 1. CORS Preflight Handling for API
   if (request.method === 'OPTIONS' && pathname.startsWith('/api/')) {
-    return handleCorsPreflight(origin);
+    return handleCorsPreflight(origin, requestHost);
   }
 
   // 2. Untrusted Cross-Origin Request Protection
-  if (origin && pathname.startsWith('/api/') && !isAllowedOrigin(origin)) {
+  if (origin && pathname.startsWith('/api/') && !isAllowedOrigin(origin, requestHost)) {
     return new NextResponse(
       JSON.stringify({ success: false, error: 'Cross-origin request blocked by CORS policy' }),
       {
@@ -48,7 +49,7 @@ export async function proxy(request: NextRequest) {
         }
       );
       applyRateLimitHeaders(resp.headers, rateLimit);
-      return setCorsHeaders(resp, origin);
+      return setCorsHeaders(resp, origin, requestHost);
     }
   }
 
@@ -96,7 +97,7 @@ export async function proxy(request: NextRequest) {
 
   // 6. Proceed and attach CORS and Security Headers
   const response = NextResponse.next();
-  return setCorsHeaders(response, origin);
+  return setCorsHeaders(response, origin, requestHost);
 }
 
 export default proxy;

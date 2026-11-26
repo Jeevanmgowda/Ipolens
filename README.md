@@ -64,7 +64,7 @@ Configured variables:
 | `IPO_API_KEY` | External primary market API key | (Optional) |
 | `GMP_API_KEY` | Grey market premium aggregator key | (Optional) |
 | `REDIS_URL` | Redis URL for quotation caching | (Optional) |
-| `CLIENT_URL` | Frontend origin for CORS verification | `http://localhost:3000` |
+| `CLIENT_URL` | Extra frontend origin allowed to call the API cross-origin (the app's own domain is always allowed) | `http://localhost:3000` |
 
 ---
 
