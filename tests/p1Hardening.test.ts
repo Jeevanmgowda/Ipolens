@@ -43,6 +43,7 @@ describe('Demo accounts and demo login', () => {
   it('allows demo login in production only when ENABLE_DEMO_LOGIN=true', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('ENABLE_DEMO_LOGIN', 'true');
+    vi.stubEnv('PAN_ENCRYPTION_KEY', 'test-production-pan-key'); // required in production
     const { POST } = await import('@/app/api/auth/demo/route');
     expect((await POST(demoRequest('institutional'))).status).toBe(200);
   });

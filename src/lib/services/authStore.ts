@@ -5,10 +5,59 @@ import { isValidPan } from './duplicateEnforcer';
 import { hashPassword, verifyPassword } from '@/lib/security/passwordHash';
 import { db, isDatabaseActive, isPostgresConfigured, reportDatabaseFailure, schema } from '@/db';
 import { isValidEmail } from '@/lib/security/sanitize';
+import { hashPanForLookup, isRawPan, maskPan } from '@/lib/security/panEncryption';
 
 export interface RegisteredUserRecord extends User {
   passwordHash: string;
   passwordSalt?: string;
+  /** Server-only HMAC of the primary PAN; `primaryPan` itself is stored masked. */
+  primaryPanHash?: string;
+}
+
+/** Masks a raw PAN and computes its lookup hash (docs/security/BASELINE_AUDIT.md, N1). */
+function securePrimaryPan(raw?: string): { primaryPan?: string; primaryPanHash?: string } {
+  if (!raw) return { primaryPan: undefined, primaryPanHash: undefined };
+  const clean = raw.trim().toUpperCase();
+  if (isRawPan(clean)) return { primaryPan: maskPan(clean), primaryPanHash: hashPanForLookup(clean) };
+  return { primaryPan: clean, primaryPanHash: undefined };
+}
+
+/**
+ * The only shape of a user that may leave the server: an explicit allowlist, so
+ * password hashes, salts and PAN hashes can never be returned by accident (N2).
+ */
+export function toPublicUser(record: User & Partial<RegisteredUserRecord>): User {
+  const primaryPan = record.primaryPan && isRawPan(record.primaryPan) ? maskPan(record.primaryPan) : record.primaryPan;
+  return {
+    id: record.id,
+    name: record.name,
+    email: record.email,
+    avatarUrl: record.avatarUrl,
+    role: record.role,
+    investorCategory: record.investorCategory,
+    primaryPan,
+    panCount: record.panCount,
+    dematCount: record.dematCount,
+    createdAt: record.createdAt,
+  };
+}
+
+/** HMAC of the user's primary PAN, from memory or the database. */
+export async function getPrimaryPanHash(userId: string): Promise<string | undefined> {
+  const cached = registeredUsersStore.find((u) => u.id === userId);
+  if (cached) return cached.primaryPanHash;
+  if (!isDatabaseActive() || !db) return undefined;
+  try {
+    const rows = await db
+      .select({ primaryPanHash: schema.usersTable.primaryPanHash })
+      .from(schema.usersTable)
+      .where(eq(schema.usersTable.id, userId))
+      .limit(1);
+    return rows[0]?.primaryPanHash || undefined;
+  } catch (err) {
+    reportDatabaseFailure('reading primary PAN hash', err);
+    return undefined;
+  }
 }
 
 /**
@@ -68,7 +117,9 @@ const DEMO_USER_RECORDS: RegisteredUserRecord[] = [
 ];
 
 // In-memory user cache. Seeded with demo accounts only when demo login is enabled.
-export const registeredUsersStore: RegisteredUserRecord[] = isDemoLoginEnabled() ? [...DEMO_USER_RECORDS] : [];
+export const registeredUsersStore: RegisteredUserRecord[] = isDemoLoginEnabled()
+  ? DEMO_USER_RECORDS.map((u) => ({ ...u, ...securePrimaryPan(u.primaryPan) }))
+  : [];
 
 export function newUserId(prefix: 'usr' | 'usr_g'): string {
   return `${prefix}_${crypto.randomUUID()}`;
@@ -92,6 +143,18 @@ export async function loadUserFromDatabase(email: string | undefined): Promise<v
       .limit(1);
     const r = rows[0];
     if (!r || registeredUsersStore.some((u) => u.id === r.id)) return;
+
+    // Lazy migration: rows saved before the fix hold the PAN in plain text.
+    let primaryPan = r.primaryPan || undefined;
+    let primaryPanHash = r.primaryPanHash || undefined;
+    if (isRawPan(primaryPan)) {
+      ({ primaryPan, primaryPanHash } = securePrimaryPan(primaryPan));
+      await db
+        .update(schema.usersTable)
+        .set({ primaryPan: primaryPan || null, primaryPanHash: primaryPanHash || null })
+        .where(eq(schema.usersTable.id, r.id));
+    }
+
     registeredUsersStore.push({
       id: r.id,
       name: r.name,
@@ -100,7 +163,8 @@ export async function loadUserFromDatabase(email: string | undefined): Promise<v
       passwordSalt: r.salt,
       role: r.role as User['role'],
       investorCategory: r.investorCategory as User['investorCategory'],
-      primaryPan: r.primaryPan || undefined,
+      primaryPan,
+      primaryPanHash,
       avatarUrl: r.avatarUrl || undefined,
       createdAt: r.createdAt.toISOString(),
     });
@@ -129,6 +193,7 @@ export async function persistUser(userId: string): Promise<void> {
         role: user.role,
         investorCategory: user.investorCategory || 'Retail',
         primaryPan: user.primaryPan,
+        primaryPanHash: user.primaryPanHash,
         avatarUrl: user.avatarUrl,
         createdAt: new Date(user.createdAt),
       })
@@ -201,8 +266,7 @@ export function validateSignInCredentials(creds: SignInCredentials): { valid: bo
   }
 
   // Strip passwordHash and passwordSalt before returning
-  const { passwordHash: _, passwordSalt: __, ...safeUser } = existingUser;
-  return { valid: true, user: safeUser };
+  return { valid: true, user: toPublicUser(existingUser) };
 }
 
 export function validateAndRegisterUser(creds: SignUpCredentials): { valid: boolean; error?: string; user?: User } {
@@ -253,7 +317,7 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
     passwordSalt: salt,
     role,
     investorCategory: investorCategory || 'Retail',
-    primaryPan: primaryPan ? primaryPan.trim().toUpperCase() : undefined,
+    ...securePrimaryPan(primaryPan),
     panCount: primaryPan ? 1 : 0,
     dematCount: 0,
     createdAt: new Date().toISOString(),
@@ -261,8 +325,7 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
 
   registeredUsersStore.push(newUser);
 
-  const { passwordHash: _, passwordSalt: __, ...safeUser } = newUser;
-  return { valid: true, user: safeUser };
+  return { valid: true, user: toPublicUser(newUser) };
 }
 
 export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { valid: boolean; error?: string; user?: User } {
@@ -279,8 +342,7 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
     if (avatarUrl && !existingUser.avatarUrl) {
       existingUser.avatarUrl = avatarUrl;
     }
-    const { passwordHash: _, passwordSalt: __, ...safeUser } = existingUser;
-    return { valid: true, user: safeUser };
+    return { valid: true, user: toPublicUser(existingUser) };
   }
 
   if (primaryPan && primaryPan.trim()) {
@@ -308,13 +370,12 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
     passwordSalt: salt,
     role,
     investorCategory: category,
-    primaryPan: primaryPan ? primaryPan.trim().toUpperCase() : undefined,
+    ...securePrimaryPan(primaryPan),
     panCount: primaryPan ? 1 : 0,
     dematCount: 0,
     createdAt: new Date().toISOString(),
   };
 
   registeredUsersStore.push(newUser);
-  const { passwordHash: _, passwordSalt: __, ...safeUser } = newUser;
-  return { valid: true, user: safeUser };
+  return { valid: true, user: toPublicUser(newUser) };
 }

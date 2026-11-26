@@ -102,3 +102,21 @@ export function isValidPan(pan: string): boolean {
   if (!pan) return false;
   return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.trim().toUpperCase());
 }
+
+/**
+ * Keyed hash of a PAN for ownership look-ups (allotment checks) without storing
+ * the PAN in plain text. HMAC-SHA256 with a key derived from the PAN encryption
+ * secret (domain-separated), so a leaked hash cannot be brute-forced over the
+ * ~10^10 PAN space without the server secret (docs/security/BASELINE_AUDIT.md, M1/N1).
+ */
+export function hashPanForLookup(pan: string): string {
+  const clean = (pan || '').trim().toUpperCase();
+  const lookupKey = crypto.createHash('sha256').update('ipolens-pan-lookup:').update(getEncryptionKey()).digest();
+  return crypto.createHmac('sha256', lookupKey).update(clean).digest('hex');
+}
+
+/** True when the value is a full, unmasked PAN. */
+export function isRawPan(value?: string | null): boolean {
+  return Boolean(value && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value.trim().toUpperCase()));
+}
+

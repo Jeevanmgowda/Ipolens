@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { db, isDatabaseActive, reportDatabaseFailure, schema } from '@/db';
 import { eq, and, gt } from 'drizzle-orm';
-import { registeredUsersStore } from '@/lib/services/authStore';
+import { registeredUsersStore, toPublicUser } from '@/lib/services/authStore';
 import { User } from '@/types/auth';
 
 /**
@@ -172,8 +172,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
   // Find user in registeredUsersStore or DB
   const user = registeredUsersStore.find((u) => u.id === userId);
   if (user) {
-    const { passwordHash: _, ...safeUser } = user as any;
-    return safeUser as User;
+    return toPublicUser(user);
   }
 
   if (isDatabaseActive() && db) {
@@ -186,7 +185,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
 
       if (rows.length > 0) {
         const r = rows[0];
-        return {
+        return toPublicUser({
           id: r.id,
           name: r.name,
           email: r.email,
@@ -195,7 +194,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
           primaryPan: r.primaryPan || undefined,
           avatarUrl: r.avatarUrl || undefined,
           createdAt: r.createdAt.toISOString(),
-        };
+        });
       }
     } catch (err) {
       reportDatabaseFailure('querying user profile from DB', err);

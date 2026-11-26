@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isDemoLoginEnabled, registeredUsersStore } from '@/lib/services/authStore';
+import { isDemoLoginEnabled, registeredUsersStore, toPublicUser } from '@/lib/services/authStore';
 import { createSession } from '@/lib/security/session';
 
 export const dynamic = 'force-dynamic';
@@ -26,9 +26,7 @@ export async function POST(request: Request) {
   }
 
   const { token, expiresAt } = await createSession(record.id, false);
-  const user: Partial<typeof record> = { ...record };
-  delete user.passwordHash;
-  delete user.passwordSalt;
+  const user = toPublicUser(record);
 
   const response = NextResponse.json({ success: true, user, message: 'Signed in to demo account' });
   response.cookies.set('ipolens_session', token, {

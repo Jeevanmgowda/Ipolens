@@ -227,3 +227,51 @@ describe('R7 / H5 + M2: rate limits cannot be dodged; sign-in does not leak acco
     expect(passwordPolicyError('Kestrel-Harbour-42', 'someone@example.com')).toBeNull();
   });
 });
+
+describe('R8 / M1: allotment checks only for the caller\'s own PANs', () => {
+  it('requires login and refuses PANs not on the account', async () => {
+    const { POST: checkPost } = await import('@/app/api/allotment/check/route');
+    const owner = await sessionFor('owner.r8');
+    const stranger = await sessionFor('stranger.r8');
+    await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'Owner Mum', pan: 'OWNPA1234Q', relationship: 'Parent', broker: 'Zerodha' }, owner));
+
+    const body = { symbol: 'SWIGGY', pan: 'OWNPA1234Q' };
+    expect((await checkPost(jsonRequest('http://localhost/api/allotment/check', 'POST', body))).status).toBe(401);
+    expect((await checkPost(jsonRequest('http://localhost/api/allotment/check', 'POST', body, stranger))).status).toBe(403);
+    expect((await checkPost(jsonRequest('http://localhost/api/allotment/check', 'POST', { symbol: 'SWIGGY', pan: 'ZZZPZ9999Z' }, owner))).status).toBe(403);
+
+    const ownCheck = await checkPost(jsonRequest('http://localhost/api/allotment/check', 'POST', body, owner));
+    expect([401, 403]).not.toContain(ownCheck.status);
+  });
+});
+
+describe('N1 / N2: PANs and credential material never leave the server', () => {
+  it('stores the primary PAN masked with a keyed hash, and /api/auth/me exposes neither salt nor hash', async () => {
+    const { validateAndRegisterUser, registeredUsersStore: store } = await import('@/lib/services/authStore');
+    const { createSession: makeSession } = await import('@/lib/security/session');
+    const { GET: meGet } = await import('@/app/api/auth/me/route');
+    const reg = validateAndRegisterUser({
+      name: 'Pan Owner', email: 'pan.owner@remediation.test', password: 'Kestrel-Harbour-42', primaryPan: 'PRIMA1234Z', termsAccepted: true,
+    } as any);
+    const record = store.find((u) => u.id === reg.user!.id)!;
+    expect(record.primaryPan).toBe('PRIMA****Z');
+    expect(record.primaryPanHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(record)).not.toContain('PRIMA1234Z');
+
+    const { token } = await makeSession(record.id, false);
+    const me = await (await meGet(jsonRequest('http://localhost/api/auth/me', 'GET', undefined, token))).json();
+    const text = JSON.stringify(me);
+    for (const secret of ['passwordHash', 'passwordSalt', 'primaryPanHash', 'PRIMA1234Z', record.passwordSalt!]) {
+      expect(text).not.toContain(secret);
+    }
+  });
+
+  it('GET /api/pans returns no PAN hashes or owner ids', async () => {
+    const { GET: pansGet } = await import('@/app/api/pans/route');
+    const user = await sessionFor('panlist.r8');
+    await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'Kid', pan: 'KIDPA1234B', relationship: 'Child', broker: 'Groww' }, user));
+    const text = JSON.stringify(await (await pansGet(jsonRequest('http://localhost/api/pans', 'GET', undefined, user))).json());
+    expect(text).not.toContain('panHash');
+    expect(text).not.toContain('KIDPA1234B');
+  });
+});

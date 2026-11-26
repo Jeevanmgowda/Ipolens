@@ -8,6 +8,8 @@ export interface CheckAllotmentRequest {
   symbol: string;
   pan: string;
   clientIp?: string;
+  /** Signed-in user; only their own recorded applications are consulted. */
+  userId?: string;
   applicationNo?: string;
   dpClientId?: string;
   price?: number;
@@ -95,11 +97,13 @@ export class AllotmentService {
     const adapter = RegistrarAdapterFactory.getAdapter(ipoInfo.registrarSlug);
 
     // 5. Check if user has an existing recorded demat application
-    const recordedApplications = getApplicationsStore();
+    // Only the caller's own applications are considered (never another user's).
+    const recordedApplications = request.userId
+      ? getApplicationsStore().filter((a) => a.userId === request.userId)
+      : [];
+    const maskedInput = maskedPan;
     const existingApp = recordedApplications.find(
-      (a) =>
-        a.ipoSymbol.toUpperCase() === ipoInfo.symbol &&
-        (a.panNumber.replace(/\*/g, '') === normalizedPan || a.panNumber === normalizedPan)
+      (a) => a.ipoSymbol.toUpperCase() === ipoInfo.symbol && (a.panNumber === maskedInput || a.panNumber === normalizedPan)
     );
 
     const issuePrice = price || ipoInfo.priceHigh || existingApp?.bidPrice || 100;
