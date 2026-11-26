@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { getClientIp, checkRateLimitDistributed, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
 import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight, getRequestHost } from '@/lib/security/cors';
 import { checkBodySize } from '@/lib/security/bodyLimits';
+import { buildPageCsp, generateNonce } from '@/lib/security/csp';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -109,7 +110,18 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // 6. Proceed and attach CORS and Security Headers
+  // 6. Pages: per-request nonce-based CSP. Next.js reads the nonce from the request's
+  //    CSP header and applies it to its own scripts during rendering.
+  if (!pathname.startsWith('/api/')) {
+    const csp = buildPageCsp(generateNonce(), process.env.NODE_ENV === 'development');
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('Content-Security-Policy', csp);
+    const pageResponse = NextResponse.next({ request: { headers: requestHeaders } });
+    pageResponse.headers.set('Content-Security-Policy', csp);
+    return pageResponse;
+  }
+
+  // 7. API: proceed and attach CORS headers (API CSP comes from next.config.ts)
   const response = NextResponse.next();
   return setCorsHeaders(response, origin, requestHost);
 }

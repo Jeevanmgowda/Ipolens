@@ -275,3 +275,20 @@ describe('N1 / N2: PANs and credential material never leave the server', () => {
     expect(text).not.toContain('KIDPA1234B');
   });
 });
+
+describe('R9 / M3: nonce-based CSP without unsafe-inline scripts', () => {
+  it('serves pages with a fresh nonce and no unsafe-inline in script-src', async () => {
+    const { NextRequest } = await import('next/server');
+    const { proxy } = await import('@/proxy');
+    const a = await proxy(new NextRequest('http://localhost/'));
+    const b = await proxy(new NextRequest('http://localhost/signin'));
+    const cspA = a.headers.get('content-security-policy') || '';
+    const cspB = b.headers.get('content-security-policy') || '';
+    const scriptSrc = (cspA.match(/script-src[^;]*/) || [''])[0];
+    expect(scriptSrc).toMatch(/'nonce-[A-Za-z0-9+/=]+'/);
+    expect(scriptSrc).toContain("'strict-dynamic'");
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(cspA.match(/'nonce-([^']+)'/)![1]).not.toBe(cspB.match(/'nonce-([^']+)'/)![1]);
+    expect(cspA).not.toMatch(/connect-src[^;]*\swss?:(\s|;|$)/);
+  });
+});
