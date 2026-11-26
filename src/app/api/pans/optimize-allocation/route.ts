@@ -4,8 +4,8 @@ import {
   OptimizationStrategy,
 } from '@/lib/services/allocation-optimizer.service';
 import { ExchangeIngestionService } from '@/lib/services/exchange-ingestion.service';
-import { getUserPansStore } from '../route';
-import { FamilyPanProfile } from '@/types/pan';
+import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 import { publicErrorMessage } from '@/lib/security/apiError';
 
@@ -13,6 +13,9 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
+
     const body = await request.json();
     const cleanPrice = Number(body.price) || 500;
     const defaultLot = Math.max(1, Math.floor(15000 / cleanPrice));
@@ -25,19 +28,14 @@ export async function POST(request: Request) {
       totalBudget = 500000,
       strategy = 'max_probability' as OptimizationStrategy,
       selectedPanIds,
-      pans: clientPans,
     } = body;
 
     // 1. Fetch live subscription telemetry
     const subscription = await ExchangeIngestionService.syncLiveSubscription(sanitizeString(symbol));
 
-    // 2. Resolve family PAN profiles
-    let profiles: FamilyPanProfile[] = [];
-    if (Array.isArray(clientPans) && clientPans.length > 0) {
-      profiles = clientPans;
-    } else {
-      profiles = getUserPansStore();
-    }
+    // 2. Resolve family PAN profiles: only the signed-in user's own PANs.
+    //    Client-supplied PAN lists are never trusted.
+    let profiles = await DbRepositoryService.getPans(user.id);
 
     // Filter by selectedPanIds if specified
     if (Array.isArray(selectedPanIds) && selectedPanIds.length > 0) {
