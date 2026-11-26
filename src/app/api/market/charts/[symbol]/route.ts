@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MarketChartService } from '@/lib/services/market-chart.service';
 import { SymbolTokenService } from '@/lib/services/symbol-token.service';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 export async function GET(
   req: NextRequest,
@@ -44,6 +45,6 @@ export async function GET(
       candles,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, '/api/market/charts/[symbol]');
   }
 }

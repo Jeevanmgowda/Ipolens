@@ -2,6 +2,8 @@ export type PanRelationship = 'Self' | 'Spouse' | 'Parent' | 'Child' | 'HUF' | '
 
 export interface FamilyPanProfile {
   id: string;
+  /** Owning user (set server-side; used by the in-memory fallback store). */
+  userId?: string;
   name: string;
   relationship: PanRelationship;
   pan: string; // Stored securely, masked on display e.g. "ABCDE****F"
@@ -15,6 +17,8 @@ export type ApplicationStatus = 'Applied' | 'Mandate Approved' | 'Allotted' | 'N
 
 export interface IpoApplication {
   id: string;
+  /** Owning user (set server-side; used by the in-memory fallback store). */
+  userId?: string;
   ipoSymbol: string;
   companyName: string;
   panId: string;

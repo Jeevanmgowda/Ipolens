@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
+  if (!user) return unauthorizedResponse();
+  const userId = user.id;
 
   const symbols = await DbRepositoryService.getWatchlist(userId);
 
@@ -21,7 +23,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     const body = await request.json();
     const { symbol, companyName } = body;
@@ -39,6 +42,6 @@ export async function POST(request: Request) {
       watchlisted: result.watchlisted,
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return apiErrorResponse(error, '/api/market/watchlist');
   }
 }

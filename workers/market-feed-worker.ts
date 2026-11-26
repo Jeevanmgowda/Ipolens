@@ -1,4 +1,4 @@
-import { SmartWebSocketV2 } from 'smartapi-javascript';
+import { WebSocketV2 as SmartWebSocketV2 } from 'smartapi-javascript';
 import { redis } from '../src/lib/redis';
 import { SymbolTokenService } from '../src/lib/services/symbol-token.service';
 
@@ -116,4 +116,17 @@ export function stopLivePriceWorker() {
     clearInterval(simInterval);
     simInterval = null;
   }
+}
+
+// Allow running as a standalone process: `npm run workers:start`
+if (require.main === module) {
+  startLivePriceWorker();
+
+  const shutdown = () => {
+    console.info('[MarketFeedWorker] Shutting down...');
+    stopLivePriceWorker();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }

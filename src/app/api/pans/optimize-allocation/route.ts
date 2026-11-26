@@ -7,6 +7,7 @@ import { ExchangeIngestionService } from '@/lib/services/exchange-ingestion.serv
 import { getUserPansStore } from '../route';
 import { FamilyPanProfile } from '@/types/pan';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to optimize multi-PAN allocation',
+        error: publicErrorMessage(error, 'Failed to optimize multi-PAN allocation'),
       },
       { status: 500 }
     );
