@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 
 /**
@@ -9,7 +9,8 @@ import { DbRepositoryService } from '@/lib/services/db-repository.service';
 export async function DELETE(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     await DbRepositoryService.purgeUserData(userId);
 

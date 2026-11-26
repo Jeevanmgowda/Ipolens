@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
+  if (!user) return unauthorizedResponse();
+  const userId = user.id;
 
   const symbols = await DbRepositoryService.getWatchlist(userId);
 
@@ -21,7 +22,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     const body = await request.json();
     const { symbol, companyName } = body;
