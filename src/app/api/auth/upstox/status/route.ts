@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,11 +50,12 @@ export async function GET() {
       message: 'Active Live Upstox Session connected.',
     });
   } catch (error: any) {
+    console.error('[API] /api/auth/upstox/status:', error);
     return NextResponse.json({
       configured: true,
       hasToken: true,
       valid: false,
-      error: error.message,
+      error: publicErrorMessage(error),
       message: 'Failed to verify Upstox token connection.',
       authUrl: '/api/auth/upstox',
     });

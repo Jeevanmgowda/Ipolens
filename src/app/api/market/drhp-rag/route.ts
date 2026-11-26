@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { drhpRagService } from '@/lib/services/drhp-rag.service';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
       sections,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/market/drhp-rag');
   }
 }
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
       data: ragResult,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/market/drhp-rag');
   }
 }
 

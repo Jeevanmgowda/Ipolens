@@ -1,3 +1,5 @@
+import { getRedisClient } from '@/lib/redis';
+
 /**
  * Enterprise Sliding Window Rate Limiter
  * Protects auth, financial mutation, and scraper endpoints from brute-force, DDoS, and abuse.
@@ -101,6 +103,44 @@ export function checkRateLimit(ip: string, tier: RateLimitTier = 'api'): RateLim
     remaining,
     resetSeconds,
   };
+}
+
+/**
+ * Rate limit shared across instances via Redis when REDIS_URL / UPSTASH_REDIS_URL
+ * is configured and connected (fixed window per tier). Falls back to the
+ * in-memory sliding window above when Redis is absent, connecting or failing.
+ */
+export async function checkRateLimitDistributed(ip: string, tier: RateLimitTier = 'api'): Promise<RateLimitResult> {
+  const client = getRedisClient();
+  if (!client || typeof client.multi !== 'function') {
+    return checkRateLimit(ip, tier);
+  }
+  if (client.status !== 'ready') {
+    // lazyConnect client: start connecting, use the local limiter meanwhile.
+    if (client.status === 'wait') client.connect().catch(() => {});
+    return checkRateLimit(ip, tier);
+  }
+
+  const { limit, windowMs } = TIER_CONFIG[tier] || TIER_CONFIG.api;
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  const key = `ratelimit:${tier}:${ip}:${windowStart}`;
+
+  try {
+    const results = await client.multi().incr(key).pexpire(key, windowMs).exec();
+    const count = Number(results?.[0]?.[1]);
+    if (!Number.isFinite(count)) return checkRateLimit(ip, tier);
+
+    const resetSeconds = Math.max(1, Math.ceil((windowStart + windowMs - now) / 1000));
+    return {
+      allowed: count <= limit,
+      limit,
+      remaining: Math.max(0, limit - count),
+      resetSeconds,
+    };
+  } catch {
+    return checkRateLimit(ip, tier);
+  }
 }
 
 /**

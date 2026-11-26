@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { escapeHtml } from '@/lib/security/sanitize';
+import { UPSTOX_STATE_COOKIE } from '@/lib/security/upstoxOAuth';
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
-  const error = url.searchParams.get('error') || url.searchParams.get('error_description');
+  const returnedState = url.searchParams.get('state');
+  const expectedState = req.cookies.get(UPSTOX_STATE_COOKIE)?.value;
+  const stateMismatch = Boolean(code) && (!expectedState || !returnedState || returnedState !== expectedState);
+  const error =
+    url.searchParams.get('error') ||
+    url.searchParams.get('error_description') ||
+    (stateMismatch ? 'OAuth state mismatch. Please start the Upstox login again from /api/auth/upstox.' : null);
 
   if (error || !code) {
     const errorHtml = `
@@ -27,17 +35,19 @@ export async function GET(req: NextRequest) {
         <div class="card">
           <h1>❌ Authorization Failed</h1>
           <p>Upstox returned an error during the authentication flow:</p>
-          <pre>${error || 'Missing authorization code in callback parameters.'}</pre>
+          <pre>${escapeHtml(error || 'Missing authorization code in callback parameters.')}</pre>
           <a href="/api/auth/upstox" class="btn">Try Again</a>
           <a href="/" class="btn" style="background: #334155; margin-left: 8px;">Back to Dashboard</a>
         </div>
       </body>
       </html>
     `;
-    return new NextResponse(errorHtml, {
+    const response = new NextResponse(errorHtml, {
       status: 400,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
+    response.cookies.set(UPSTOX_STATE_COOKIE, '', { path: '/api/auth', maxAge: 0 });
+    return response;
   }
 
   const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
@@ -137,7 +147,7 @@ export async function GET(req: NextRequest) {
           <div class="meta-box">
             <div class="meta-row">
               <span class="meta-label">User / Account:</span>
-              <span class="meta-val">${userName} (${userId})</span>
+              <span class="meta-val">${escapeHtml(String(userName))} (${escapeHtml(String(userId))})</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">Auto-Updated .env.local:</span>
@@ -150,7 +160,7 @@ export async function GET(req: NextRequest) {
           </div>
 
           <label style="font-size: 12px; color: #94a3b8; font-weight: 500; display: block; margin-bottom: 6px;">Generated Access Token Status:</label>
-          <div class="token-box" id="tokenBox">${maskedToken}</div>
+          <div class="token-box" id="tokenBox">${escapeHtml(maskedToken)}</div>
 
           <div class="btn-group">
             <a href="/" class="btn" style="background: #10b981;">🚀 Go to Live IPO Radar</a>
@@ -173,11 +183,14 @@ export async function GET(req: NextRequest) {
       </html>
     `;
 
-    return new NextResponse(successHtml, {
+    const response = new NextResponse(successHtml, {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
+    response.cookies.set(UPSTOX_STATE_COOKIE, '', { path: '/api/auth', maxAge: 0 });
+    return response;
   } catch (err: any) {
+    console.error('[Upstox OAuth] Token exchange failed:', err);
     const errorHtml = `
       <!DOCTYPE html>
       <html lang="en">
@@ -197,7 +210,7 @@ export async function GET(req: NextRequest) {
         <div class="card">
           <h1>❌ Token Exchange Failed</h1>
           <p>Failed to exchange authorization code with Upstox server:</p>
-          <pre>${err.message}</pre>
+          <pre>${escapeHtml(process.env.NODE_ENV === 'production' ? 'Token exchange with Upstox failed. Check the server logs for details.' : String(err?.message || err))}</pre>
           <a href="/api/auth/upstox" class="btn">Try Again</a>
           <a href="/" class="btn" style="background: #334155; margin-left: 8px;">Back to Dashboard</a>
         </div>
@@ -205,9 +218,11 @@ export async function GET(req: NextRequest) {
       </html>
     `;
 
-    return new NextResponse(errorHtml, {
+    const response = new NextResponse(errorHtml, {
       status: 500,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
+    response.cookies.set(UPSTOX_STATE_COOKIE, '', { path: '/api/auth', maxAge: 0 });
+    return response;
   }
 }

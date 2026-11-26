@@ -1,15 +1,33 @@
+import crypto from 'crypto';
+import { eq } from 'drizzle-orm';
 import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '../types/auth';
 import { isValidPan } from './duplicateEnforcer';
 import { hashPassword, verifyPassword } from '../lib/security/passwordHash';
-import { db, isPostgresConfigured, schema } from '../db';
+import { db, isDatabaseActive, isPostgresConfigured, reportDatabaseFailure, schema } from '../db';
 
 export interface RegisteredUserRecord extends User {
   passwordHash: string;
   passwordSalt?: string;
 }
 
-// Initial registered users database seeded with default demo accounts (cryptographically hashed with PBKDF2-SHA512)
-export const registeredUsersStore: RegisteredUserRecord[] = [
+/**
+ * Demo accounts (and the one-click demo login) are available outside production,
+ * or in production only when ENABLE_DEMO_LOGIN=true is set explicitly.
+ * Their password is published in the test suite, so they must never be live by default.
+ */
+export function isDemoLoginEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEMO_LOGIN === 'true';
+}
+
+if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build' && !isPostgresConfigured) {
+  console.error(
+    '[AuthStore] DATABASE_URL is not configured in production. User accounts and sessions are held in memory only ' +
+      'and will be lost on every restart or serverless cold start.'
+  );
+}
+
+// Demo accounts (cryptographically hashed with PBKDF2-SHA512)
+const DEMO_USER_RECORDS: RegisteredUserRecord[] = [
   {
     id: 'usr_admin_00',
     name: 'Security Admin',
@@ -47,6 +65,77 @@ export const registeredUsersStore: RegisteredUserRecord[] = [
     createdAt: '2025-03-01T00:00:00.000Z',
   },
 ];
+
+// In-memory user cache. Seeded with demo accounts only when demo login is enabled.
+export const registeredUsersStore: RegisteredUserRecord[] = isDemoLoginEnabled() ? [...DEMO_USER_RECORDS] : [];
+
+export function newUserId(prefix: 'usr' | 'usr_g'): string {
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+/**
+ * Ensures the user with this email is in the in-memory cache, loading it from
+ * PostgreSQL when configured. Call before the synchronous validate/register
+ * functions so accounts survive restarts.
+ */
+export async function loadUserFromDatabase(email: string | undefined): Promise<void> {
+  if (!email || !isDatabaseActive() || !db) return;
+  const normalizedEmail = email.trim().toLowerCase();
+  if (registeredUsersStore.some((u) => u.email.toLowerCase() === normalizedEmail)) return;
+
+  try {
+    const rows = await db
+      .select()
+      .from(schema.usersTable)
+      .where(eq(schema.usersTable.email, normalizedEmail))
+      .limit(1);
+    const r = rows[0];
+    if (!r || registeredUsersStore.some((u) => u.id === r.id)) return;
+    registeredUsersStore.push({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      passwordHash: r.passwordHash,
+      passwordSalt: r.salt,
+      role: r.role as User['role'],
+      investorCategory: r.investorCategory as User['investorCategory'],
+      primaryPan: r.primaryPan || undefined,
+      avatarUrl: r.avatarUrl || undefined,
+      createdAt: r.createdAt.toISOString(),
+    });
+  } catch (err) {
+    reportDatabaseFailure('loading user by email', err);
+  }
+}
+
+/**
+ * Persists a user from the in-memory cache to PostgreSQL (no-op if it already exists).
+ */
+export async function persistUser(userId: string): Promise<void> {
+  if (!isDatabaseActive() || !db) return;
+  const user = registeredUsersStore.find((u) => u.id === userId);
+  if (!user) return;
+
+  try {
+    await db
+      .insert(schema.usersTable)
+      .values({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        salt: user.passwordSalt || '',
+        role: user.role,
+        investorCategory: user.investorCategory || 'Retail',
+        primaryPan: user.primaryPan,
+        avatarUrl: user.avatarUrl,
+        createdAt: new Date(user.createdAt),
+      })
+      .onConflictDoNothing();
+  } catch (err) {
+    reportDatabaseFailure('saving user to DB', err);
+  }
+}
 
 export function validateSignInCredentials(creds: SignInCredentials): { valid: boolean; error?: string; user?: User } {
   const { email, password } = creds;
@@ -117,7 +206,7 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
   const { hash, salt } = hashPassword(password);
 
   const newUser: RegisteredUserRecord = {
-    id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: newUserId('usr'),
     name: name.trim(),
     email: normalizedEmail,
     passwordHash: hash,
@@ -131,25 +220,6 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
   };
 
   registeredUsersStore.push(newUser);
-
-  // Synchronize to PostgreSQL if configured
-  if (isPostgresConfigured && db) {
-    try {
-      db.insert(schema.usersTable).values({
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        passwordHash: hash,
-        salt,
-        role: newUser.role,
-        investorCategory: newUser.investorCategory || 'Retail',
-        primaryPan: newUser.primaryPan,
-        createdAt: new Date(newUser.createdAt),
-      }).then(() => {}).catch((e: any) => console.warn('[AuthStore] Error syncing user to DB:', e));
-    } catch (e) {
-      console.warn('[AuthStore] Notice inserting user to DB:', e);
-    }
-  }
 
   const { passwordHash: _, passwordSalt: __, ...safeUser } = newUser;
   return { valid: true, user: safeUser };
@@ -187,10 +257,10 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
       ? 'hni'
       : 'retail';
 
-  const { hash, salt } = hashPassword(`google_oauth_${Date.now()}_${Math.random()}`);
+  const { hash, salt } = hashPassword(crypto.randomBytes(32).toString('hex'));
 
   const newUser: RegisteredUserRecord = {
-    id: `usr_g_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: newUserId('usr_g'),
     name: name?.trim() || email.split('@')[0],
     email: normalizedEmail,
     avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || email)}`,

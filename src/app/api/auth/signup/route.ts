@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { validateAndRegisterUser } from '@/services/authStore';
+import { loadUserFromDatabase, persistUser, validateAndRegisterUser } from '@/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function POST(request: Request) {
   try {
@@ -12,6 +13,7 @@ export async function POST(request: Request) {
       email: rawBody.email ? sanitizeString(rawBody.email) : '',
       primaryPan: rawBody.primaryPan ? sanitizeString(rawBody.primaryPan).toUpperCase() : undefined,
     };
+    await loadUserFromDatabase(body.email);
     const result = validateAndRegisterUser(body);
 
     if (!result.valid || !result.user) {
@@ -20,13 +22,13 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    await persistUser(result.user.id);
 
     const { token, expiresAt } = await createSession(result.user.id, true);
 
     const response = NextResponse.json({
       success: true,
       user: result.user,
-      token,
       message: 'Account created successfully',
     });
 
@@ -40,18 +42,11 @@ export async function POST(request: Request) {
       maxAge: maxAgeSeconds,
     });
 
-    response.cookies.set('ipolens_token', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
-
     return response;
   } catch (err: any) {
+    console.error('[API] /api/auth/signup:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
+      { success: false, error: publicErrorMessage(err, 'Internal server error') },
       { status: 500 }
     );
   }

@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
+import { escapeHtml } from '@/lib/security/sanitize';
+import { UPSTOX_STATE_COOKIE, UPSTOX_STATE_MAX_AGE_SECONDS } from '@/lib/security/upstoxOAuth';
 
 export async function GET(req: NextRequest) {
   const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
@@ -31,7 +34,7 @@ export async function GET(req: NextRequest) {
           <p>Where to find them:</p>
           <ol style="color: #94a3b8; font-size: 14px; line-height: 1.8; padding-left: 20px;">
             <li>Go to <a href="https://developer.upstox.com/" target="_blank" style="color: #38bdf8;">developer.upstox.com</a></li>
-            <li>Create an App with Redirect URL: <code>${redirectUri}</code></li>
+            <li>Create an App with Redirect URL: <code>${escapeHtml(redirectUri)}</code></li>
             <li>Copy your <strong>API Key</strong> and <strong>API Secret</strong> into <code>.env.local</code></li>
             <li>Refresh this page to proceed with login!</li>
           </ol>
@@ -47,7 +50,16 @@ export async function GET(req: NextRequest) {
   }
 
   // Construct Upstox OAuth authorization dialog URL
-  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const state = crypto.randomBytes(24).toString('hex');
+  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
 
-  return NextResponse.redirect(authUrl);
+  const response = NextResponse.redirect(authUrl);
+  response.cookies.set(UPSTOX_STATE_COOKIE, state, {
+    path: '/api/auth',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: UPSTOX_STATE_MAX_AGE_SECONDS,
+  });
+  return response;
 }

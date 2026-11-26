@@ -4,6 +4,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getAuthenticatedUser } from '@/lib/security/session';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 const execAsync = promisify(exec);
 
@@ -61,8 +62,9 @@ export async function GET() {
       sampleSymbols: ipos.slice(0, 5).map((r: any) => r.symbol),
     });
   } catch (error: any) {
+    console.error('[API] /api/scraper/sync:', error);
     return NextResponse.json(
-      { exists: false, error: error.message || 'Failed to inspect scraper feed status' },
+      { exists: false, error: publicErrorMessage(error, 'Failed to inspect scraper feed status') },
       { status: 500 }
     );
   }
@@ -130,11 +132,12 @@ export async function POST(req: Request) {
       summary: resultPayload?.summary,
     });
   } catch (error: any) {
+    console.error('[API] /api/scraper/sync:', error);
     const isProd = process.env.NODE_ENV === 'production';
     return NextResponse.json(
       {
         success: false,
-        error: isProd ? 'Internal server error executing scraper' : (error.message || 'Failed to execute scraper worker'),
+        error: isProd ? 'Internal server error executing scraper' : (publicErrorMessage(error, 'Failed to execute scraper worker')),
         stderr: isProd ? undefined : (error.stderr?.toString() || undefined),
       },
       { status: 500 }

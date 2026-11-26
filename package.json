@@ -19,8 +19,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "workers:build": "tsc --noEmit -p tsconfig.json",
-    "workers:start": "node workers/market-feed-worker.js",
-    "workers:refresh": "node src/lib/scheduler.js",
+    "workers:start": "tsx workers/market-feed-worker.ts",
+    "workers:refresh": "tsx src/lib/scheduler.ts",
     "build:workers": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -48,6 +48,7 @@
     "eslint-config-next": "16.3.5",
     "puppeteer": "^25.16.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"

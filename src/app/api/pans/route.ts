@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { FamilyPanProfile } from '@/types/pan';
 import { isValidPan, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 // In-memory store for server-side persistence (clean slate, zero mock dummy data)
 let userPansStore: FamilyPanProfile[] = [];
@@ -14,7 +15,8 @@ export function getUserPansStore(): FamilyPanProfile[] {
 
 export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
+  if (!user) return unauthorizedResponse();
+  const userId = user.id;
 
   const data = await DbRepositoryService.getPans(userId);
   return NextResponse.json({
@@ -28,7 +30,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     const body = await request.json();
     const { name, relationship, pan, broker, dematId, bankUpi } = body;
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
     }
 
     const newProfile: FamilyPanProfile = {
-      id: `pan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `pan_${crypto.randomUUID()}`,
       name: sanitizeString(name).slice(0, 100),
       relationship: (sanitizeString(relationship).slice(0, 50) as any),
       pan: cleanPan,
@@ -77,14 +80,15 @@ export async function POST(request: Request) {
       message: `Successfully registered encrypted PAN profile for ${saved.name} (${maskPan(cleanPan)}).`,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/pans');
   }
 }
 
 export async function DELETE(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -100,6 +104,6 @@ export async function DELETE(request: Request) {
       message: 'PAN profile deleted successfully.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/pans');
   }
 }

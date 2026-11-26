@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AiTradingPredictionService } from '@/lib/services/ai-trading-prediction.service';
 import { AiPredictionRequest } from '@/types/ai-prediction';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to generate AI stock trading prediction.',
+        error: publicErrorMessage(error, 'Failed to generate AI stock trading prediction.'),
       },
       { status: 500 }
     );

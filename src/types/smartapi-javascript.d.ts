@@ -1,11 +1,11 @@
 declare module 'smartapi-javascript' {
-  export class SmartConnect {
+  export class SmartAPI {
     constructor(config: { api_key: string });
     generateSession(clientCode: string, password: string,totp: string): Promise<any>;
     getProfile(): Promise<any>;
   }
 
-  export class SmartWebSocketV2 {
+  export class WebSocketV2 {
     constructor(config: {
       jwttoken: string;
       apikey: string;

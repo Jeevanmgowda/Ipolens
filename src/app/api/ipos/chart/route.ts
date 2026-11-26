@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchIpoLiveChart } from '@/services/listedIpoService';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('API Error in /api/ipos/chart:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch IPO live chart data', message: error.message },
+      { success: false, error: 'Failed to fetch IPO live chart data', ...errorDetail(error) },
       { status: 500 }
     );
   }
