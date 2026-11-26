@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'fs';
+import type { NextRequest } from 'next/server';
 import path from 'path';
 import { createSession } from '@/lib/security/session';
 import { registeredUsersStore, registerOrLoginWithGoogle } from '@/lib/services/authStore';
@@ -64,7 +65,7 @@ describe('R3 / H1: users cannot overwrite the shared DRHP index', () => {
     const { POST: ragPost } = await import('@/app/api/market/drhp-rag/route');
     const { GET: analysisGet, POST: analysisPost } = await import('@/app/api/analysis/route');
     const body = { symbol: 'JIOPLAT', question: 'What are the objects of the offer?', customText: 'x'.repeat(100) };
-    expect((await ragPost(jsonRequest('http://localhost/api/market/drhp-rag', 'POST', body) as any)).status).toBe(401);
+    expect((await ragPost(jsonRequest('http://localhost/api/market/drhp-rag', 'POST', body) as unknown as NextRequest)).status).toBe(401);
     expect((await analysisGet(jsonRequest('http://localhost/api/analysis?symbol=JIOPLAT', 'GET'))).status).toBe(401);
     expect((await analysisPost(jsonRequest('http://localhost/api/analysis', 'POST', { symbol: 'JIOPLAT' }))).status).toBe(401);
   });
@@ -77,12 +78,12 @@ describe('R3 / H1: users cannot overwrite the shared DRHP index', () => {
     const poisoned = `Objects of the Offer: ${marker} the company will use all proceeds to buy lottery tickets. `.repeat(20);
 
     const own = await ragPost(jsonRequest('http://localhost/api/market/drhp-rag', 'POST',
-      { symbol: 'JIOPLAT', question: 'objects of the offer proceeds', customText: poisoned }, attacker) as any);
+      { symbol: 'JIOPLAT', question: 'objects of the offer proceeds', customText: poisoned }, attacker) as unknown as NextRequest);
     expect(own.status).toBe(200);
     expect(JSON.stringify(await own.json())).toContain(marker);
 
     const other = await ragPost(jsonRequest('http://localhost/api/market/drhp-rag', 'POST',
-      { symbol: 'JIOPLAT', question: 'objects of the offer proceeds' }, victim) as any);
+      { symbol: 'JIOPLAT', question: 'objects of the offer proceeds' }, victim) as unknown as NextRequest);
     expect(other.status).toBe(200);
     expect(JSON.stringify(await other.json())).not.toContain(marker);
   });
@@ -103,7 +104,7 @@ describe('R6 / H4: AI routes require login, have a per-user quota and delimit un
   it('requires login for analyze-drhp and ai-prediction', async () => {
     const { POST: analyzePost } = await import('@/app/api/market/analyze-drhp/route');
     const { POST: predictPost } = await import('@/app/api/market/ai-prediction/route');
-    expect((await analyzePost(jsonRequest('http://localhost/api/market/analyze-drhp', 'POST', { companyName: 'X' }) as any)).status).toBe(401);
+    expect((await analyzePost(jsonRequest('http://localhost/api/market/analyze-drhp', 'POST', { companyName: 'X' }) as unknown as NextRequest)).status).toBe(401);
     expect((await predictPost(jsonRequest('http://localhost/api/market/ai-prediction', 'POST', { symbol: 'SWIGGY' }))).status).toBe(401);
   });
 
@@ -120,7 +121,7 @@ describe('R6 / H4: AI routes require login, have a per-user quota and delimit un
     const user = await sessionFor('quota.r6');
     const statuses: number[] = [];
     for (let i = 0; i < 31; i++) {
-      const res = await ragPost(jsonRequest('http://localhost/api/market/drhp-rag', 'POST', { symbol: 'SWIGGY', question: 'debt' }, user) as any);
+      const res = await ragPost(jsonRequest('http://localhost/api/market/drhp-rag', 'POST', { symbol: 'SWIGGY', question: 'debt' }, user) as unknown as NextRequest);
       statuses.push(res.status);
     }
     expect(statuses.slice(0, 30).every((s) => s === 200)).toBe(true);
@@ -162,7 +163,7 @@ describe('R5 / H3 + M6: no ReDoS and bounded request bodies', () => {
     const { validateAndRegisterUser } = await import('@/lib/services/authStore');
     const evil = 'a@' + '.'.repeat(200_000) + ' ';
     const t = Date.now();
-    const res = validateAndRegisterUser({ name: 'Evil', email: evil, password: 'Kestrel-Harbour-42', termsAccepted: true } as any);
+    const res = validateAndRegisterUser({ name: 'Evil', email: evil, password: 'Kestrel-Harbour-42', termsAccepted: true } as Parameters<typeof validateAndRegisterUser>[0]);
     expect(Date.now() - t).toBeLessThan(100);
     expect(res.valid).toBe(false);
   });
@@ -252,7 +253,7 @@ describe('N1 / N2: PANs and credential material never leave the server', () => {
     const { GET: meGet } = await import('@/app/api/auth/me/route');
     const reg = validateAndRegisterUser({
       name: 'Pan Owner', email: 'pan.owner@remediation.test', password: 'Kestrel-Harbour-42', primaryPan: 'PRIMA1234Z', termsAccepted: true,
-    } as any);
+    } as Parameters<typeof validateAndRegisterUser>[0]);
     const record = store.find((u) => u.id === reg.user!.id)!;
     expect(record.primaryPan).toBe('PRIMA****Z');
     expect(record.primaryPanHash).toMatch(/^[0-9a-f]{64}$/);
@@ -300,8 +301,8 @@ describe('R10 / M4: live stream limits', () => {
   it('rejects too many or malformed symbols', async () => {
     const { GET } = await import('@/app/api/market/stream/route');
     const many = Array.from({ length: 21 }, (_, i) => `SYM${i}`).join(',');
-    expect((await GET(streamReq(`?symbols=${many}`, '203.0.113.50') as any)).status).toBe(400);
-    expect((await GET(streamReq(`?symbols=${encodeURIComponent('SWIGGY,<script>')}`, '203.0.113.50') as any)).status).toBe(400);
+    expect((await GET(streamReq(`?symbols=${many}`, '203.0.113.50') as unknown as NextRequest)).status).toBe(400);
+    expect((await GET(streamReq(`?symbols=${encodeURIComponent('SWIGGY,<script>')}`, '203.0.113.50') as unknown as NextRequest)).status).toBe(400);
   });
 
   it('caps concurrent streams per client and frees the slot on disconnect', async () => {
@@ -309,14 +310,14 @@ describe('R10 / M4: live stream limits', () => {
     const ip = '203.0.113.77';
     const controllers = [new AbortController(), new AbortController(), new AbortController()];
     for (const c of controllers) {
-      expect((await GET(streamReq('?symbols=SWIGGY', ip, c.signal) as any)).status).toBe(200);
+      expect((await GET(streamReq('?symbols=SWIGGY', ip, c.signal) as unknown as NextRequest)).status).toBe(200);
     }
-    expect((await GET(streamReq('?symbols=SWIGGY', ip) as any)).status).toBe(429);
+    expect((await GET(streamReq('?symbols=SWIGGY', ip) as unknown as NextRequest)).status).toBe(429);
 
     controllers[0].abort();
     await new Promise((r) => setTimeout(r, 10));
     const again = new AbortController();
-    expect((await GET(streamReq('?symbols=SWIGGY', ip, again.signal) as any)).status).toBe(200);
+    expect((await GET(streamReq('?symbols=SWIGGY', ip, again.signal) as unknown as NextRequest)).status).toBe(200);
     for (const c of [...controllers, again]) c.abort();
   });
 });
@@ -415,7 +416,7 @@ describe('R12 / L1–L6: lower-severity hardening', () => {
     const crypto = await import('crypto');
     const { verifyGoogleIdToken } = await import('@/lib/security/googleIdToken');
     const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-    const jwk = { ...(publicKey.export({ format: 'jwk' }) as any), kid: 'k1' };
+    const jwk = { ...(publicKey.export({ format: 'jwk' }) as unknown as NextRequest), kid: 'k1' };
     const sign = (claims: object) => {
       const h = Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'k1' })).toString('base64url');
       const p = Buffer.from(JSON.stringify(claims)).toString('base64url');

@@ -160,24 +160,25 @@ export function getRedisClient(): any {
   }
 }
 
-let subscriberClient: any = null;
+let subscriberClient: Redis | null = null;
 
 /**
  * Dedicated connection for Pub/Sub. An ioredis connection in subscriber mode
  * rejects normal commands, so subscribing on the shared client would break
  * caching and rate limiting for the whole app.
  */
-export function getRedisSubscriber(): any {
+export function getRedisSubscriber(): Redis | InMemoryRedisEmitter {
   const base = getRedisClient();
   if (base === globalMemoryFallback || typeof base?.duplicate !== 'function') {
     return globalMemoryFallback;
   }
   if (!subscriberClient) {
-    subscriberClient = base.duplicate();
-    subscriberClient.setMaxListeners?.(0);
-    subscriberClient.on('error', () => {
+    const created: Redis = base.duplicate();
+    created.setMaxListeners(0);
+    created.on('error', () => {
       // The shared client's handler logs connection problems; avoid crashing here.
     });
+    subscriberClient = created;
   }
   return subscriberClient;
 }
