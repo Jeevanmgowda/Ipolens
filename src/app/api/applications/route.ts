@@ -5,6 +5,7 @@ import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 import { apiErrorResponse } from '@/lib/security/apiError';
+import { ApplicationCreateSchema, ApplicationPatchSchema, firstIssue } from '@/lib/security/schemas';
 
 // Server-side store for applications (clean slate)
 let applicationsStore: IpoApplication[] = [];
@@ -52,27 +53,21 @@ export async function POST(request: Request) {
     if (!user) return unauthorizedResponse();
     const userId = user.id;
 
-    const body = await request.json();
-    const {
-      ipoSymbol,
-      companyName,
-      panId,
-      panNumber,
-      holderName,
-      relationship,
-      category,
-      lots,
-      shares,
-      bidPrice,
-      blockedAmount,
-    } = body;
-
-    if (!ipoSymbol || !panId || !lots || !bidPrice) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required application fields.' },
-        { status: 400 }
-      );
+    const parsed = ApplicationCreateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const { ipoSymbol, companyName, panId, category, lots, shares, bidPrice, blockedAmount } = parsed.data;
+
+    // The PAN profile must belong to the caller; holder name, masked PAN and
+    // relationship come from that stored profile, never from the request (mass assignment).
+    const panProfile = (await DbRepositoryService.getPans(userId)).find((p) => p.id === panId);
+    if (!panProfile) {
+      return NextResponse.json({ success: false, error: 'PAN profile not found.' }, { status: 404 });
+    }
+    const panNumber = panProfile.pan;
+    const holderName = panProfile.name;
+    const relationship = panProfile.relationship;
 
     // Retrieve existing user applications for duplicate check
     const existingApps = await DbRepositoryService.getApplications(ipoSymbol, userId);
@@ -138,12 +133,11 @@ export async function PATCH(request: Request) {
     const user = await getAuthenticatedUser(request);
     if (!user) return unauthorizedResponse();
 
-    const body = await request.json();
-    const { id, status, allottedShares } = body;
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Application ID is required' }, { status: 400 });
+    const parsed = ApplicationPatchSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const { id, status, allottedShares } = parsed.data;
 
     const owned = (await DbRepositoryService.getApplications(undefined, user.id)).some((a) => a.id === id);
     if (!owned) {

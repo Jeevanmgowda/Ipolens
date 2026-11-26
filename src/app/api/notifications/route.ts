@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { apiErrorResponse } from '@/lib/security/apiError';
+import { NotificationBodySchema, firstIssue } from '@/lib/security/schemas';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,8 +26,11 @@ export async function POST(request: Request) {
     if (!user) return unauthorizedResponse();
     const userId = user.id;
 
-    const body = await request.json();
-    const { action, id, type, title, message, symbol, metadata } = body;
+    const parsed = NotificationBodySchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
+    }
+    const { action, id, type, title, message, symbol, metadata } = parsed.data;
 
     if (action === 'markRead' && id) {
       await DbRepositoryService.markNotificationRead(id, userId);

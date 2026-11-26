@@ -8,6 +8,7 @@ import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 import { publicErrorMessage } from '@/lib/security/apiError';
+import { OptimizeAllocationSchema, firstIssue } from '@/lib/security/schemas';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,11 @@ export async function POST(request: Request) {
     const user = await getAuthenticatedUser(request);
     if (!user) return unauthorizedResponse();
 
-    const body = await request.json();
+    const parsedBody = OptimizeAllocationSchema.safeParse(await request.json().catch(() => null));
+    if (!parsedBody.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsedBody.error) }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const cleanPrice = Number(body.price) || 500;
     const defaultLot = Math.max(1, Math.floor(15000 / cleanPrice));
     const cleanLotSize = Number(body.lotSize) > 0 ? Number(body.lotSize) : defaultLot;
@@ -26,9 +31,14 @@ export async function POST(request: Request) {
       companyName = 'IPO Offering',
       gmp = 0,
       totalBudget = 500000,
-      strategy = 'max_probability' as OptimizationStrategy,
+      strategy: rawStrategy,
       selectedPanIds,
     } = body;
+    const strategy: OptimizationStrategy = (['max_probability', 'max_expected_profit', 'capital_efficient'] as const).includes(
+      rawStrategy as OptimizationStrategy
+    )
+      ? (rawStrategy as OptimizationStrategy)
+      : 'max_probability';
 
     // 1. Fetch live subscription telemetry
     const subscription = await ExchangeIngestionService.syncLiveSubscription(sanitizeString(symbol));

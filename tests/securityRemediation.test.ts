@@ -320,3 +320,50 @@ describe('R10 / M4: live stream limits', () => {
     for (const c of [...controllers, again]) c.abort();
   });
 });
+
+describe('R11 / M5: strict input schemas and no mass assignment', () => {
+  it('rejects negative or out-of-range application values and unknown statuses', async () => {
+    const { POST: appPost, PATCH: appPatch } = await import('@/app/api/applications/route');
+    const { GET: pansGet } = await import('@/app/api/pans/route');
+    const user = await sessionFor('schema.r11');
+    await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'Schema Self', pan: 'SCHMA1234Z', relationship: 'Self', broker: 'Zerodha' }, user));
+    const panId = (await (await pansGet(jsonRequest('http://localhost/api/pans', 'GET', undefined, user))).json()).data[0].id;
+
+    const bad = await appPost(jsonRequest('http://localhost/api/applications', 'POST', { ipoSymbol: 'SWIGGY', panId, lots: 1, bidPrice: 390, shares: -500 }, user));
+    expect(bad.status).toBe(400);
+    const zeroLots = await appPost(jsonRequest('http://localhost/api/applications', 'POST', { ipoSymbol: 'SWIGGY', panId, lots: 0, bidPrice: 390 }, user));
+    expect(zeroLots.status).toBe(400);
+
+    const created = await (await appPost(jsonRequest('http://localhost/api/applications', 'POST',
+      { ipoSymbol: 'SWIGGY', panId, lots: 1, bidPrice: 390, holderName: 'Spoofed Name', panNumber: 'ZZZZZ9999Z' }, user))).json();
+    expect(created.success).toBe(true);
+    expect(created.data.holderName).toBe('Schema Self');
+    expect(created.data.panNumber).toBe('SCHMA****Z');
+
+    const patch = await appPatch(jsonRequest('http://localhost/api/applications', 'PATCH', { id: created.data.id, status: 'Hacked' }, user));
+    expect(patch.status).toBe(400);
+  });
+
+  it("cannot file an application against another user's PAN profile", async () => {
+    const { POST: appPost } = await import('@/app/api/applications/route');
+    const { GET: pansGet } = await import('@/app/api/pans/route');
+    const victim = await sessionFor('victim.r11');
+    const attacker = await sessionFor('attacker.r11');
+    await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'Victim Self', pan: 'VICTM1234V', relationship: 'Self', broker: 'Zerodha' }, victim));
+    const victimPanId = (await (await pansGet(jsonRequest('http://localhost/api/pans', 'GET', undefined, victim))).json()).data[0].id;
+    const res = await appPost(jsonRequest('http://localhost/api/applications', 'POST', { ipoSymbol: 'SWIGGY', panId: victimPanId, lots: 1, bidPrice: 390 }, attacker));
+    expect(res.status).toBe(404);
+  });
+
+  it('validates PAN profile fields and detects exact duplicates', async () => {
+    const user = await sessionFor('panfields.r11');
+    const badUpi = await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'X', pan: 'UPIXX1234U', relationship: 'Self', bankUpi: 'javascript:alert(1)' }, user));
+    expect(badUpi.status).toBe(400);
+    const badRel = await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'X', pan: 'RELXX1234R', relationship: 'Boss' }, user));
+    expect(badRel.status).toBe(400);
+    expect((await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'One', pan: 'DUPLX1234D', relationship: 'Self' }, user))).status).toBe(200);
+    expect((await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'Two', pan: 'duplx1234d', relationship: 'Spouse' }, user))).status).toBe(400);
+    // Same masked form (DUPLX****D) but a different PAN is not a duplicate.
+    expect((await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'Three', pan: 'DUPLX9876D', relationship: 'Child' }, user))).status).toBe(200);
+  });
+});
