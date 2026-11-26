@@ -24,7 +24,6 @@ export async function POST(request: Request) {
     const response = NextResponse.json({
       success: true,
       user: result.user,
-      token,
       message: 'Signed in successfully',
     });
 
@@ -32,14 +31,6 @@ export async function POST(request: Request) {
 
     // Set secure HttpOnly cookies
     response.cookies.set('ipolens_session', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
-
-    response.cookies.set('ipolens_token', token, {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',

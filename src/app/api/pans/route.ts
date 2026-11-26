@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { FamilyPanProfile } from '@/types/pan';
 import { isValidPan, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 
 // In-memory store for server-side persistence (clean slate, zero mock dummy data)
@@ -14,7 +14,8 @@ export function getUserPansStore(): FamilyPanProfile[] {
 
 export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
+  if (!user) return unauthorizedResponse();
+  const userId = user.id;
 
   const data = await DbRepositoryService.getPans(userId);
   return NextResponse.json({
@@ -28,7 +29,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     const body = await request.json();
     const { name, relationship, pan, broker, dematId, bankUpi } = body;
@@ -84,7 +86,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

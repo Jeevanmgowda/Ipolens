@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { PortfolioSummary } from '@/types/portfolio';
 
 export async function GET(request: Request) {
   try {
     const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    if (!authUser) return unauthorizedResponse();
+    const userId = authUser.id;
 
     const holdings = await DbRepositoryService.getHoldings(userId);
 
@@ -52,7 +53,8 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    if (!authUser) return unauthorizedResponse();
+    const userId = authUser.id;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

@@ -59,7 +59,7 @@ export class DbRepositoryService {
       }
     }
 
-    return getUserPansStore();
+    return getUserPansStore().filter((p) => p.userId === userId);
   }
 
   static async savePan(
@@ -97,11 +97,12 @@ export class DbRepositoryService {
 
     // Always keep memory store synchronized
     const memoryStore = getUserPansStore();
+    const ownedProfile = { ...secureProfile, userId };
     const existingIdx = memoryStore.findIndex((p) => p.id === secureProfile.id);
     if (existingIdx === -1) {
-      memoryStore.push(secureProfile);
-    } else {
-      memoryStore[existingIdx] = secureProfile;
+      memoryStore.push(ownedProfile);
+    } else if (memoryStore[existingIdx].userId === userId) {
+      memoryStore[existingIdx] = ownedProfile;
     }
 
     return secureProfile;
@@ -123,7 +124,7 @@ export class DbRepositoryService {
     }
 
     const memoryStore = getUserPansStore();
-    const idx = memoryStore.findIndex((p) => p.id === id);
+    const idx = memoryStore.findIndex((p) => p.id === id && (!userId || p.userId === userId));
     if (idx !== -1) {
       memoryStore.splice(idx, 1);
       return true;
@@ -174,7 +175,7 @@ export class DbRepositoryService {
       }
     }
 
-    let list = getApplicationsStore();
+    let list = getApplicationsStore().filter((a) => a.userId === userId);
     if (symbol) {
       list = list.filter((a) => a.ipoSymbol.toUpperCase() === symbol.toUpperCase());
     }
@@ -208,11 +209,12 @@ export class DbRepositoryService {
     }
 
     const memoryStore = getApplicationsStore();
+    const ownedApp = { ...app, userId };
     const existingIdx = memoryStore.findIndex((a) => a.id === app.id);
     if (existingIdx === -1) {
-      memoryStore.unshift(app);
-    } else {
-      memoryStore[existingIdx] = app;
+      memoryStore.unshift(ownedApp);
+    } else if (memoryStore[existingIdx].userId === userId) {
+      memoryStore[existingIdx] = ownedApp;
     }
 
     return app;
