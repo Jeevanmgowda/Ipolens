@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/security/session';
+<<<<<<< HEAD
 import { registeredUsersStore } from '@/services/authStore';
+=======
+import { registeredUsersStore } from '@/lib/services/authStore';
+>>>>>>> origin/main
 import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function GET(request: Request) {

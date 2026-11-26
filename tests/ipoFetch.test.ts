@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { IpoFetchService } from '../src/services/ipoFetchService';
+import { IpoFetchService } from '../src/lib/services/ipoFetchService';
 
 describe('IpoFetchService', () => {
   it('should fetch merged IPO records from multi-source pipeline', async () => {

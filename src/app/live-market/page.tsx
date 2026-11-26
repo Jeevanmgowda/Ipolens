@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getCanonicalSymbol, isSameIpo, isFalseOrDemoSymbol } from '@/lib/utils/ipoDeduplication';
-import { predictGmpForIpo } from '@/services/mlListingGainModel';
+import { predictGmpForIpo } from '@/lib/services/mlListingGainModel';
 
 export default function LiveMarketPage() {
   const router = useRouter();

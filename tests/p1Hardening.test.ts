@@ -33,7 +33,11 @@ describe('Demo accounts and demo login', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('ENABLE_DEMO_LOGIN', '');
     const { POST } = await import('@/app/api/auth/demo/route');
+<<<<<<< HEAD
     const { registeredUsersStore, validateSignInCredentials } = await import('@/services/authStore');
+=======
+    const { registeredUsersStore, validateSignInCredentials } = await import('@/lib/services/authStore');
+>>>>>>> origin/main
 
     expect((await POST(demoRequest('retail'))).status).toBe(403);
     expect(registeredUsersStore).toHaveLength(0);
@@ -50,7 +54,11 @@ describe('Demo accounts and demo login', () => {
 
 describe('User IDs', () => {
   it('generates unguessable UUID-based user IDs', async () => {
+<<<<<<< HEAD
     const { validateAndRegisterUser } = await import('@/services/authStore');
+=======
+    const { validateAndRegisterUser } = await import('@/lib/services/authStore');
+>>>>>>> origin/main
     const res = validateAndRegisterUser({
       name: 'Uuid Tester',
       email: `uuid.tester.${Date.now()}@example.com`,
@@ -63,7 +71,11 @@ describe('User IDs', () => {
 
 describe('Database hooks without a database', () => {
   it('loadUserFromDatabase and persistUser are safe no-ops', async () => {
+<<<<<<< HEAD
     const { loadUserFromDatabase, persistUser } = await import('@/services/authStore');
+=======
+    const { loadUserFromDatabase, persistUser } = await import('@/lib/services/authStore');
+>>>>>>> origin/main
     await expect(loadUserFromDatabase('nobody@example.com')).resolves.toBeUndefined();
     await expect(persistUser('usr_missing')).resolves.toBeUndefined();
   });

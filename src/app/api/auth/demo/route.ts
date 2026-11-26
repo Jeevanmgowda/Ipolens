@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
+<<<<<<< HEAD
 import { isDemoLoginEnabled, registeredUsersStore } from '@/services/authStore';
+=======
+import { isDemoLoginEnabled, registeredUsersStore } from '@/lib/services/authStore';
+>>>>>>> origin/main
 import { createSession } from '@/lib/security/session';
 
 export const dynamic = 'force-dynamic';

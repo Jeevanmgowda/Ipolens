@@ -10,7 +10,7 @@ import {
 } from '@/lib/security/sanitize';
 import { checkRateLimit } from '@/lib/security/rateLimiter';
 import { isAllowedOrigin } from '@/lib/security/cors';
-import { validateSignInCredentials, registeredUsersStore } from '@/services/authStore';
+import { validateSignInCredentials, registeredUsersStore } from '@/lib/services/authStore';
 import { validateSession } from '@/lib/security/session';
 
 describe('Security Hardening Suite', () => {

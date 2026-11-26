@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { IpoFetchService } from '@/services/ipoFetchService';
+import { IpoFetchService } from '@/lib/services/ipoFetchService';
 import { GET } from '@/app/api/scraper/sync/route';
 
 describe('Python Scraper Integration Pipeline', () => {

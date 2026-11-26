@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
+<<<<<<< HEAD
 import { scanRegistrarText, OFFICIAL_REGISTRARS } from '@/services/allotmentScanner';
+=======
+import { scanRegistrarText, OFFICIAL_REGISTRARS } from '@/lib/services/allotmentScanner';
+>>>>>>> origin/main
 import { apiErrorResponse } from '@/lib/security/apiError';
 
 export async function GET() {

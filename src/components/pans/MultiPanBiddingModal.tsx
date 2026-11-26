@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { FamilyPanProfile } from '@/types/pan';
-import { maskPan } from '@/services/duplicateEnforcer';
+import { maskPan } from '@/lib/services/duplicateEnforcer';
 import {
   X,
   Calculator,

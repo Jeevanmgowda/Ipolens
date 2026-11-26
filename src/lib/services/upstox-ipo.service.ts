@@ -463,7 +463,7 @@ export class UpstoxIpoService {
     issueType?: IssueType
   ): Promise<Partial<UnifiedIPO>[]> {
     try {
-      const { fetchLiveNseIpos } = await import('@/services/nseIpoService');
+      const { fetchLiveNseIpos } = await import('@/lib/services/nseIpoService');
       const liveList = await fetchLiveNseIpos();
 
       const mapped: Partial<UnifiedIPO>[] = liveList
@@ -507,7 +507,7 @@ export class UpstoxIpoService {
 
       if (mapped.length === 0) {
         if (status === 'listed') {
-          const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
+          const { LISTED_IPOS_REGISTRY } = await import('@/lib/services/listedIpoService');
           const listedMapped: Partial<UnifiedIPO>[] = LISTED_IPOS_REGISTRY.map((l) => ({
             id: `${l.symbol.toLowerCase()}-ipo`,
             symbol: l.symbol.toUpperCase(),
@@ -587,7 +587,7 @@ export class UpstoxIpoService {
   private static async getFallbackIpoDetails(ipoId: string): Promise<Partial<UnifiedIPO> | null> {
     const clean = ipoId.replace(/-ipo$/i, '').toUpperCase().trim();
     try {
-      const { fetchLiveIpoDetail } = await import('@/services/nseIpoService');
+      const { fetchLiveIpoDetail } = await import('@/lib/services/nseIpoService');
       const liveDetail = await fetchLiveIpoDetail(clean);
       if (liveDetail) {
         const prices = (liveDetail.issuePrice || '100').match(/\d+(?:\.\d+)?/g) || ['100'];
@@ -617,7 +617,7 @@ export class UpstoxIpoService {
 
     // Try finding in listed registry
     try {
-      const { LISTED_IPOS_REGISTRY } = await import('@/services/listedIpoService');
+      const { LISTED_IPOS_REGISTRY } = await import('@/lib/services/listedIpoService');
       const listed = LISTED_IPOS_REGISTRY.find(
         (l) => l.symbol.toUpperCase() === clean || ipoId.toLowerCase().includes(l.symbol.toLowerCase())
       );

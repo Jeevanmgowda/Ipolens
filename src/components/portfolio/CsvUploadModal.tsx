@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { CsvImportResult, SupportedBroker } from '@/types/portfolio';
-import { getSampleCsv } from '@/services/brokerParser';
+import { getSampleCsv } from '@/lib/services/brokerParser';
 import {
   UploadCloud,
   FileSpreadsheet,

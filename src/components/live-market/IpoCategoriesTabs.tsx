@@ -10,7 +10,7 @@ import {
   isSameIpo,
   isFalseOrDemoSymbol,
 } from '@/lib/utils/ipoDeduplication';
-import { predictGmpForIpo } from '@/services/mlListingGainModel';
+import { predictGmpForIpo } from '@/lib/services/mlListingGainModel';
 import {
   Search,
   Filter,

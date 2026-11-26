@@ -7,10 +7,14 @@ import {
   REGULATORY_DISCLAIMER,
   IpoMarketFeatures,
   MlListingGainPrediction,
-} from '@/services/mlListingGainModel';
-import { IpoService } from '@/services/ipoService';
+} from '@/lib/services/mlListingGainModel';
+import { IpoService } from '@/lib/services/ipoService';
 import { LiveMarketIpoItem } from '@/types/liveMarket';
+<<<<<<< HEAD
 import { isIpoListed } from '@/services/ipoDataProvider';
+=======
+import { isIpoListed } from '@/lib/services/ipoDataProvider';
+>>>>>>> origin/main
 import { apiErrorResponse } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';

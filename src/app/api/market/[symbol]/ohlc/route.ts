@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
+<<<<<<< HEAD
 import { MarketService } from '@/services/marketService';
+=======
+import { MarketService } from '@/lib/services/marketService';
+>>>>>>> origin/main
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';

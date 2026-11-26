@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { parseBrokerCsv } from '@/services/brokerParser';
+import { parseBrokerCsv } from '@/lib/services/brokerParser';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { apiErrorResponse } from '@/lib/security/apiError';

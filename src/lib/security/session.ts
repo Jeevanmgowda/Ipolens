@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { db, isDatabaseActive, reportDatabaseFailure, schema } from '@/db';
 import { eq, and, gt } from 'drizzle-orm';
-import { registeredUsersStore } from '@/services/authStore';
+import { registeredUsersStore } from '@/lib/services/authStore';
 import { User } from '@/types/auth';
 
 /**

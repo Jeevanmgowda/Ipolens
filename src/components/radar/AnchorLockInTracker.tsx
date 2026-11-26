@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AnchorLockInRecord } from '@/services/anchorLockInService';
+import { AnchorLockInRecord } from '@/lib/services/anchorLockInService';
 import {
   Lock,
   Unlock,

@@ -1,4 +1,4 @@
-import { ListedIpoItem, IpoChartResponse, IpoChartPoint } from '../types/listedIpo';
+import { ListedIpoItem, IpoChartResponse, IpoChartPoint } from '@/types/listedIpo';
 import { isFalseOrDemoSymbol } from '@/lib/utils/ipoDeduplication';
 
 export interface ListedIpoMetadata {
