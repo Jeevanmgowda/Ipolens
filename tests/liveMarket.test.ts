@@ -246,6 +246,9 @@ describe('Live Market Feature Test Suite', () => {
   });
 
   describe('Bidding Cutoff & Closed / Past Tab Routing Enforcement', () => {
+    // Uses the built-in registry (outbound network is blocked in unit tests, see
+    // tests/setup/noNetwork.ts): HDFP's bidding closed on 15-Oct-2026, so the routing
+    // rule is checked against fixed data instead of whatever is listed live today.
     it('should route any IPO whose bidding has closed into Closed/Past tab and never Upcoming/Open', async () => {
       process.env.USE_MOCK_MARKET_DATA = 'false';
       const nseProvider = new NSEIPOProvider();

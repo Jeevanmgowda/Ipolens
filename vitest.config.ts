@@ -27,6 +27,8 @@ export default defineConfig({
     hookTimeout: 15000,
     // Only run tests in the main tests/ directory
     include: ['tests/*.test.ts'],
+    // Block real outbound network so results never depend on live exchange data.
+    setupFiles: ['tests/setup/noNetwork.ts'],
     // Exclude worktree test directories
     exclude: ['.claude/**', 'node_modules/**', 'dist/**', '.next/**'],
     coverage: {
