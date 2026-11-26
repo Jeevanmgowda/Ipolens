@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import crypto from 'crypto';
 import { verifyGoogleIdToken } from '@/lib/security/googleIdToken';
 import { createSession } from '@/lib/security/session';
-import { registeredUsersStore, registerOrLoginWithGoogle } from '@/services/authStore';
+import { registeredUsersStore, registerOrLoginWithGoogle } from '@/lib/services/authStore';
 import { POST as googlePost } from '@/app/api/auth/google/route';
 import { GET as pansGet, POST as pansPost } from '@/app/api/pans/route';
 import {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkDuplicatePanBid, maskPan, isValidPan } from '../src/services/duplicateEnforcer';
+import { checkDuplicatePanBid, maskPan, isValidPan } from '../src/lib/services/duplicateEnforcer';
 import { IpoApplication } from '../src/types/pan';
 
 describe('SEBI Duplicate Bid Rule Enforcer', () => {

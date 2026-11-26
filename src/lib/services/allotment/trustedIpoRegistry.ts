@@ -1,8 +1,8 @@
 import { TrustedIpoInfo } from './types';
 import { getDirectoryIpo, getAllDirectoryIpos } from '@/config/ipoDirectory';
-import { getRegistrarForSymbol, OFFICIAL_REGISTRARS } from '@/services/allotmentScanner';
-import { findMarketMetadata } from '@/services/nseIpoService';
-import { IpoService } from '@/services/ipoService';
+import { getRegistrarForSymbol, OFFICIAL_REGISTRARS } from '@/lib/services/allotmentScanner';
+import { findMarketMetadata } from '@/lib/services/nseIpoService';
+import { IpoService } from '@/lib/services/ipoService';
 
 export class TrustedIpoRegistry {
   /**

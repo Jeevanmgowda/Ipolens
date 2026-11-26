@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { FamilyPanProfile } from '@/types/pan';
-import { isValidPan, maskPan } from '@/services/duplicateEnforcer';
+import { isValidPan, maskPan } from '@/lib/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';

@@ -4,7 +4,7 @@ import {
   validateAndRegisterUser,
   registerOrLoginWithGoogle,
   registeredUsersStore,
-} from '../src/services/authStore';
+} from '../src/lib/services/authStore';
 
 describe('Auth Service & Validation', () => {
   describe('validateSignInCredentials', () => {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAnchorLockInSchedule } from '@/services/anchorLockInService';
+import { getAnchorLockInSchedule } from '@/lib/services/anchorLockInService';
 
 export const dynamic = 'force-dynamic';
 

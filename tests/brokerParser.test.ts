@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBrokerCsv, detectBroker } from '../src/services/brokerParser';
+import { parseBrokerCsv, detectBroker } from '../src/lib/services/brokerParser';
 
 describe('Broker CSV Parser & Deduplication Engine', () => {
   it('should correctly detect Zerodha format from headers', () => {

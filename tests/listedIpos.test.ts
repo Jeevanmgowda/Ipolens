@@ -3,7 +3,7 @@ import {
   fetchLiveListedIpos,
   fetchLiveIpoChart,
   LISTED_IPOS_REGISTRY,
-} from '../src/services/listedIpoService';
+} from '../src/lib/services/listedIpoService';
 
 describe('Listed IPO Live Service', () => {
   it('should return metadata registry of popular landmark listed IPOs', () => {

@@ -1,6 +1,6 @@
 import { CandleData } from '@/types/ipo';
 import { getRedisClient } from '@/lib/redis';
-import { LISTED_IPOS_REGISTRY } from '@/services/listedIpoService';
+import { LISTED_IPOS_REGISTRY } from '@/lib/services/listedIpoService';
 
 const INSTRUMENT_KEYS: Record<string, string> = {
   SWIGGY: 'NSE_EQ|INE00H001014',

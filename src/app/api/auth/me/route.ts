@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/security/session';
-import { registeredUsersStore } from '@/services/authStore';
+import { registeredUsersStore } from '@/lib/services/authStore';
 import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function GET(request: Request) {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { IpoService } from '@/services/ipoService';
+import { IpoService } from '@/lib/services/ipoService';
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
