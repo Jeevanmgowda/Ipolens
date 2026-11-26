@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { IpoService } from '@/services/ipoService';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('API Error in /api/ipos/open:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch open IPOs', message: error.message },
+      { success: false, error: 'Failed to fetch open IPOs', ...errorDetail(error) },
       { status: 500 }
     );
   }

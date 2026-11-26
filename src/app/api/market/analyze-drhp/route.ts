@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateIpoInsight } from '@/lib/services/prospectus-analyzer.service';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +20,6 @@ export async function POST(req: NextRequest) {
       insight,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/market/analyze-drhp');
   }
 }

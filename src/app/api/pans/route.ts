@@ -4,6 +4,7 @@ import { isValidPan, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 // In-memory store for server-side persistence (clean slate, zero mock dummy data)
 let userPansStore: FamilyPanProfile[] = [];
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
       message: `Successfully registered encrypted PAN profile for ${saved.name} (${maskPan(cleanPan)}).`,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/pans');
   }
 }
 
@@ -103,6 +104,6 @@ export async function DELETE(request: Request) {
       message: 'PAN profile deleted successfully.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/pans');
   }
 }

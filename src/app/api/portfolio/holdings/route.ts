@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { PortfolioSummary } from '@/types/portfolio';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 export async function GET(request: Request) {
   try {
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/portfolio/holdings');
   }
 }
 
@@ -73,6 +74,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: false, error: 'Holding not found' }, { status: 404 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/portfolio/holdings');
   }
 }

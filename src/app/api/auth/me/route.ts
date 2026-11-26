@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/security/session';
 import { registeredUsersStore } from '@/services/authStore';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function GET(request: Request) {
   try {
@@ -18,8 +19,9 @@ export async function GET(request: Request) {
       { status: 401 }
     );
   } catch (err: any) {
+    console.error('[API] /api/auth/me:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
+      { success: false, error: publicErrorMessage(err, 'Internal server error') },
       { status: 500 }
     );
   }
