@@ -28,8 +28,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Blocks on high/critical advisories in production dependencies
+      # (docs/security/BASELINE_AUDIT.md, R13).
+      - name: Dependency audit (production)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Worker dependency audit (informational)
+        continue-on-error: true
+        run: npm --prefix workers ci && npm --prefix workers audit --omit=dev --audit-level=high
+
       - name: Type check
         run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Security regression tests
+        run: npx vitest run tests/securityRemediation.test.ts tests/routeAccessMatrix.test.ts tests/authHardening.test.ts tests/p1Hardening.test.ts tests/p2Hardening.test.ts tests/securityHardening.test.ts
 
       - name: Unit tests
         run: npm test
