@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { loadUserFromDatabase, validateSignInCredentials } from '@/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function POST(request: Request) {
   try {
@@ -41,8 +42,9 @@ export async function POST(request: Request) {
 
     return response;
   } catch (err: any) {
+    console.error('[API] /api/auth/signin:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
+      { success: false, error: publicErrorMessage(err, 'Internal server error') },
       { status: 500 }
     );
   }

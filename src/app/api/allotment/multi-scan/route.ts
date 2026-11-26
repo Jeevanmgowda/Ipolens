@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { RegistrarScannerService } from '@/lib/services/registrar-scanner.service';
 import { getUserPansStore } from '@/app/api/pans/route';
 import { FamilyPanProfile } from '@/types/pan';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to execute multi-PAN allotment scan.',
+        error: publicErrorMessage(error, 'Failed to execute multi-PAN allotment scan.'),
       },
       { status: 500 }
     );

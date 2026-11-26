@@ -4,6 +4,7 @@ import { checkDuplicatePanBid, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 // Server-side store for applications (clean slate)
 let applicationsStore: IpoApplication[] = [];
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
       message: `Application recorded successfully for ${newApp.holderName} (${newApp.panNumber}). Total blocked amount: ₹${newApp.blockedAmount.toLocaleString('en-IN')}.`,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/applications');
   }
 }
 
@@ -167,7 +168,7 @@ export async function PATCH(request: Request) {
       message: 'Application status updated successfully.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/applications');
   }
 }
 
@@ -190,6 +191,6 @@ export async function DELETE(request: Request) {
       message: 'Application record removed.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/applications');
   }
 }

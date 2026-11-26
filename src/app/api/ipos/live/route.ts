@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchLiveNseIpos } from '@/services/nseIpoService';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,7 +60,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('API Error in /api/ipos/live:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch live IPOs from NSE India', message: error.message },
+      { success: false, error: 'Failed to fetch live IPOs from NSE India', ...errorDetail(error) },
       { status: 500 }
     );
   }
