@@ -16,7 +16,7 @@ export interface RateLimitResult {
   resetSeconds: number;
 }
 
-export type RateLimitTier = 'auth' | 'mutating' | 'api' | 'scraper' | 'ai';
+export type RateLimitTier = 'auth' | 'mutating' | 'api' | 'scraper' | 'ai' | 'login';
 
 const TIER_CONFIG: Record<RateLimitTier, { limit: number; windowMs: number }> = {
   auth: { limit: 10, windowMs: 60 * 1000 }, // 10 requests per minute
@@ -24,6 +24,7 @@ const TIER_CONFIG: Record<RateLimitTier, { limit: number; windowMs: number }> = 
   scraper: { limit: 5, windowMs: 60 * 1000 }, // 5 sync triggers per minute
   api: { limit: 120, windowMs: 60 * 1000 }, // 120 requests per minute
   ai: { limit: 30, windowMs: 60 * 60 * 1000 }, // 30 paid-AI calls per user per hour (keyed by user, not IP)
+  login: { limit: 10, windowMs: 15 * 60 * 1000 }, // 10 sign-in attempts per account per 15 min (keyed by email hash, not IP)
 };
 
 // In-memory sliding window cache: key -> record
@@ -48,22 +49,33 @@ function runGarbageCollection() {
 }
 
 /**
- * Extracts client IP from incoming Next.js Request headers.
+ * Client IP for rate limiting (docs/security/BASELINE_AUDIT.md, H5).
+ *
+ * X-Forwarded-For is client-controlled except for the entries appended by our own
+ * reverse proxies. With TRUSTED_PROXY_HOPS = N (default 1: one proxy such as Vercel,
+ * nginx or Cloudflare in front of the app), the client is the N-th entry from the
+ * right; anything further left was supplied by the client and is ignored.
+ * Production must run behind a proxy that appends the real client address.
  */
 export function getClientIp(request: Request): string {
+  const hopsRaw = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? '1', 10);
+  const hops = Number.isFinite(hopsRaw) && hopsRaw >= 1 ? Math.min(hopsRaw, 10) : 1;
+
   const forwardedFor = request.headers.get('x-forwarded-for');
   if (forwardedFor) {
-    const firstIp = forwardedFor.split(',')[0].trim();
-    if (firstIp) return firstIp;
+    const chain = forwardedFor
+      .split(',')
+      .map((ip) => ip.trim())
+      .filter(Boolean);
+    if (chain.length > 0) {
+      return chain[Math.max(0, chain.length - hops)].slice(0, 64);
+    }
   }
 
   const realIp = request.headers.get('x-real-ip');
-  if (realIp && realIp.trim()) return realIp.trim();
+  if (realIp && realIp.trim()) return realIp.trim().slice(0, 64);
 
-  const cfIp = request.headers.get('cf-connecting-ip');
-  if (cfIp && cfIp.trim()) return cfIp.trim();
-
-  return '127.0.0.1';
+  return 'unknown';
 }
 
 /**

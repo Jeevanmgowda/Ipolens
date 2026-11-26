@@ -139,7 +139,7 @@ describe('Security Hardening Suite', () => {
         password: 'WrongPassword!',
       });
       expect(result.valid).toBe(false);
-      expect(result.error).toContain('Incorrect password');
+      expect(result.error).toBe('Invalid email or password.');
     });
 
     it('should never accept plaintext password without salt', () => {

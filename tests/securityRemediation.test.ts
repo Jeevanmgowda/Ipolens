@@ -156,3 +156,74 @@ describe('R4 / H2: PDF parsing is bounded', () => {
     expect(Date.now() - t).toBeLessThan(2000);
   });
 });
+
+describe('R5 / H3 + M6: no ReDoS and bounded request bodies', () => {
+  it('rejects a pathological email quickly', async () => {
+    const { validateAndRegisterUser } = await import('@/lib/services/authStore');
+    const evil = 'a@' + '.'.repeat(200_000) + ' ';
+    const t = Date.now();
+    const res = validateAndRegisterUser({ name: 'Evil', email: evil, password: 'Kestrel-Harbour-42', termsAccepted: true } as any);
+    expect(Date.now() - t).toBeLessThan(100);
+    expect(res.valid).toBe(false);
+  });
+
+  it('enforces per-route body limits in the proxy', async () => {
+    const { NextRequest } = await import('next/server');
+    const { proxy } = await import('@/proxy');
+    const post = (path: string, len: string | null, extra: Record<string, string> = {}) =>
+      proxy(new NextRequest(`http://localhost${path}`, {
+        method: 'POST',
+        headers: { ...(len === null ? {} : { 'content-length': len }), 'x-forwarded-for': `10.1.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`, ...extra },
+      }));
+    expect((await post('/api/pans', String(100 * 1024))).status).toBe(413);
+    expect((await post('/api/pans', String(2 * 1024))).status).not.toBe(413);
+    expect((await post('/api/analysis', String(20 * 1024 * 1024))).status).not.toBe(413);
+    expect((await post('/api/analysis', String(30 * 1024 * 1024))).status).toBe(413);
+    expect((await post('/api/pans', null, { 'transfer-encoding': 'chunked' })).status).toBe(411);
+  });
+});
+
+describe('R7 / H5 + M2: rate limits cannot be dodged; sign-in does not leak accounts', () => {
+  it('ignores client-supplied X-Forwarded-For entries left of the trusted proxy', async () => {
+    const { getClientIp } = await import('@/lib/security/rateLimiter');
+    const req = (xff: string) => new Request('http://localhost/api/x', { headers: { 'x-forwarded-for': xff } });
+    expect(getClientIp(req('6.6.6.6, 203.0.113.9'))).toBe('203.0.113.9');
+    expect(getClientIp(req('1.1.1.1, 2.2.2.2, 203.0.113.9'))).toBe('203.0.113.9');
+    expect(getClientIp(req('203.0.113.9'))).toBe('203.0.113.9');
+  });
+
+  it('throttles one account even when the attacker rotates IPs', async () => {
+    const { POST: signin } = await import('@/app/api/auth/signin/route');
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) {
+      const res = await signin(jsonRequest('http://localhost/api/auth/signin', 'POST',
+        { email: 'priya.sharma@investor.in', password: `guess-${i}-xxxxxx` }, undefined, { 'x-forwarded-for': `198.51.100.${i}` }));
+      statuses.push(res.status);
+    }
+    expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
+    expect(statuses[10]).toBe(429);
+  });
+
+  it('returns the same error, with similar timing, for unknown email and wrong password', async () => {
+    const { validateSignInCredentials } = await import('@/lib/services/authStore');
+    validateSignInCredentials({ email: 'warmup@remediation.test', password: 'x' }); // build the dummy hash once
+    let t = Date.now();
+    const unknown = validateSignInCredentials({ email: 'nobody-here@remediation.test', password: 'Whatever-123' });
+    const unknownMs = Date.now() - t;
+    t = Date.now();
+    const wrong = validateSignInCredentials({ email: 'arjun.mehta@ipolens.in', password: 'Whatever-123' });
+    const wrongMs = Date.now() - t;
+    expect(unknown.error).toBe('Invalid email or password.');
+    expect(wrong.error).toBe(unknown.error);
+    expect(unknownMs).toBeGreaterThan(wrongMs * 0.4);
+  });
+
+  it('enforces the password policy', async () => {
+    const { passwordPolicyError } = await import('@/lib/services/authStore');
+    expect(passwordPolicyError('short')).toMatch(/at least 10/);
+    expect(passwordPolicyError('Password123!')).toMatch(/too common/);
+    expect(passwordPolicyError('alexandra-strong-2026', 'alexandra@example.com')).toMatch(/email/);
+    expect(passwordPolicyError('x'.repeat(129))).toMatch(/at most 128/);
+    expect(passwordPolicyError('Kestrel-Harbour-42', 'someone@example.com')).toBeNull();
+  });
+});

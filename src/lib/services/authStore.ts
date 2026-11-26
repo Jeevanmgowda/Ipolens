@@ -4,6 +4,7 @@ import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '@
 import { isValidPan } from './duplicateEnforcer';
 import { hashPassword, verifyPassword } from '@/lib/security/passwordHash';
 import { db, isDatabaseActive, isPostgresConfigured, reportDatabaseFailure, schema } from '@/db';
+import { isValidEmail } from '@/lib/security/sanitize';
 
 export interface RegisteredUserRecord extends User {
   passwordHash: string;
@@ -137,6 +138,38 @@ export async function persistUser(userId: string): Promise<void> {
   }
 }
 
+// One message for unknown email and wrong password, so sign-in does not reveal
+// which emails have accounts (docs/security/BASELINE_AUDIT.md, M2).
+export const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password.';
+let dummyCredential: { hash: string; salt: string } | null = null;
+function getDummyCredential(): { hash: string; salt: string } {
+  if (!dummyCredential) dummyCredential = hashPassword(crypto.randomBytes(16).toString('hex'));
+  return dummyCredential;
+}
+
+const COMMON_PASSWORDS = new Set([
+  'password', 'password1', 'password12', 'password123', 'password1234', 'passw0rd', 'p@ssw0rd', 'p@ssword',
+  '123456', '1234567', '12345678', '123456789', '1234567890', '0123456789', 'qwerty', 'qwerty123', 'qwertyuiop',
+  'abc123', 'abcd1234', 'iloveyou', 'admin', 'admin123', 'administrator', 'welcome', 'welcome1', 'welcome123',
+  'letmein', 'monkey', 'dragon', 'sunshine', 'princess', 'football', 'baseball', 'superman', 'trustno1',
+  'india123', 'india@123', 'bharat123', 'ipolens', 'ipolens123', 'changeme', 'default', 'secret', 'test1234',
+]);
+
+/** Returns a policy violation message, or null when the password is acceptable. */
+export function passwordPolicyError(password: string, email?: string): string | null {
+  if (!password || password.length < 10) return 'Password must be at least 10 characters long.';
+  if (password.length > 128) return 'Password must be at most 128 characters long.';
+  const normalized = password.toLowerCase().replace(/[^a-z0-9@]+$/g, '');
+  if (COMMON_PASSWORDS.has(normalized) || COMMON_PASSWORDS.has(password.toLowerCase())) {
+    return 'This password is too common. Choose a less predictable one.';
+  }
+  const local = (email || '').split('@')[0]?.toLowerCase();
+  if (local && local.length >= 4 && password.toLowerCase().includes(local)) {
+    return 'Password must not contain your email address.';
+  }
+  return null;
+}
+
 export function validateSignInCredentials(creds: SignInCredentials): { valid: boolean; error?: string; user?: User } {
   const { email, password } = creds;
   if (!email || !email.trim()) {
@@ -150,7 +183,10 @@ export function validateSignInCredentials(creds: SignInCredentials): { valid: bo
   const existingUser = registeredUsersStore.find((u) => u.email.toLowerCase() === normalizedEmail);
 
   if (!existingUser) {
-    return { valid: false, error: 'No account found with this email address.' };
+    // Same PBKDF2 cost as a real check so response time does not reveal the account.
+    const dummy = getDummyCredential();
+    verifyPassword(password.slice(0, 128), dummy.hash, dummy.salt);
+    return { valid: false, error: INVALID_CREDENTIALS_MESSAGE };
   }
 
   // Cryptographic constant-time verification using salted PBKDF2-SHA512
@@ -161,7 +197,7 @@ export function validateSignInCredentials(creds: SignInCredentials): { valid: bo
   const passwordMatches = verifyPassword(password, existingUser.passwordHash, existingUser.passwordSalt);
 
   if (!passwordMatches) {
-    return { valid: false, error: 'Incorrect password. Please try again.' };
+    return { valid: false, error: INVALID_CREDENTIALS_MESSAGE };
   }
 
   // Strip passwordHash and passwordSalt before returning
@@ -175,13 +211,17 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
   if (!name || name.trim().length < 2) {
     return { valid: false, error: 'Full name must be at least 2 characters.' };
   }
+  if (name.trim().length > 100) {
+    return { valid: false, error: 'Full name must be at most 100 characters.' };
+  }
 
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+  if (!email || !isValidEmail(email.trim())) {
     return { valid: false, error: 'Please enter a valid email address.' };
   }
 
-  if (!password || password.length < 6) {
-    return { valid: false, error: 'Password must be at least 6 characters long.' };
+  const passwordProblem = passwordPolicyError(password, email);
+  if (passwordProblem) {
+    return { valid: false, error: passwordProblem };
   }
 
   if (!termsAccepted) {
@@ -228,7 +268,7 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
 export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { valid: boolean; error?: string; user?: User } {
   const { email, name, avatarUrl, investorCategory, primaryPan } = googleData;
 
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+  if (!email || !isValidEmail(email.trim())) {
     return { valid: false, error: 'A valid Google account email is required.' };
   }
 

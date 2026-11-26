@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getClientIp, checkRateLimitDistributed, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
 import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight, getRequestHost } from '@/lib/security/cors';
+import { checkBodySize } from '@/lib/security/bodyLimits';
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -22,6 +23,19 @@ export async function proxy(request: NextRequest) {
         status: 403,
         headers: { 'Content-Type': 'application/json' },
       }
+    );
+  }
+
+  // 2b. Request body size limits (before any handler reads the body)
+  const bodyProblem = checkBodySize(pathname, request.method, request.headers);
+  if (bodyProblem) {
+    return setCorsHeaders(
+      new NextResponse(JSON.stringify({ success: false, error: bodyProblem.error }), {
+        status: bodyProblem.status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      origin,
+      requestHost
     );
   }
 

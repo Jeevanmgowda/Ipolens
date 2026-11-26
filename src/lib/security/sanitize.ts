@@ -86,6 +86,8 @@ export function isValidPan(pan?: string | null): boolean {
  */
 export function isValidEmail(email?: string | null): boolean {
   if (!email) return false;
+  // Length cap first: bounds the work for any input (docs/security/BASELINE_AUDIT.md, H3).
+  if (email.length > 254) return false;
   return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(
     email.trim()
   );

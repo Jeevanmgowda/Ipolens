@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   CheckCircle2,
 } from 'lucide-react';
+import { isValidEmail } from '@/lib/security/sanitize';
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -82,13 +83,13 @@ export default function SignUpPage() {
       return;
     }
 
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    if (!email.trim() || !isValidEmail(email.trim())) {
       setError('Please enter a valid email address.');
       return;
     }
 
-    if (!password || password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (!password || password.length < 10) {
+      setError('Password must be at least 10 characters long.');
       return;
     }
 

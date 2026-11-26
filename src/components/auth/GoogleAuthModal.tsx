@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleAuthPayload, InvestorCategory } from '@/types/auth';
 import { X, Check, User as UserIcon, Plus, Shield, Sparkles, ExternalLink } from 'lucide-react';
+import { isValidEmail } from '@/lib/security/sanitize';
 
 declare global {
   interface Window {
@@ -165,7 +166,7 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
         setError('Please enter your Google account name.');
         return;
       }
-      if (!customEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customEmail.trim())) {
+      if (!customEmail.trim() || !isValidEmail(customEmail.trim())) {
         setError('Please enter a valid Google email address.');
         return;
       }
