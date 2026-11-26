@@ -1,52 +1,38 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import {
-  DrhpAnalysisResult,
-  AnalystVerdict,
-  QaInteraction,
-  RetrievedChunk,
-  DrhpSectionOverview,
-  ForensicRiskCategory,
-  LiveIpoTelemetry,
-} from '@/types/ai';
+import { DrhpAnalysisResult, QaInteraction } from '@/types/ai';
 import { getEffectiveIpoStatus } from '@/components/live-market/IpoCategoriesTabs';
 import { LiveMarketIpoItem, IpoCategoryTab } from '@/types/liveMarket';
-import { isListingDatePast, isBiddingClosed, isBiddingStarted } from '@/lib/utils/ipoDateUtils';
 import { isSameIpo } from '@/lib/utils/ipoDeduplication';
 import {
   Sparkles,
-  TrendingUp,
   AlertTriangle,
-  ShieldCheck,
   CheckCircle2,
   XCircle,
   HelpCircle,
-  Clock,
   Search,
   Copy,
   Check,
   FileText,
   Zap,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
   Upload,
   FileUp,
   MessageSquare,
-  Send,
   BookOpen,
-  Briefcase,
   Scale,
   Radio,
   ArrowLeft,
-  ExternalLink,
   ChevronLeft,
   ChevronRight,
-  Database,
   BarChart3,
-  Layers,
 } from 'lucide-react';
+import { LiveTelemetryCard } from './panels/LiveTelemetryCard';
+import { OverviewTab } from './panels/OverviewTab';
+import { CopilotTab } from './panels/CopilotTab';
+import { ForensicTab } from './panels/ForensicTab';
+import { ChaptersTab } from './panels/ChaptersTab';
+import { FinancialsTab } from './panels/FinancialsTab';
 
 interface AiResearchViewProps {
   initialSymbol?: string;
@@ -56,15 +42,6 @@ interface AiResearchViewProps {
 
 type InputMode = 'live' | 'upload' | 'paste';
 type TabView = 'overview' | 'copilot' | 'forensic' | 'chapters' | 'financials';
-
-const QUICK_QUESTIONS = [
-  'Objects of the Offer & Capex Allocation',
-  'Promoter Holding & Post-IPO Dilution',
-  'Top 5 Customer Revenue Concentration',
-  'Outstanding Litigations & Tax Proceedings',
-  'Total Debt & Financial Leverage Profile',
-  'Anchor Investor 30/90-Day Lock-in Schedule',
-];
 
 export const AiResearchView: React.FC<AiResearchViewProps> = ({
   initialSymbol = 'JIOPLAT',
@@ -1005,258 +982,7 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
           </div>
 
           {/* Deep Live IPO Radar Telemetry Integration Card */}
-          {result.liveTelemetry && (() => {
-            const tel = result.liveTelemetry;
-            const isListed =
-              tel.status === 'Listed' ||
-              (tel.listingDate ? isListingDatePast(tel.listingDate) : false) ||
-              Boolean(tel.currentPrice && tel.currentPrice > 0);
-
-            const isClosed = !isListed && (
-              tel.status === 'Closed' ||
-              (tel.closeDate ? isBiddingClosed(tel.closeDate) : false)
-            );
-
-            const isOpen = !isListed && !isClosed && (
-              tel.status === 'Active' ||
-              tel.status === 'Open' ||
-              (tel.openDate ? isBiddingStarted(tel.openDate) : false)
-            );
-
-            const isUpcoming = !isListed && !isClosed && !isOpen;
-
-            // Price / LTP calculations
-            const rawPrice = tel.currentPrice ?? tel.listingPrice ?? tel.issuePrice;
-            const dayChg = tel.dayChange;
-            const dayChgPct = tel.dayChangePercent;
-
-            // Listing Pop calculations
-            const listingPriceNum = tel.listingPrice;
-            const issuePriceNum = tel.issuePrice || (tel.priceBand ? parseFloat(tel.priceBand.replace(/[^0-9.]/g, '')) : undefined);
-            const calcListingGainPct = tel.listingGainPercent ?? (
-              listingPriceNum && issuePriceNum && issuePriceNum > 0
-                ? Number((((listingPriceNum - issuePriceNum) / issuePriceNum) * 100).toFixed(1))
-                : tel.expectedListingGainPct
-            );
-
-            return (
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900/95 via-purple-950/30 to-slate-900/95 border border-purple-500/30 space-y-3.5 shadow-xl">
-                {/* Header row with SEBI Telemetry badges and lifecycle status */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                      Live IPO Radar Exchange Telemetry
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                      NSE / BSE SEBI Telemetry
-                    </span>
-                    {/* Dynamic Lifecycle Status Badge */}
-                    {isListed ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        Listed on Exchange
-                      </span>
-                    ) : isOpen ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        Bidding Live Now
-                      </span>
-                    ) : isClosed ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700/50 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                        Bidding Closed • Allotted
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                        Upcoming Issue
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Date badge */}
-                  <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
-                    <Clock className="w-3 h-3 text-cyan-400" />
-                    {isListed ? (
-                      <span>
-                        Listed Date: <strong className="text-slate-200">{tel.listingDate || tel.closeDate || 'Secondary Market'}</strong>
-                      </span>
-                    ) : isClosed ? (
-                      <span>
-                        Issue Closed: <strong className="text-slate-200">{tel.closeDate || tel.issueDates || 'Bidding Closed'}</strong>
-                      </span>
-                    ) : isOpen ? (
-                      <span>
-                        Bids Close: <strong className="text-emerald-300 font-bold">{tel.closeDate || 'Active Window'}</strong>
-                      </span>
-                    ) : (
-                      <span>
-                        Issue Window: <strong className="text-slate-200">{tel.issueDates || (tel.openDate ? `Opens: ${tel.openDate}` : 'TBD')}</strong>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4 Telemetry Metrics Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  {/* CARD 1: Current Price (LTP) or Issue Price / Price Band */}
-                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-white/5 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                      <span>{isListed ? 'Current Price (LTP)' : isClosed ? 'Issue Cut-off Price' : 'Price Band'}</span>
-                      {isListed && (
-                        <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          LIVE
-                        </span>
-                      )}
-                    </div>
-                    <span className={`text-sm font-mono font-extrabold mt-1 block truncate ${isListed ? 'text-emerald-400' : 'text-white'}`}>
-                      {isListed
-                        ? (rawPrice ? `₹${rawPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : (tel.priceBand || '—'))
-                        : (tel.priceBand || 'TBD')}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono mt-0.5 block truncate">
-                      {isListed ? (
-                        dayChg !== undefined && dayChg !== null ? (
-                          <span className={dayChg >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                            {dayChg >= 0 ? '+' : ''}₹{dayChg.toFixed(2)} ({dayChgPct !== undefined ? (dayChgPct >= 0 ? '+' : '') + dayChgPct.toFixed(2) + '%' : ''})
-                          </span>
-                        ) : tel.listingPrice ? (
-                          `Listing: ₹${tel.listingPrice.toLocaleString('en-IN')}`
-                        ) : (
-                          'Real-Time Secondary Feed'
-                        )
-                      ) : tel.lotSize > 0 ? (
-                        `Lot: ${tel.lotSize} shares (₹${(tel.minInvestment || 0).toLocaleString('en-IN')})`
-                      ) : (
-                        'Lot: 1 unit'
-                      )}
-                    </span>
-                  </div>
-
-                  {/* CARD 2: Bidding Demand / Listing Pop */}
-                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-white/5 flex flex-col justify-between">
-                    <span className="text-[10px] text-slate-400 block font-medium">
-                      {isListed ? 'Listing Day Pop' : isClosed ? 'Final Bidding Demand' : 'Live Bidding Demand'}
-                    </span>
-                    <span className="text-xs font-mono font-bold text-cyan-300 mt-1 block truncate">
-                      {isListed ? (
-                        calcListingGainPct !== undefined
-                          ? `${calcListingGainPct >= 0 ? '+' : ''}${calcListingGainPct.toFixed(1)}% Pop`
-                          : tel.listingPrice
-                          ? `₹${tel.listingPrice.toLocaleString('en-IN')}`
-                          : 'Exchange Listed'
-                      ) : tel.subscriptionTotal !== undefined && tel.subscriptionTotal > 0 ? (
-                        `${tel.subscriptionTotal.toFixed(2)}x Total`
-                      ) : isClosed ? (
-                        '18.42x Total'
-                      ) : isOpen ? (
-                        'Bidding Live'
-                      ) : (
-                        'Awaiting Bids'
-                      )}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono mt-0.5 block truncate">
-                      {isListed ? (
-                        tel.issuePrice && tel.listingPrice
-                          ? `₹${tel.issuePrice} → ₹${tel.listingPrice}`
-                          : 'Listed on Exchange'
-                      ) : (tel.subscriptionRetail !== undefined && tel.subscriptionRetail > 0) ? (
-                        `Retail: ${tel.subscriptionRetail}x | NII: ${tel.subscriptionNii || '—'}x`
-                      ) : isClosed ? (
-                        'Retail: 12.25x | NII: 22.84x'
-                      ) : (
-                        'Bid Book Active'
-                      )}
-                    </span>
-                  </div>
-
-                  {/* CARD 3: Grey Market (GMP) / Traded Volume */}
-                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-white/5 flex flex-col justify-between">
-                    <span className="text-[10px] text-slate-400 block font-medium">
-                      {isListed ? 'Traded Volume' : isClosed ? 'Realized GMP' : 'Grey Market (GMP)'}
-                    </span>
-                    <span className="text-xs font-mono font-bold mt-1 block truncate text-emerald-400">
-                      {isListed ? (
-                        <span className="text-slate-200">
-                          {tel.tradedVolume
-                            ? `${typeof tel.tradedVolume === 'number' ? tel.tradedVolume.toLocaleString('en-IN') : tel.tradedVolume} shs`
-                            : 'High Liquidity'}
-                        </span>
-                      ) : (tel.gmpEstimate && tel.gmpEstimate > 0) ? (
-                        `+₹${tel.gmpEstimate}/sh (${(tel.expectedListingGainPct || 0).toFixed(1)}%)`
-                      ) : isClosed && tel.gmpEstimate !== undefined ? (
-                        `+₹${tel.gmpEstimate}/sh`
-                      ) : (
-                        'At Par / Flat'
-                      )}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono mt-0.5 block truncate">
-                      {isListed ? (
-                        calcListingGainPct ? `Listing Pop Margin: +${calcListingGainPct.toFixed(1)}%` : 'Active Exchange Market'
-                      ) : (tel.expectedListingGainPct && tel.expectedListingGainPct > 0) ? (
-                        `Listing Pop Margin: +${tel.expectedListingGainPct.toFixed(1)}%`
-                      ) : isClosed ? (
-                        'Realized Listing Pop: +9.8%'
-                      ) : (
-                        'Indicative GMP Feed'
-                      )}
-                    </span>
-                  </div>
-
-                  {/* CARD 4: Official Registrar & Allotment */}
-                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-white/5 flex flex-col justify-between">
-                    <span className="text-[10px] text-slate-400 block font-medium">Official Registrar</span>
-                    <span className="text-xs font-bold text-slate-200 mt-1 block truncate" title={tel.registrarName}>
-                      {tel.registrarName || 'Link Intime India Pvt Ltd'}
-                    </span>
-                    {tel.registrarUrl ? (
-                      <a
-                        href={tel.registrarUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-purple-400 hover:text-purple-300 font-mono underline mt-0.5 inline-flex items-center gap-1"
-                      >
-                        Verify Allotment Portal
-                        <ExternalLink className="w-2.5 h-2.5 inline" />
-                      </a>
-                    ) : (
-                      <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">Registrar Verified</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Secondary Market Quotation Footer Banner (for Listed IPOs matching Image 1) */}
-                {isListed && (
-                  <div className="p-2.5 rounded-xl bg-slate-950/90 border border-white/5 text-[11px] font-mono text-slate-300 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <span>
-                        <span className="text-slate-400">Issue Price: </span>
-                        <strong className="text-white">₹{tel.issuePrice ?? tel.priceBand ?? '—'}</strong>
-                      </span>
-                      <span>
-                        <span className="text-slate-400">Listing Price: </span>
-                        <strong className="text-white">₹{tel.listingPrice ?? '—'}</strong>
-                      </span>
-                      {tel.tradedVolume && (
-                        <span>
-                          <span className="text-slate-400">Traded Volume: </span>
-                          <strong className="text-cyan-300">
-                            {typeof tel.tradedVolume === 'number' ? tel.tradedVolume.toLocaleString('en-IN') : tel.tradedVolume} shares
-                          </strong>
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      NSE Exchange Verified
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {result.liveTelemetry && <LiveTelemetryCard result={result} />}
 
           {/* RAG Sub-Tab Navigation Bar */}
           <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950 border border-white/10 text-xs overflow-x-auto">
@@ -1323,450 +1049,30 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
           </div>
 
           {/* TAB 1: EXECUTIVE OVERVIEW */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Strengths & Risks Columns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Strengths */}
-                <div className="p-5 rounded-2xl bg-slate-900/60 border border-emerald-500/20 space-y-3">
-                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Top Institutional Strengths</span>
-                  </div>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    {result.topStrengths.map((s, i) => (
-                      <li key={i} className="flex items-start gap-2 leading-relaxed">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
-                        <span>{s}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Risks */}
-                <div className="p-5 rounded-2xl bg-slate-900/60 border border-rose-500/20 space-y-3">
-                  <div className="flex items-center gap-2 text-rose-400 font-bold text-xs uppercase tracking-wider">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>Forensic Red Flags & Risks</span>
-                  </div>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    {result.topRisks.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2 leading-relaxed">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
-                        <span>{r}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Grounded Citations List */}
-              {result.citations && result.citations.length > 0 && (
-                <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3.5 shadow-lg">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs border-b border-white/5 pb-2.5">
-                    <span className="font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-purple-400" />
-                      Grounded DRHP Prospectus Citations
-                    </span>
-                    <span className="text-[11px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                      Filing: {result.documentName || `SEBI_${result.symbol}_DRHP_Filing.pdf`}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    {result.citations.map((c, idx) => (
-                      <div
-                        key={idx}
-                        className="p-4 rounded-xl bg-slate-950/80 border border-white/10 hover:border-purple-500/40 space-y-2 transition shadow-sm"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="font-bold text-slate-200 text-xs leading-snug">
-                            {c.claim}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 shrink-0 flex items-center gap-1">
-                            <FileText className="w-3 h-3" /> Page {c.pageNumber}
-                          </span>
-                        </div>
-                        <blockquote className="text-[11px] text-slate-300 font-mono italic leading-relaxed border-l-2 border-purple-500/60 pl-2.5 py-1 bg-purple-500/5 rounded-r">
-                          &quot;{c.excerpt}&quot;
-                        </blockquote>
-                        {c.section && (
-                          <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1.5 pt-1">
-                            <span className="text-slate-500 font-mono">SEBI Chapter:</span>
-                            <span className="text-slate-300">{c.section}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {activeTab === 'overview' && <OverviewTab result={result} />}
 
           {/* TAB 2: INTERACTIVE RAG PROSPECTUS COPILOT */}
           {activeTab === 'copilot' && (
-            <div className="p-6 rounded-2xl bg-slate-900/80 border border-purple-500/30 space-y-4 shadow-xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                    <Database className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white">
-                      RAG Prospectus Forensic Copilot
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      Hybrid BM25 + Semantic Passage Retrieval grounded to official SEBI filing
-                    </p>
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Vector Retrieval Active
-                </span>
-              </div>
-
-              {/* Quick Prompt Chips */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">
-                  Quick Institutional Queries:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK_QUESTIONS.map((q, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleAskQuestion(undefined, q)}
-                      disabled={isAskingQuestion}
-                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 text-[11px] font-medium transition cursor-pointer flex items-center gap-1"
-                    >
-                      <Sparkles className="w-3 h-3 text-purple-400" />
-                      <span>{q}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Q&A Chat History Stream with Retrieved Chunks */}
-              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                {qaHistory.length === 0 ? (
-                  <div className="p-8 text-center rounded-xl bg-slate-950/40 border border-dashed border-white/10 space-y-2">
-                    <MessageSquare className="w-8 h-8 text-purple-400/60 mx-auto" />
-                    <p className="text-xs font-semibold text-white">Ask anything about the prospectus</p>
-                    <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                      Click any quick query above or type your question below. The RAG model will retrieve the exact chapter passages and verify facts.
-                    </p>
-                  </div>
-                ) : (
-                  qaHistory.map((qa, i) => (
-                    <div key={i} className="space-y-2.5 text-xs">
-                      {/* User Question */}
-                      <div className="flex items-start gap-2.5 text-slate-300 bg-white/5 p-3 rounded-xl border border-white/5">
-                        <div className="w-6 h-6 rounded bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-[11px] shrink-0">
-                          Q
-                        </div>
-                        <span className="font-semibold text-white mt-0.5">{qa.question}</span>
-                      </div>
-
-                      {/* RAG Grounded Answer */}
-                      <div className="flex items-start gap-2.5 text-slate-300 bg-purple-950/30 p-4 rounded-xl border border-purple-500/20">
-                        <div className="w-6 h-6 rounded bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold text-[11px] shrink-0">
-                          A
-                        </div>
-                        <div className="space-y-3 flex-1">
-                          <p className="leading-relaxed text-slate-200">{qa.answer}</p>
-
-                          {/* Page Citations */}
-                          {qa.pageCitations && qa.pageCitations.length > 0 && (
-                            <div className="flex items-center gap-1.5 pt-1">
-                              <span className="text-[10px] text-slate-400 font-mono">Grounded Citations:</span>
-                              {qa.pageCitations.map((p) => (
-                                <span
-                                  key={p}
-                                  className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                                >
-                                  Page {p}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Retrieved Source Passages Accordion */}
-                          {qa.retrievedChunks && qa.retrievedChunks.length > 0 && (
-                            <div className="pt-2 border-t border-white/5 space-y-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedChunks((prev) => ({ ...prev, [i]: !prev[i] }))
-                                }
-                                className="flex items-center gap-1.5 text-[11px] text-purple-300 hover:text-purple-200 font-semibold cursor-pointer"
-                              >
-                                {expandedChunks[i] ? (
-                                  <ChevronUp className="w-3.5 h-3.5" />
-                                ) : (
-                                  <ChevronDown className="w-3.5 h-3.5" />
-                                )}
-                                <span>
-                                  {expandedChunks[i] ? 'Hide' : 'Inspect'} {qa.retrievedChunks.length} Retrieved Source Passages
-                                </span>
-                              </button>
-
-                              {expandedChunks[i] && (
-                                <div className="space-y-2 pt-1">
-                                  {qa.retrievedChunks.map((chunk, cIdx) => (
-                                    <div
-                                      key={cIdx}
-                                      className="p-3 rounded-lg bg-slate-950/80 border border-white/5 text-[11px] space-y-1.5"
-                                    >
-                                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                                        <span className="font-semibold text-purple-300">{chunk.section}</span>
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-mono">Page {chunk.pageNumber}</span>
-                                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 font-mono">
-                                            {Math.round(chunk.score * 100)}% match
-                                          </span>
-                                        </div>
-                                      </div>
-                                      <p className="text-slate-300 italic font-mono leading-relaxed">
-                                        &quot;{chunk.snippet}&quot;
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Question Input Form */}
-              <form onSubmit={handleAskQuestion} className="flex gap-2 pt-2 border-t border-white/5">
-                <input
-                  type="text"
-                  placeholder="Ask anything about the DRHP (e.g. debt repayment, promoter litigation, anchor lock-in)..."
-                  value={questionInput}
-                  onChange={(e) => setQuestionInput(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition"
-                />
-                <button
-                  type="submit"
-                  disabled={isAskingQuestion || !questionInput.trim()}
-                  className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5 shadow-md shadow-purple-600/30"
-                >
-                  {isAskingQuestion ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  <span>{isAskingQuestion ? 'Retrieving...' : 'Ask RAG'}</span>
-                </button>
-              </form>
-
-              {qaError && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>{qaError}</span>
-                </div>
-              )}
-            </div>
+            <CopilotTab
+              qaHistory={qaHistory}
+              qaError={qaError}
+              questionInput={questionInput}
+              setQuestionInput={setQuestionInput}
+              isAskingQuestion={isAskingQuestion}
+              handleAskQuestion={handleAskQuestion}
+              expandedChunks={expandedChunks}
+              setExpandedChunks={setExpandedChunks}
+            />
           )}
 
           {/* TAB 3: SEBI FORENSIC RISK MATRIX */}
-          {activeTab === 'forensic' && (
-            <div className="p-6 rounded-2xl bg-slate-900/80 border border-white/10 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                    <Scale className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white">
-                      SEBI Institutional Forensic Risk Matrix
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      Multi-factor forensic audit across 5 mandatory prospectus disclosure pillars
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-mono text-slate-400">Traffic-Light Radar</span>
-              </div>
-
-              <div className="space-y-3">
-                {(result.forensicRiskMatrix || []).map((risk, idx) => (
-                  <div
-                    key={idx}
-                    className="p-4 rounded-xl bg-slate-950/70 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-xs">{risk.category}</span>
-                        {risk.section && (
-                          <span className="text-[10px] text-slate-500 font-mono">({risk.section})</span>
-                        )}
-                        {risk.citationPage && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                            Page {risk.citationPage}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">{risk.detail}</p>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right">
-                        <span className="text-[10px] text-slate-500 block">Safety Score</span>
-                        <span className="font-mono font-bold text-xs text-slate-200">{risk.score}/100</span>
-                      </div>
-                      <div
-                        className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${
-                          risk.rating === 'LOW'
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            : risk.rating === 'MEDIUM'
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                            : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                        }`}
-                      >
-                        {risk.rating} RISK
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {activeTab === 'forensic' && <ForensicTab result={result} />}
 
           {/* TAB 4: DRHP CHAPTERS & TABLE OF CONTENTS */}
-          {activeTab === 'chapters' && (
-            <div className="p-6 rounded-2xl bg-slate-900/80 border border-white/10 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                    <BookOpen className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white">
-                      DRHP Chapter Browser & Table of Contents
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      Index of official prospectus chapters extracted for {result.companyName}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-mono text-cyan-300">
-                  {result.sections?.length || 0} Chapters Indexed
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(result.sections || []).map((sec) => (
-                  <div
-                    key={sec.id}
-                    className="p-4 rounded-xl bg-slate-950/70 border border-white/5 space-y-2 hover:border-cyan-500/30 transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold">
-                        Chapter {sec.chapterNumber} • {sec.pageRange}
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          sec.riskRating === 'LOW'
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'bg-amber-500/20 text-amber-300'
-                        }`}
-                      >
-                        {sec.riskRating} RISK
-                      </span>
-                    </div>
-
-                    <h5 className="font-bold text-white text-xs">{sec.title}</h5>
-                    <p className="text-xs text-slate-400 leading-relaxed">{sec.summary}</p>
-
-                    <div className="pt-2 border-t border-white/5 space-y-1">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold">
-                        Key Disclosures:
-                      </span>
-                      <ul className="space-y-1 text-[11px] text-slate-300 font-mono">
-                        {sec.keyFindings.map((kf, i) => (
-                          <li key={i} className="flex items-center gap-1.5">
-                            <span className="w-1 h-1 rounded-full bg-cyan-400" />
-                            <span>{kf}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {activeTab === 'chapters' && <ChaptersTab result={result} />}
 
           {/* TAB 5: FINANCIALS & MOAT */}
-          {activeTab === 'financials' && (
-            <div className="space-y-6">
-              {/* Business Moat */}
-              <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-2">
-                <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs uppercase tracking-wider">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>Competitive Moat & Defensibility</span>
-                </div>
-                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{result.businessMoat}</p>
-              </div>
-
-              {/* Financial Metrics Table */}
-              <div className="p-5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <BarChart3 className="w-4 h-4 text-emerald-400" />
-                    Key Balance Sheet & P&L Disclosures
-                  </span>
-                  <span className="text-[11px] font-mono text-slate-400">Restated Financials</span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                    <span className="text-[10px] text-slate-400 block font-medium">3-Yr Revenue CAGR</span>
-                    <span className="text-xs font-mono font-bold text-white mt-1 block">
-                      {result.financials.revenueCagr}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                    <span className="text-[10px] text-slate-400 block font-medium">EBITDA Margin</span>
-                    <span className="text-xs font-mono font-bold text-emerald-400 mt-1 block">
-                      {result.financials.ebitdaMargin}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                    <span className="text-[10px] text-slate-400 block font-medium">PAT Margin</span>
-                    <span className="text-xs font-mono font-bold text-white mt-1 block">
-                      {result.financials.patMargin}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                    <span className="text-[10px] text-slate-400 block font-medium">Debt to Equity</span>
-                    <span className="text-xs font-mono font-bold text-cyan-300 mt-1 block">
-                      {result.financials.debtToEquity}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                    <span className="text-[10px] text-slate-400 block font-medium">P/E Multiple</span>
-                    <span className="text-xs font-mono font-bold text-purple-300 mt-1 block">
-                      {result.financials.peRatio}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-white/5">
-                    <span className="text-[10px] text-slate-400 block font-medium">Industry P/E</span>
-                    <span className="text-xs font-mono font-bold text-slate-400 mt-1 block">
-                      {result.financials.industryPe}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'financials' && <FinancialsTab result={result} />}
 
           {/* Regulatory SEBI Compliance Disclaimer */}
           <div className="p-4 rounded-xl bg-slate-950/80 border border-white/5 text-[11px] text-slate-500 leading-relaxed font-sans">
