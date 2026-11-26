@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     }
 
     const newProfile: FamilyPanProfile = {
-      id: `pan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `pan_${crypto.randomUUID()}`,
       name: sanitizeString(name).slice(0, 100),
       relationship: (sanitizeString(relationship).slice(0, 50) as any),
       pan: cleanPan,

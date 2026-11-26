@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getClientIp, checkRateLimit, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
+import { getClientIp, checkRateLimitDistributed, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
 import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight } from '@/lib/security/cors';
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const origin = request.headers.get('origin');
   const clientIp = getClientIp(request);
@@ -35,7 +35,7 @@ export function proxy(request: NextRequest) {
       tier = 'mutating';
     }
 
-    const rateLimit = checkRateLimit(clientIp, tier);
+    const rateLimit = await checkRateLimitDistributed(clientIp, tier);
     if (!rateLimit.allowed) {
       const resp = new NextResponse(
         JSON.stringify({

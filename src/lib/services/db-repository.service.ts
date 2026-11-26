@@ -635,7 +635,7 @@ export class DbRepositoryService {
           return { watchlisted: false, symbol: sym };
         } else {
           await db.insert(schema.marketWatchlistTable).values({
-            id: `watch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            id: `watch_${crypto.randomUUID()}`,
             userId,
             symbol: sym,
             companyName: companyName || sym,
@@ -728,7 +728,7 @@ export class DbRepositoryService {
     metadata?: any
   ) {
     const notif = {
-      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `notif_${crypto.randomUUID()}`,
       userId,
       type,
       title,
