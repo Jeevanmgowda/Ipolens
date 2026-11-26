@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { escapeHtml } from '@/lib/security/sanitize';
 import { UPSTOX_STATE_COOKIE, UPSTOX_STATE_MAX_AGE_SECONDS } from '@/lib/security/upstoxOAuth';
+import { requireAdminInProduction } from '@/lib/security/adminGuard';
 
 export async function GET(req: NextRequest) {
+  const denied = await requireAdminInProduction(req);
+  if (denied) return denied;
   const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
   const url = new URL(req.url);
   const redirectUri = (process.env.UPSTOX_REDIRECT_URI || `${url.origin}/api/auth/callback/upstox`).trim();

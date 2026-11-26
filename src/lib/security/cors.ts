@@ -5,11 +5,18 @@ import { NextResponse } from 'next/server';
  * Restricts cross-origin requests strictly to authorized client domains.
  */
 
-const DEFAULT_ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  process.env.CLIENT_URL,
-].filter(Boolean) as string[];
+/**
+ * Exact origins allowed to call the API cross-origin, besides the app's own
+ * origin (see isAllowedOrigin). Read at call time so configuration changes and
+ * tests apply. No wildcard subdomains (docs/security/BASELINE_AUDIT.md, L2).
+ */
+function allowedOrigins(): string[] {
+  const extra = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return ['http://localhost:3000', 'http://127.0.0.1:3000', process.env.CLIENT_URL, ...extra].filter(Boolean) as string[];
+}
 
 /**
  * Host the request was addressed to (first x-forwarded-host entry when behind a
@@ -30,7 +37,7 @@ export function getRequestHost(request: Request): string | null {
  */
 export function isAllowedOrigin(origin: string | null, requestHost?: string | null): boolean {
   if (!origin) return true; // Same-origin or non-browser server request
-  if (DEFAULT_ALLOWED_ORIGINS.some((allowed) => allowed === origin) || origin.endsWith('.ipolens.in')) {
+  if (allowedOrigins().includes(origin)) {
     return true;
   }
   if (!requestHost) return false;

@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { publicErrorMessage } from '@/lib/security/apiError';
+import { requireAdminInProduction } from '@/lib/security/adminGuard';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = await requireAdminInProduction(request);
+  if (denied) return denied;
   const token = process.env.UPSTOX_ACCESS_TOKEN || '';
   const clientId = process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '';
   const clientSecret = process.env.UPSTOX_CLIENT_SECRET || process.env.UPSTOX_API_SECRET || '';

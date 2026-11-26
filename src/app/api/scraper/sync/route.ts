@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { getAuthenticatedUser } from '@/lib/security/session';
 import { publicErrorMessage } from '@/lib/security/apiError';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const ROOT_DATA_FILE = path.resolve(process.cwd(), 'data', 'ipos.json');
 const SCRIPTS_DATA_FILE = path.resolve(process.cwd(), 'scripts', 'data', 'ipos.json');
@@ -104,8 +104,8 @@ export async function POST(req: Request) {
     }
 
     // Execute python scripts/scraper/merge.py safely
-    const cmd = `python "${scriptPath}" --months ${monthsBack}`;
-    const { stdout, stderr } = await execAsync(cmd, {
+    // execFile with an argument array: no shell, so nothing can be injected (L3).
+    const { stdout, stderr } = await execFileAsync('python', [scriptPath, '--months', String(monthsBack)], {
       timeout: 45000,
       env: { ...process.env, PYTHONUNBUFFERED: '1' },
     });

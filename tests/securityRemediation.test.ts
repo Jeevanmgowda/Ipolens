@@ -367,3 +367,89 @@ describe('R11 / M5: strict input schemas and no mass assignment', () => {
     expect((await pansPost(jsonRequest('http://localhost/api/pans', 'POST', { name: 'Three', pan: 'DUPLX9876D', relationship: 'Child' }, user))).status).toBe(200);
   });
 });
+
+describe('R12 / L1–L6: lower-severity hardening', () => {
+  it('L1: Upstox account routes are admin-only in production', async () => {
+    const { vi } = await import('vitest');
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('PAN_ENCRYPTION_KEY', 'test-production-pan-key');
+    try {
+      const { GET: statusGet } = await import('@/app/api/auth/upstox/status/route');
+      const { GET: startGet } = await import('@/app/api/auth/upstox/route');
+      const { NextRequest } = await import('next/server');
+      const nonAdmin = await sessionFor('nonadmin.r12');
+      expect((await statusGet(jsonRequest('http://localhost/api/auth/upstox/status', 'GET'))).status).toBe(401);
+      expect((await statusGet(jsonRequest('http://localhost/api/auth/upstox/status', 'GET', undefined, nonAdmin))).status).toBe(403);
+      const startReq = new NextRequest('http://localhost/api/auth/upstox', { headers: { cookie: `ipolens_session=${nonAdmin}` } });
+      expect((await startGet(startReq)).status).toBe(403);
+
+      const admin = registerOrLoginWithGoogle({ email: 'admin.r12@remediation.test', name: 'Admin R12' }).user!;
+      registeredUsersStore.find((u) => u.id === admin.id)!.role = 'admin';
+      const { token } = await createSession(admin.id, false);
+      expect((await statusGet(jsonRequest('http://localhost/api/auth/upstox/status', 'GET', undefined, token))).status).not.toBe(403);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('L2: CORS trusts only exact configured origins, not wildcard subdomains', async () => {
+    const { vi } = await import('vitest');
+    const { isAllowedOrigin } = await import('@/lib/security/cors');
+    vi.stubEnv('CORS_ALLOWED_ORIGINS', 'https://partner.example.com');
+    try {
+      expect(isAllowedOrigin('https://partner.example.com')).toBe(true);
+      expect(isAllowedOrigin('https://evil.ipolens.in')).toBe(false);
+      expect(isAllowedOrigin('https://partner.example.com.evil.net')).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('L3: the scraper runs without a shell', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../src/app/api/scraper/sync/route.ts'), 'utf8');
+    expect(src).toContain('execFile');
+    expect(src).not.toMatch(/\bexec\(|execAsync\(|import \{ exec \}/);
+  });
+
+  it('L4: Google ID tokens must carry the nonce issued to this browser', async () => {
+    const crypto = await import('crypto');
+    const { verifyGoogleIdToken } = await import('@/lib/security/googleIdToken');
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const jwk = { ...(publicKey.export({ format: 'jwk' }) as any), kid: 'k1' };
+    const sign = (claims: object) => {
+      const h = Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'k1' })).toString('base64url');
+      const p = Buffer.from(JSON.stringify(claims)).toString('base64url');
+      return `${h}.${p}.${crypto.sign('RSA-SHA256', Buffer.from(`${h}.${p}`), privateKey).toString('base64url')}`;
+    };
+    const base = { iss: 'accounts.google.com', aud: 'cid', sub: '1', email: 'n@x.com', email_verified: true, exp: Math.floor(Date.now() / 1000) + 600 };
+    const opts = { clientId: 'cid', getKeys: async () => [jwk] };
+    await expect(verifyGoogleIdToken(sign({ ...base, nonce: 'abc123' }), { ...opts, expectedNonce: 'abc123' })).resolves.toBeTruthy();
+    await expect(verifyGoogleIdToken(sign({ ...base, nonce: 'abc123' }), { ...opts, expectedNonce: 'zzz999' })).rejects.toThrow(/nonce/);
+    await expect(verifyGoogleIdToken(sign(base), { ...opts, expectedNonce: '' })).rejects.toThrow(/nonce/);
+  });
+
+  it('L4: the nonce endpoint sets a one-time HttpOnly cookie', async () => {
+    const { GET } = await import('@/app/api/auth/google/nonce/route');
+    const res = await GET();
+    const json = await res.json();
+    expect(json.nonce).toMatch(/^[A-Za-z0-9_-]{24,}$/);
+    expect(res.headers.get('set-cookie')).toMatch(new RegExp(`ipolens_g_nonce=${json.nonce}.*HttpOnly`, 'i'));
+  });
+
+  it('L5: new accounts get a standard (1-day) session, not 30 days', async () => {
+    const { POST: signup } = await import('@/app/api/auth/signup/route');
+    const res = await signup(jsonRequest('http://localhost/api/auth/signup', 'POST',
+      { name: 'Short Session', email: 'short.session@remediation.test', password: 'Kestrel-Harbour-42', termsAccepted: true }));
+    const maxAge = Number((res.headers.get('set-cookie') || '').match(/Max-Age=(\d+)/i)?.[1]);
+    expect(maxAge).toBeGreaterThan(0);
+    expect(maxAge).toBeLessThanOrEqual(24 * 60 * 60);
+  });
+
+  it('L6: no JWT-shaped tokens remain in the test suite', () => {
+    const dir = path.resolve(__dirname);
+    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.ts'))) {
+      const text = fs.readFileSync(path.join(dir, f), 'utf8');
+      expect(/eyJhbGciOi[A-Za-z0-9_-]{20,}/.test(text), f).toBe(false);
+    }
+  });
+});

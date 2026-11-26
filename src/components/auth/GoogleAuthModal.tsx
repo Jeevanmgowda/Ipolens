@@ -83,6 +83,25 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
   const [customPan, setCustomPan] = useState<string>(defaultPrimaryPan);
   const [error, setError] = useState<string | null>(null);
   const [isGsiLoaded, setIsGsiLoaded] = useState<boolean>(false);
+  const [signInNonce, setSignInNonce] = useState<string | null>(null);
+
+  // One-time nonce bound to this browser via an HttpOnly cookie; Google embeds it in
+  // the ID token so a captured token cannot be replayed elsewhere.
+  useEffect(() => {
+    if (!isOpen || !hasRealGoogleApi) return;
+    let cancelled = false;
+    fetch('/api/auth/google/nonce', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (!cancelled && json?.nonce) setSignInNonce(json.nonce);
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not start Google sign-in. Please try again.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, hasRealGoogleApi]);
 
   // Dynamically load Google Identity Services script
   useEffect(() => {
@@ -110,11 +129,12 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
 
   // Initialize Google Identity Services when script and Client ID are ready
   useEffect(() => {
-    if (!isOpen || !hasRealGoogleApi || !isGsiLoaded || !window.google?.accounts?.id) return;
+    if (!isOpen || !hasRealGoogleApi || !isGsiLoaded || !signInNonce || !window.google?.accounts?.id) return;
 
     try {
       window.google.accounts.id.initialize({
         client_id: googleClientId,
+        nonce: signInNonce,
         callback: async (response: any) => {
           if (response?.credential) {
             const payload = parseGoogleJwt(response.credential);
@@ -155,7 +175,7 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
     } catch (err: any) {
       console.warn('Google Identity Services init notice:', err);
     }
-  }, [isOpen, hasRealGoogleApi, isGsiLoaded, googleClientId, mode, defaultInvestorCategory, defaultPrimaryPan, onSelectAccount]);
+  }, [isOpen, hasRealGoogleApi, isGsiLoaded, signInNonce, googleClientId, mode, defaultInvestorCategory, defaultPrimaryPan, onSelectAccount]);
 
   if (!isOpen) return null;
 

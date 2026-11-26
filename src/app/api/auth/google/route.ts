@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { loadUserFromDatabase, persistUser, registerOrLoginWithGoogle } from '@/lib/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { verifyGoogleIdToken } from '@/lib/security/googleIdToken';
+import { GOOGLE_NONCE_COOKIE, readCookie } from '@/lib/security/googleNonce';
 import { GoogleAuthPayload } from '@/types/auth';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,10 @@ export async function POST(request: Request) {
     if (body.credential) {
       let claims;
       try {
-        claims = await verifyGoogleIdToken(body.credential);
+        // The token must carry the one-time nonce issued to this browser (L4).
+        claims = await verifyGoogleIdToken(body.credential, {
+          expectedNonce: readCookie(request, GOOGLE_NONCE_COOKIE) || '',
+        });
       } catch (err) {
         console.warn('[Auth] Google ID token rejected:', err instanceof Error ? err.message : err);
         return NextResponse.json(
@@ -67,7 +71,8 @@ export async function POST(request: Request) {
     }
     await persistUser(result.user.id);
 
-    const { token, expiresAt } = await createSession(result.user.id, true);
+    // Standard-length session by default (L5).
+    const { token, expiresAt } = await createSession(result.user.id, false);
     const maxAgeSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
 
     const response = NextResponse.json({
@@ -83,6 +88,8 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === 'production',
       maxAge: maxAgeSeconds,
     });
+    // One-time use: clear the sign-in nonce.
+    response.cookies.set(GOOGLE_NONCE_COOKIE, '', { path: '/api/auth/google', maxAge: 0 });
 
     return response;
   } catch (err) {

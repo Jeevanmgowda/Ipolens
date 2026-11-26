@@ -3,8 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { escapeHtml } from '@/lib/security/sanitize';
 import { UPSTOX_STATE_COOKIE } from '@/lib/security/upstoxOAuth';
+import { requireAdminInProduction } from '@/lib/security/adminGuard';
 
 export async function GET(req: NextRequest) {
+  const denied = await requireAdminInProduction(req);
+  if (denied) return denied;
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
   const returnedState = url.searchParams.get('state');

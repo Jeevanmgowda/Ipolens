@@ -24,7 +24,8 @@ export async function POST(request: Request) {
     }
     await persistUser(result.user.id);
 
-    const { token, expiresAt } = await createSession(result.user.id, true);
+    // Standard-length session by default; long-lived sessions are an explicit opt-in at sign-in (L5).
+    const { token, expiresAt } = await createSession(result.user.id, false);
 
     const response = NextResponse.json({
       success: true,
