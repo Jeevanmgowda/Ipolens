@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { validateSignInCredentials } from '@/services/authStore';
+import { loadUserFromDatabase, validateSignInCredentials } from '@/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 
@@ -10,6 +10,7 @@ export async function POST(request: Request) {
       ...rawBody,
       email: rawBody.email ? sanitizeString(rawBody.email) : '',
     };
+    await loadUserFromDatabase(body.email);
     const result = validateSignInCredentials(body);
 
     if (!result.valid || !result.user) {

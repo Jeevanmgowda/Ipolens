@@ -134,8 +134,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loginWithDemo = async (type: 'institutional' | 'retail'): Promise<void> => {
-    const demoUser = DEMO_USERS[type];
-    saveUserSession(demoUser);
+    // Ask the server for a real session so per-user API routes (PANs, portfolio…) work.
+    const res = await fetch('/api/auth/demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Demo login failed');
+    }
+    saveUserSession({ ...DEMO_USERS[type], ...data.user, avatarUrl: DEMO_USERS[type].avatarUrl });
   };
 
   const signOut = () => {

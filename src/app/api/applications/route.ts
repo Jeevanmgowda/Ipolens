@@ -104,7 +104,7 @@ export async function POST(request: Request) {
     const computedBlocked = Number(blockedAmount) || (computedShares * numPrice);
 
     const newApp: IpoApplication = {
-      id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `app_${crypto.randomUUID()}`,
       ipoSymbol: cleanSymbol,
       companyName: sanitizeString(companyName || ipoSymbol).slice(0, 150),
       panId: sanitizeString(panId).slice(0, 50),

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { registerOrLoginWithGoogle } from '@/services/authStore';
+import { loadUserFromDatabase, persistUser, registerOrLoginWithGoogle } from '@/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { verifyGoogleIdToken } from '@/lib/security/googleIdToken';
 import { GoogleAuthPayload } from '@/types/auth';
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
       );
     }
 
+    await loadUserFromDatabase(payload.email);
     const result = registerOrLoginWithGoogle(payload);
 
     if (!result.valid || !result.user) {
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    await persistUser(result.user.id);
 
     const { token, expiresAt } = await createSession(result.user.id, true);
     const maxAgeSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);

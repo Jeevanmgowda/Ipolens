@@ -16,7 +16,6 @@ from common import normalize_name, utcnow_iso
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEFAULT_OUT = os.path.join(PROJECT_ROOT, "data", "ipos.json")
-FALLBACK_OUT = os.path.join(os.path.dirname(__file__), "..", "data", "ipos.json")
 
 
 def _parse_price_band(text):
@@ -310,7 +309,7 @@ def run(out_path: str = DEFAULT_OUT, months_back: int = 1, open_only: bool = Fal
         except Exception:
             pass
 
-    for dest in {out_path, FALLBACK_OUT}:
+    for dest in {out_path}:
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "w", encoding="utf-8") as f:

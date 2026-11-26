@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { validateAndRegisterUser } from '@/services/authStore';
+import { loadUserFromDatabase, persistUser, validateAndRegisterUser } from '@/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 
@@ -12,6 +12,7 @@ export async function POST(request: Request) {
       email: rawBody.email ? sanitizeString(rawBody.email) : '',
       primaryPan: rawBody.primaryPan ? sanitizeString(rawBody.primaryPan).toUpperCase() : undefined,
     };
+    await loadUserFromDatabase(body.email);
     const result = validateAndRegisterUser(body);
 
     if (!result.valid || !result.user) {
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    await persistUser(result.user.id);
 
     const { token, expiresAt } = await createSession(result.user.id, true);
 
