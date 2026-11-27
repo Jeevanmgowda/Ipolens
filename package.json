@@ -38,6 +38,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.6.0",
+    "@electric-sql/pglite-pgvector": "^0.1.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22",
     "@types/papaparse": "^5.5.2",
