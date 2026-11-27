@@ -1,3 +1,4 @@
+import { demoAccountsEnabled } from '../lib/security/guards';
 import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '../types/auth';
 import { isValidPan } from './duplicateEnforcer';
 import { hashPassword, verifyPassword } from '../lib/security/passwordHash';
@@ -9,7 +10,7 @@ export interface RegisteredUserRecord extends User {
 }
 
 // Initial registered users database seeded with default demo accounts (cryptographically hashed with PBKDF2-SHA512)
-export const registeredUsersStore: RegisteredUserRecord[] = [
+const SEEDED_DEMO_ACCOUNTS: RegisteredUserRecord[] = [
   {
     id: 'usr_admin_00',
     name: 'Security Admin',
@@ -47,6 +48,10 @@ export const registeredUsersStore: RegisteredUserRecord[] = [
     createdAt: '2025-03-01T00:00:00.000Z',
   },
 ];
+
+// Demo accounts have published passwords (including an admin). They exist only for local
+// development and are never loaded in production (or when ALLOW_DEMO_ACCOUNTS=false).
+export const registeredUsersStore: RegisteredUserRecord[] = demoAccountsEnabled() ? [...SEEDED_DEMO_ACCOUNTS] : [];
 
 export function validateSignInCredentials(creds: SignInCredentials): { valid: boolean; error?: string; user?: User } {
   const { email, password } = creds;

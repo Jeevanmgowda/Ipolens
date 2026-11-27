@@ -1,9 +1,28 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUser } from '@/lib/security/session';
+import { isAdmin, escapeHtml } from '@/lib/security/guards';
 import fs from 'fs';
 import path from 'path';
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
+
+  // Only an administrator who started the flow from this browser may complete it.
+  const user = await getAuthenticatedUser(req);
+  if (!isAdmin(user)) {
+    return NextResponse.json({ success: false, error: 'Administrator sign-in required.' }, { status: 403 });
+  }
+  const expectedState = req.cookies.get('upstox_oauth_state')?.value || '';
+  const returnedState = url.searchParams.get('state') || '';
+  const stateOk =
+    expectedState.length > 0 &&
+    expectedState.length === returnedState.length &&
+    crypto.timingSafeEqual(Buffer.from(expectedState), Buffer.from(returnedState));
+  if (!stateOk) {
+    return NextResponse.json({ success: false, error: 'Invalid or expired OAuth state. Start the Upstox connection again.' }, { status: 403 });
+  }
+
   const code = url.searchParams.get('code');
   const error = url.searchParams.get('error') || url.searchParams.get('error_description');
 
@@ -27,7 +46,7 @@ export async function GET(req: NextRequest) {
         <div class="card">
           <h1>❌ Authorization Failed</h1>
           <p>Upstox returned an error during the authentication flow:</p>
-          <pre>${error || 'Missing authorization code in callback parameters.'}</pre>
+          <pre>${escapeHtml(error || 'Missing authorization code in callback parameters.')}</pre>
           <a href="/api/auth/upstox" class="btn">Try Again</a>
           <a href="/" class="btn" style="background: #334155; margin-left: 8px;">Back to Dashboard</a>
         </div>
@@ -75,7 +94,7 @@ export async function GET(req: NextRequest) {
     let envSaved = false;
     try {
       const envPath = path.resolve(process.cwd(), '.env.local');
-      if (fs.existsSync(envPath) && accessToken) {
+      if (process.env.NODE_ENV !== 'production' && fs.existsSync(envPath) && accessToken) {
         let envContent = fs.readFileSync(envPath, 'utf8');
         if (envContent.includes('UPSTOX_ACCESS_TOKEN=')) {
           envContent = envContent.replace(
@@ -137,7 +156,7 @@ export async function GET(req: NextRequest) {
           <div class="meta-box">
             <div class="meta-row">
               <span class="meta-label">User / Account:</span>
-              <span class="meta-val">${userName} (${userId})</span>
+              <span class="meta-val">${escapeHtml(userName)} (${escapeHtml(userId)})</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">Auto-Updated .env.local:</span>
@@ -150,7 +169,7 @@ export async function GET(req: NextRequest) {
           </div>
 
           <label style="font-size: 12px; color: #94a3b8; font-weight: 500; display: block; margin-bottom: 6px;">Generated Access Token Status:</label>
-          <div class="token-box" id="tokenBox">${maskedToken}</div>
+          <div class="token-box" id="tokenBox">${escapeHtml(maskedToken)}</div>
 
           <div class="btn-group">
             <a href="/" class="btn" style="background: #10b981;">🚀 Go to Live IPO Radar</a>
@@ -197,7 +216,7 @@ export async function GET(req: NextRequest) {
         <div class="card">
           <h1>❌ Token Exchange Failed</h1>
           <p>Failed to exchange authorization code with Upstox server:</p>
-          <pre>${err.message}</pre>
+          <pre>${escapeHtml(err.message)}</pre>
           <a href="/api/auth/upstox" class="btn">Try Again</a>
           <a href="/" class="btn" style="background: #334155; margin-left: 8px;">Back to Dashboard</a>
         </div>

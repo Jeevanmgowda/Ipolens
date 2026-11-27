@@ -19,6 +19,14 @@ if (fs.existsSync(envLocalPath)) {
   }
 }
 
+// Tests must never read or write the real Supabase database or Redis from .env.local.
+// Set ALLOW_LIVE_DB_TESTS=true explicitly to opt in.
+if (process.env.ALLOW_LIVE_DB_TESTS !== 'true') {
+  for (const key of ['DATABASE_URL', 'POSTGRES_URL', 'UPSTASH_REDIS_URL', 'REDIS_URL']) {
+    delete process.env[key];
+  }
+}
+
 export default defineConfig({
   test: {
     environment: 'node',

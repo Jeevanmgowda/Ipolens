@@ -1,6 +1,14 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUser } from '@/lib/security/session';
+import { isAdmin, escapeHtml } from '@/lib/security/guards';
 
 export async function GET(req: NextRequest) {
+  // Connecting the server-wide Upstox account is an administrator action.
+  const user = await getAuthenticatedUser(req);
+  if (!isAdmin(user)) {
+    return NextResponse.json({ success: false, error: 'Administrator sign-in required.' }, { status: 403 });
+  }
   const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
   const url = new URL(req.url);
   const redirectUri = (process.env.UPSTOX_REDIRECT_URI || `${url.origin}/api/auth/callback/upstox`).trim();
@@ -31,7 +39,7 @@ export async function GET(req: NextRequest) {
           <p>Where to find them:</p>
           <ol style="color: #94a3b8; font-size: 14px; line-height: 1.8; padding-left: 20px;">
             <li>Go to <a href="https://developer.upstox.com/" target="_blank" style="color: #38bdf8;">developer.upstox.com</a></li>
-            <li>Create an App with Redirect URL: <code>${redirectUri}</code></li>
+            <li>Create an App with Redirect URL: <code>${escapeHtml(redirectUri)}</code></li>
             <li>Copy your <strong>API Key</strong> and <strong>API Secret</strong> into <code>.env.local</code></li>
             <li>Refresh this page to proceed with login!</li>
           </ol>
@@ -47,7 +55,17 @@ export async function GET(req: NextRequest) {
   }
 
   // Construct Upstox OAuth authorization dialog URL
-  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  // OAuth `state` binds the callback to this browser (login-CSRF protection).
+  const state = crypto.randomBytes(24).toString('hex');
+  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
 
-  return NextResponse.redirect(authUrl);
+  const response = NextResponse.redirect(authUrl);
+  response.cookies.set('upstox_oauth_state', state, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/api/auth',
+    maxAge: 600,
+  });
+  return response;
 }

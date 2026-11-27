@@ -1,29 +1,27 @@
 import { NextResponse } from 'next/server';
 import { RegistrarScannerService } from '@/lib/services/registrar-scanner.service';
-import { getUserPansStore } from '@/app/api/pans/route';
+import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { requireUserOr401 } from '@/lib/security/guards';
 import { FamilyPanProfile } from '@/types/pan';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireUserOr401(request);
+    if (!auth.user) return auth.response;
     const body = await request.json();
     const {
       symbol = 'NSE',
       companyName,
       price,
       lotSize,
-      pans: clientPans,
       autoSyncDatabase = true,
     } = body;
 
     // 1. Resolve family PAN profiles
-    let profiles: FamilyPanProfile[] = [];
-    if (Array.isArray(clientPans) && clientPans.length > 0) {
-      profiles = clientPans;
-    } else {
-      profiles = getUserPansStore();
-    }
+    // Only the caller's own PAN profiles, loaded server-side. Client-supplied PAN lists are ignored.
+    const profiles: FamilyPanProfile[] = await DbRepositoryService.getPans(auth.user.id);
 
     if (profiles.length === 0) {
       return NextResponse.json({
@@ -53,7 +51,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to execute multi-PAN allotment scan.',
+        error: 'Failed to execute multi-PAN allotment scan.',
       },
       { status: 500 }
     );
