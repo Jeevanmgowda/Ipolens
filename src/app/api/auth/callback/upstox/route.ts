@@ -86,13 +86,6 @@ export async function GET(req: NextRequest) {
           envContent += `\nUPSTOX_ACCESS_TOKEN=${accessToken}\n`;
         }
 
-        // Toggle USE_MOCK_MARKET_DATA to false if present
-        if (envContent.includes('USE_MOCK_MARKET_DATA=true')) {
-          envContent = envContent.replace(
-            'USE_MOCK_MARKET_DATA=true',
-            'USE_MOCK_MARKET_DATA=false'
-          );
-        }
 
         fs.writeFileSync(envPath, envContent, 'utf8');
         envSaved = true;
@@ -177,7 +170,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
-  } catch (err: any) {
+  } catch (err) {
     const errorHtml = `
       <!DOCTYPE html>
       <html lang="en">
@@ -197,7 +190,7 @@ export async function GET(req: NextRequest) {
         <div class="card">
           <h1>❌ Token Exchange Failed</h1>
           <p>Failed to exchange authorization code with Upstox server:</p>
-          <pre>${err.message}</pre>
+          <pre>${(err as Error).message}</pre>
           <a href="/api/auth/upstox" class="btn">Try Again</a>
           <a href="/" class="btn" style="background: #334155; margin-left: 8px;">Back to Dashboard</a>
         </div>

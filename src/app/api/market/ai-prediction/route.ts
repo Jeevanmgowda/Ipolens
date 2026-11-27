@@ -29,12 +29,12 @@ export async function POST(request: Request) {
       success: true,
       data: prediction,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[AiPredictionRoute] Error processing prediction request:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to generate AI stock trading prediction.',
+        error: (error as Error).message || 'Failed to generate AI stock trading prediction.',
       },
       { status: 500 }
     );

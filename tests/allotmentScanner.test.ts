@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanRegistrarText } from '../src/services/allotmentScanner';
+import { scanRegistrarText } from '../src/lib/services/allotment/text-parser';
 
 describe('Automated Allotment Result Scanner', () => {
   it('should accurately classify positive allotment output from Link Intime', () => {
@@ -16,7 +16,7 @@ describe('Automated Allotment Result Scanner', () => {
     expect(result.parsedSuccessfully).toBe(true);
     expect(result.status).toBe('Allotted');
     expect(result.sharesAllotted).toBe(214);
-    expect(result.panMatched).toBe('ABCDE1234F');
+    expect(result.panMatched).toBe('ABCDE****F');
     expect(result.rawConfidence).toBeGreaterThanOrEqual(0.95);
   });
 

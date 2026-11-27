@@ -2,48 +2,74 @@ export type IpoCategoryTab = 'upcoming' | 'open' | 'closed' | 'listed';
 export type MarketStatus = 'OPEN' | 'CLOSED';
 export type ConnectionStatus = 'LIVE' | 'DEMO' | 'DISCONNECTED';
 
+export type IpoLifecycleStatus = 'Upcoming' | 'Open' | 'Closed' | 'Listed';
+
+export interface AiGmpPrediction {
+  predictedGainPct: number;
+  predictedGmp: number | null;
+  lowerPct: number;
+  upperPct: number;
+  modelVersion: string;
+  drivers: Array<{ feature: string; contributionPct: number }>;
+  createdAt: string;
+}
+
+/** The one API shape for every IPO endpoint. Unknown values are null, never defaulted. */
 export interface LiveMarketIpoItem {
   id: string;
   symbol: string;
   companyName: string;
-  status: 'Upcoming' | 'Open' | 'Closed' | 'Listed';
+  status: IpoLifecycleStatus;
   series: 'EQ' | 'SME' | 'DEBT';
   priceBand: string;
-  priceRange?: string; // alias for priceBand
-  priceLow: number;
-  priceHigh: number;
-  lotSize: number;
-  minInvestment?: number;
+  priceLow: number | null;
+  priceHigh: number | null;
+  lotSize: number | null;
+  minInvestment?: number | null;
   issueSize: string;
-  issueSizeCr?: number;
-  openDate: string;
-  closeDate: string;
-  allotmentDate: string;
-  listingDate: string;
-  expectedListingDate?: string;
-  registrar: string;
+  issueSizeCr?: number | null;
+  freshIssueCr?: number | null;
+  ofsCr?: number | null;
+  ofsPercent?: number | null;
+  openDate: string | null;
+  closeDate: string | null;
+  allotmentDate: string | null;
+  listingDate: string | null;
+  registrar: string | null;
+  registrarSlug?: string | null;
+  exchange?: string | null;
   registrarUrl?: string;
-  lastUpdated?: string;
+  peRatio?: number | null;
+  sector?: string | null;
+  rhpUrl?: string | null;
+  drhpUrl?: string | null;
+  anchorLockin30?: string | null;
+  anchorLockin90?: string | null;
+  source?: string | null;
+  lastUpdated?: string | null;
 
-  // GMP metrics
-  gmp: number;
-  gmpPercent: number;
-  isAiPredictedGmp?: boolean;
-  predictedListingPrice?: number;
+  // Market GMP (informal grey-market indication, with source + time) and the separate AI prediction
+  gmp: number | null;
+  gmpPercent: number | null;
+  gmpSource?: string | null;
+  gmpUpdatedAt?: string | null;
+  aiGmp?: AiGmpPrediction | null;
 
-  // Subscription breakdown
-  currentSubscription: number;
-  retailSubscription: number;
-  niiSubscription: number;
-  qibSubscription: number;
-  employeeSubscription?: number;
+  // Subscription breakdown (latest snapshot)
+  currentSubscription: number | null;
+  retailSubscription: number | null;
+  niiSubscription: number | null;
+  qibSubscription: number | null;
+  employeeSubscription?: number | null;
+  subscriptionUpdatedAt?: string | null;
+  listingGainPct?: number | null;
   remainingTime?: string;
   isClosingSoon?: boolean;
 
   // Secondary market metrics (when listed)
   isListed?: boolean;
-  issuePrice?: number;
-  listingPrice?: number;
+  issuePrice?: number | null;
+  listingPrice?: number | null;
   currentPrice?: number;
   previousClose?: number;
   dayChange?: number;

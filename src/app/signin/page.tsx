@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,13 +20,12 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
-  Building2,
   ArrowLeft,
 } from 'lucide-react';
 
 export default function SignInPage() {
   const router = useRouter();
-  const { signIn, signInWithGoogle, loginWithDemo, isAuthenticated, user } = useAuth();
+  const { signIn, signInWithGoogle } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,8 +47,8 @@ export default function SignInPage() {
       } else {
         setError(res.error || 'Google sign-in failed.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Google authorization error.');
+    } catch (err) {
+      setError((err as Error).message || 'Google authorization error.');
     } finally {
       setGoogleLoading(false);
     }
@@ -57,20 +57,6 @@ export default function SignInPage() {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
-
-  // If already logged in, show quick welcome banner or allow jumping back
-  const handleDemoLogin = async (type: 'institutional' | 'retail') => {
-    setError(null);
-    setLoading(true);
-    try {
-      await loginWithDemo(type);
-      router.push('/');
-    } catch (err: any) {
-      setError(err.message || 'Demo login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,8 +75,8 @@ export default function SignInPage() {
       } else {
         setError(res.error || 'Invalid email or password.');
       }
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
+    } catch (err) {
+      setError((err as Error).message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -102,8 +88,8 @@ export default function SignInPage() {
       <header className="border-b border-white/10 bg-[#070b14]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 group">
-            <img
-              src="/logo.png"
+            <Image
+              src="/logo.png" width={1024} height={409}
               alt="IPOLENS Logo"
               className="h-9 w-auto object-contain drop-shadow-[0_0_12px_rgba(6,182,212,0.3)] transition-transform group-hover:scale-105"
             />
@@ -209,43 +195,6 @@ export default function SignInPage() {
                 <p className="text-xs text-slate-400 mt-1">
                   Enter your credentials to access your terminal session.
                 </p>
-              </div>
-
-              {/* Instant 1-Click Demo Buttons for Fast Evaluation */}
-              <div className="mb-6 p-3 rounded-xl bg-slate-900/90 border border-cyan-500/20">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-cyan-400" /> Quick 1-Click Demo Access
-                  </span>
-                  <span className="text-[10px] text-slate-400">Test instantly</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleDemoLogin('institutional')}
-                    disabled={loading}
-                    className="flex flex-col items-start p-2 rounded-lg bg-white/5 hover:bg-cyan-500/15 border border-white/10 hover:border-cyan-500/40 transition cursor-pointer text-left group"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-white group-hover:text-cyan-300">
-                      <Building2 className="w-3 h-3 text-cyan-400" />
-                      <span>HNI Desk</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 mt-0.5">Arjun Mehta (bNII)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDemoLogin('retail')}
-                    disabled={loading}
-                    className="flex flex-col items-start p-2 rounded-lg bg-white/5 hover:bg-purple-500/15 border border-white/10 hover:border-purple-500/40 transition cursor-pointer text-left group"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-white group-hover:text-purple-300">
-                      <Users className="w-3 h-3 text-purple-400" />
-                      <span>Family Office</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 mt-0.5">Priya Sharma (Retail)</span>
-                  </button>
-                </div>
               </div>
 
               {/* Google Sign-In Quick Action */}

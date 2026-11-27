@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,9 +15,7 @@ import {
   EyeOff,
   User as UserIcon,
   ArrowRight,
-  TrendingUp,
   CreditCard,
-  Building2,
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
@@ -50,8 +49,8 @@ export default function SignUpPage() {
       } else {
         setError(res.error || 'Google sign-up failed.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Google authorization error.');
+    } catch (err) {
+      setError((err as Error).message || 'Google authorization error.');
     } finally {
       setGoogleLoading(false);
     }
@@ -121,8 +120,8 @@ export default function SignUpPage() {
       } else {
         setError(res.error || 'Failed to create account.');
       }
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
+    } catch (err) {
+      setError((err as Error).message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -134,8 +133,8 @@ export default function SignUpPage() {
       <header className="border-b border-white/10 bg-[#070b14]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 group">
-            <img
-              src="/logo.png"
+            <Image
+              src="/logo.png" width={1024} height={409}
               alt="IPOLENS Logo"
               className="h-9 w-auto object-contain drop-shadow-[0_0_12px_rgba(6,182,212,0.3)] transition-transform group-hover:scale-105"
             />

@@ -1,41 +1,31 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
-import { IpoStatus, IssueType } from '@/types/ipo';
+import { NextResponse } from 'next/server';
+import { IpoRepository } from '@/lib/repositories/ipo.repository';
+import type { IpoLifecycleStatus } from '@/types/liveMarket';
+import { handleRouteError } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+const STATUS: Record<string, IpoLifecycleStatus> = {
+  upcoming: 'Upcoming',
+  open: 'Open',
+  closed: 'Closed',
+  listed: 'Listed',
+};
+
+/** GET /api/ipos?status=open|upcoming|closed|listed|all&series=EQ|SME&q=search */
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const rawStatus = searchParams.get('status') || 'open';
-    const rawType = searchParams.get('type') as IssueType | null;
+    const { searchParams } = new URL(request.url);
+    const rawStatus = (searchParams.get('status') || 'all').toLowerCase();
+    const series = searchParams.get('series')?.toUpperCase();
+    const q = searchParams.get('q')?.toLowerCase().trim();
 
-    const validStatuses: IpoStatus[] = ['upcoming', 'open', 'closed', 'listed'];
-    const status: IpoStatus = validStatuses.includes(rawStatus as IpoStatus)
-      ? (rawStatus as IpoStatus)
-      : 'open';
+    let data = await IpoRepository.listView(STATUS[rawStatus] ? { status: STATUS[rawStatus] } : undefined);
+    if (series === 'EQ' || series === 'SME') data = data.filter((d) => d.series === series);
+    if (q) data = data.filter((d) => d.symbol.toLowerCase().includes(q) || d.companyName.toLowerCase().includes(q));
 
-    const issueType: IssueType | undefined =
-      rawType === 'regular' || rawType === 'sme' ? rawType : undefined;
-
-    const data = await IpoAggregatorService.getUnifiedIpos(status, issueType);
-
-    return NextResponse.json({
-      success: true,
-      status,
-      issueType: issueType || 'all',
-      count: data.length,
-      data,
-    });
-  } catch (error: any) {
-    console.error('API Error in GET /api/ipos:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to fetch unified IPO pipeline',
-        message: error.message,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true, status: rawStatus, count: data.length, data });
+  } catch (err) {
+    return handleRouteError(err, 'ipos:GET');
   }
 }

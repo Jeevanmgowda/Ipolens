@@ -31,10 +31,10 @@ export async function GET(request: Request) {
       timestamp: new Date().toISOString(),
       source: 'National Stock Exchange of India (NSE) & Live Secondary Feeds',
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API Error in /api/ipos/listed:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch live listed IPOs', message: error.message },
+      { success: false, error: 'Failed to fetch live listed IPOs', message: (error as Error).message },
       { status: 500 }
     );
   }

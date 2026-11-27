@@ -1,144 +1,54 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { getAuthenticatedUser } from '@/lib/security/session';
+import { runIpoIngestion } from '@/lib/ingestion/ipo-ingestion.service';
+import { predictActiveIpos } from '@/lib/services/gmp-prediction.service';
+import { IpoRepository } from '@/lib/repositories/ipo.repository';
+import { inngest, EVENTS, inngestAvailable } from '@/inngest/client';
+import { handleRouteError, jsonError } from '@/lib/http';
 
-const execAsync = promisify(exec);
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
-const ROOT_DATA_FILE = path.resolve(process.cwd(), 'data', 'ipos.json');
-const SCRIPTS_DATA_FILE = path.resolve(process.cwd(), 'scripts', 'data', 'ipos.json');
-
-function getAvailableDataFile(): string | null {
-  if (fs.existsSync(ROOT_DATA_FILE)) return ROOT_DATA_FILE;
-  if (fs.existsSync(SCRIPTS_DATA_FILE)) return SCRIPTS_DATA_FILE;
-  return null;
-}
-
+/** Ingestion health: how many IPOs are tracked and when the data was last refreshed. */
 export async function GET() {
   try {
-    const dataFile = getAvailableDataFile();
-
-    if (!dataFile) {
-      return NextResponse.json({
-        exists: false,
-        message: 'No scraped data feed found at data/ipos.json. Run "npm run scrape" to generate it.',
-        totalCount: 0,
-        summary: { open: 0, upcoming: 0, closed: 0, listed: 0 },
-        generatedAt: null,
-        ageMinutes: null,
-      });
-    }
-
-    const raw = fs.readFileSync(dataFile, 'utf-8');
-    const parsed = JSON.parse(raw);
-    const ipos = Array.isArray(parsed.ipos) ? parsed.ipos : [];
-
-    let ageMinutes: number | null = null;
-    if (parsed.generatedAt) {
-      const genTime = new Date(parsed.generatedAt).getTime();
-      if (!isNaN(genTime)) {
-        ageMinutes = Math.round((Date.now() - genTime) / (1000 * 60));
-      }
-    }
-
-    const summary = parsed.summary || {
-      open: ipos.filter((r: any) => r.status === 'open' || r.status === 'Active').length,
-      upcoming: ipos.filter((r: any) => r.status === 'upcoming' || r.status === 'Forthcoming').length,
-      closed: ipos.filter((r: any) => r.status === 'closed' || r.status === 'Closed').length,
-      listed: ipos.filter((r: any) => r.status === 'listed' || r.status === 'Listed').length,
-    };
-
-    return NextResponse.json({
-      exists: true,
-      path: path.relative(process.cwd(), dataFile),
-      generatedAt: parsed.generatedAt || null,
-      ageMinutes,
-      totalCount: ipos.length,
-      summary,
-      sources: ['NSE India (Official Exchange)', 'BSE India (Official Exchange)', 'InvestorGain GMP (Market Intel)'],
-      sampleSymbols: ipos.slice(0, 5).map((r: any) => r.symbol),
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { exists: false, error: error.message || 'Failed to inspect scraper feed status' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    // 1. Enforce RBAC or CRON_SECRET authentication
-    const authHeader = req.headers.get('authorization') || '';
-    const cronSecret = process.env.CRON_SECRET;
-    const isCronAuthorized = cronSecret && authHeader === `Bearer ${cronSecret}`;
-
-    const user = await getAuthenticatedUser(req);
-    const isAdminUser = user && user.role === 'admin';
-
-    if (!isCronAuthorized && !isAdminUser) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Access denied: Administrative privileges or a valid CRON_SECRET is required.',
-        },
-        { status: 403 }
-      );
-    }
-
-    const body = await req.json().catch(() => ({}));
-    // Strictly validate and clamp monthsBack (integer between 1 and 12)
-    const rawMonths = Number(body.months);
-    const monthsBack = Number.isInteger(rawMonths) ? Math.min(12, Math.max(1, rawMonths)) : 1;
-    const scriptPath = path.resolve(process.cwd(), 'scripts', 'scraper', 'merge.py');
-
-    if (!fs.existsSync(scriptPath)) {
-      return NextResponse.json(
-        { success: false, error: 'Scraper script scripts/scraper/merge.py not found.' },
-        { status: 404 }
-      );
-    }
-
-    // Execute python scripts/scraper/merge.py safely
-    const cmd = `python "${scriptPath}" --months ${monthsBack}`;
-    const { stdout, stderr } = await execAsync(cmd, {
-      timeout: 45000,
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
-    });
-
-    const dataFile = getAvailableDataFile();
-    let resultPayload: any = null;
-    if (dataFile && fs.existsSync(dataFile)) {
-      try {
-        resultPayload = JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
-      } catch {
-        // optional parse
-      }
-    }
-
-    const isProd = process.env.NODE_ENV === 'production';
-
+    const [counts, all] = await Promise.all([IpoRepository.countBy(), IpoRepository.listAll()]);
+    const lastFetched = all.map((r) => r.fetchedAt || '').sort().pop() || null;
     return NextResponse.json({
       success: true,
-      message: 'Scraper completed successfully.',
-      stdout: isProd ? 'Execution completed.' : stdout.trim(),
-      stderr: isProd ? undefined : (stderr.trim() || undefined),
-      generatedAt: resultPayload?.generatedAt,
-      totalCount: resultPayload?.totalCount || (resultPayload?.ipos?.length ?? 0),
-      summary: resultPayload?.summary,
+      totalCount: all.length,
+      summary: counts,
+      lastFetchedAt: lastFetched,
+      ageMinutes: lastFetched ? Math.round((Date.now() - new Date(lastFetched).getTime()) / 60000) : null,
     });
-  } catch (error: any) {
-    const isProd = process.env.NODE_ENV === 'production';
-    return NextResponse.json(
-      {
-        success: false,
-        error: isProd ? 'Internal server error executing scraper' : (error.message || 'Failed to execute scraper worker'),
-        stderr: isProd ? undefined : (error.stderr?.toString() || undefined),
-      },
-      { status: 500 }
-    );
+  } catch (err) {
+    return handleRouteError(err, 'scraper/sync:GET');
   }
 }
 
+/**
+ * Triggers a live ingestion run. Allowed for CRON_SECRET bearer tokens or signed-in admins.
+ * Uses Inngest when available, otherwise runs inline.
+ */
+export async function POST(request: Request) {
+  try {
+    const cronSecret = process.env.CRON_SECRET;
+    const bearerOk = Boolean(cronSecret) && request.headers.get('authorization') === `Bearer ${cronSecret}`;
+    if (!bearerOk) {
+      const user = await getAuthenticatedUser(request);
+      if (!user) return jsonError(401, 'Sign in required.');
+      if (user.role !== 'admin') return jsonError(403, 'Administrator role required.');
+    }
+
+    if (inngestAvailable()) {
+      await inngest.send({ name: EVENTS.ingestIpos, data: {} });
+      return NextResponse.json({ success: true, queued: true, message: 'Ingestion queued in Inngest.' });
+    }
+
+    const report = await runIpoIngestion();
+    const predictions = await predictActiveIpos();
+    return NextResponse.json({ success: report.errors.length === 0 || report.upserted > 0, report, predictions });
+  } catch (err) {
+    return handleRouteError(err, 'scraper/sync:POST');
+  }
+}

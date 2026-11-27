@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Radio,
   RefreshCw,
@@ -11,7 +11,6 @@ import {
   Flame,
   TrendingUp,
   X,
-  ExternalLink,
 } from 'lucide-react';
 import { MarketStatus, ConnectionStatus, MarketAlertItem } from '@/types/liveMarket';
 
@@ -31,7 +30,6 @@ export const LiveMarketHeader: React.FC<LiveMarketHeaderProps> = ({
   lastUpdated,
   isRefreshing,
   onRefresh,
-  isMock,
   alerts = [],
 }) => {
   const [showAlertsDropdown, setShowAlertsDropdown] = useState<boolean>(false);

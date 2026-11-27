@@ -1,57 +1,28 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { validateSignInCredentials } from '@/services/authStore';
-import { createSession } from '@/lib/security/session';
-import { sanitizeString } from '@/lib/security/sanitize';
+import { createSession, attachSessionCookie } from '@/lib/security/session';
+import { handleRouteError, jsonError } from '@/lib/http';
+
+const Body = z.object({
+  email: z.string().trim().max(256),
+  password: z.string().max(256),
+  rememberMe: z.boolean().optional(),
+});
 
 export async function POST(request: Request) {
   try {
-    const rawBody = await request.json();
-    const body = {
-      ...rawBody,
-      email: rawBody.email ? sanitizeString(rawBody.email) : '',
-    };
-    const result = validateSignInCredentials(body);
-
-    if (!result.valid || !result.user) {
-      return NextResponse.json(
-        { success: false, error: result.error || 'Authentication failed' },
-        { status: 401 }
-      );
-    }
+    const body = Body.parse(await request.json());
+    const result = await validateSignInCredentials(body);
+    if (!result.valid || !result.user) return jsonError(401, result.error || 'Authentication failed');
 
     const { token, expiresAt } = await createSession(result.user.id, !!body.rememberMe);
-
-    const response = NextResponse.json({
-      success: true,
-      user: result.user,
+    return attachSessionCookie(
+      NextResponse.json({ success: true, user: result.user, message: 'Signed in successfully' }),
       token,
-      message: 'Signed in successfully',
-    });
-
-    const maxAgeSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
-
-    // Set secure HttpOnly cookies
-    response.cookies.set('ipolens_session', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
-
-    response.cookies.set('ipolens_token', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
-
-    return response;
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
-      { status: 500 }
+      expiresAt
     );
+  } catch (err) {
+    return handleRouteError(err, 'auth/signin');
   }
 }

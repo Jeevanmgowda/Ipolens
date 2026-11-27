@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { BidCategoryDetail } from '@/types/ipo';
-import { Users, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Users, CheckCircle2 } from 'lucide-react';
 
 interface CategorySubscriptionChartProps {
   bidDetails: BidCategoryDetail[];

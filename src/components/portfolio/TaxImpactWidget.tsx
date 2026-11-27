@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Calculator, ShieldCheck, TrendingUp, AlertCircle, Info, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Calculator, ShieldCheck, Info, CheckCircle2 } from 'lucide-react';
 
 interface TaxImpactWidgetProps {
   initialGain?: number;
@@ -10,7 +10,6 @@ interface TaxImpactWidgetProps {
 
 export const TaxImpactWidget: React.FC<TaxImpactWidgetProps> = ({
   initialGain = 38500,
-  initialInvested = 15000,
 }) => {
   const [realizedGain, setRealizedGain] = useState<number>(initialGain);
   const [holdingPeriod, setHoldingPeriod] = useState<'STCG' | 'LTCG'>('STCG');

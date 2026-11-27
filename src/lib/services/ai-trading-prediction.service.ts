@@ -296,8 +296,8 @@ export class AiTradingPredictionService {
     let target1: number;
     let target2: number;
     let stopLoss: number;
-    let entryLow = Number((currentPrice * 0.995).toFixed(2));
-    let entryHigh = Number((currentPrice * 1.003).toFixed(2));
+    const entryLow = Number((currentPrice * 0.995).toFixed(2));
+    const entryHigh = Number((currentPrice * 1.003).toFixed(2));
 
     if (trendDirection === 'BULLISH') {
       const nearestRes = telemetry.resistanceLevels[0] > currentPrice ? telemetry.resistanceLevels[0] : currentPrice * 1.025;
@@ -535,9 +535,9 @@ Return STRICTLY a JSON object matching this schema (NO markdown backticks, NO ma
             generatedAt: new Date().toISOString(),
           };
         }
-      } catch (geminiError: any) {
+      } catch (geminiError) {
         console.warn(
-          `[AiTradingPredictionService] Gemini live call notice: ${geminiError?.message || 'offline'}. Using quantitative algorithmic prediction.`
+          `[AiTradingPredictionService] Gemini live call notice: ${(geminiError as Error)?.message || 'offline'}. Using quantitative algorithmic prediction.`
         );
       }
     }

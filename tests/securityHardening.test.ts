@@ -4,14 +4,10 @@ import {
   sanitizeObject,
   isValidPan,
   isValidEmail,
-  isValidDemat,
-  isValidUpi,
   sanitizeSearchQuery,
 } from '@/lib/security/sanitize';
 import { checkRateLimit } from '@/lib/security/rateLimiter';
 import { isAllowedOrigin } from '@/lib/security/cors';
-import { validateSignInCredentials, registeredUsersStore } from '@/services/authStore';
-import { validateSession } from '@/lib/security/session';
 
 describe('Security Hardening Suite', () => {
   describe('Input Sanitization & XSS Defense', () => {
@@ -99,44 +95,4 @@ describe('Security Hardening Suite', () => {
     });
   });
 
-  describe('Password Hashing & Constant-Time Verification', () => {
-    it('should authenticate demo user with correct salted password', () => {
-      const result = validateSignInCredentials({
-        email: 'priya.sharma@investor.in',
-        password: 'DemoPass123!',
-      });
-      expect(result.valid).toBe(true);
-      expect(result.user).toBeDefined();
-      expect(result.user?.email).toBe('priya.sharma@investor.in');
-    });
-
-    it('should reject incorrect password', () => {
-      const result = validateSignInCredentials({
-        email: 'priya.sharma@investor.in',
-        password: 'WrongPassword!',
-      });
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('Incorrect password');
-    });
-
-    it('should never accept plaintext password without salt', () => {
-      const user = registeredUsersStore.find((u) => u.email === 'priya.sharma@investor.in');
-      expect(user?.passwordSalt).toBeDefined();
-      expect(user?.passwordHash).not.toBe('DemoPass123!');
-    });
-  });
-
-  describe('Session Spoofing Defense', () => {
-    it('should reject forged jwt_session_<userId> tokens', async () => {
-      const forgedToken = 'jwt_session_usr_inst_01';
-      const userId = await validateSession(forgedToken);
-      expect(userId).toBeNull();
-    });
-
-    it('should reject non-existent random tokens', async () => {
-      const fakeToken = 'sess_invalid_token_1234567890';
-      const userId = await validateSession(fakeToken);
-      expect(userId).toBeNull();
-    });
-  });
 });

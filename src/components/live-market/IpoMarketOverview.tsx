@@ -7,10 +7,8 @@ import {
   Clock,
   TrendingUp,
   Layers,
-  ArrowUpRight,
   BarChart2,
   Award,
-  Sparkles,
 } from 'lucide-react';
 import { LiveMarketIpoItem, LiveMarketOverviewResponse } from '@/types/liveMarket';
 
@@ -27,13 +25,12 @@ interface IpoMarketOverviewProps {
   topGainer?: LiveMarketIpoItem;
   topSubscribed?: LiveMarketIpoItem;
   topGmp?: LiveMarketIpoItem;
-  onSelectIpo?: (ipo: any) => void;
+  onSelectIpo?: (ipo: LiveMarketIpoItem) => void;
 }
 
 export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
   overview,
   data,
-  loading = false,
   topGainer,
   topSubscribed,
   topGmp,
@@ -186,11 +183,11 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             </div>
             <div className="text-right">
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                {activeTopSubscribed.qibSubscription > 0
+                {(activeTopSubscribed.qibSubscription ?? 0) > 0
                   ? `QIB: ${activeTopSubscribed.qibSubscription}x`
-                  : activeTopSubscribed.retailSubscription > 0
+                  : (activeTopSubscribed.retailSubscription ?? 0) > 0
                   ? `Retail: ${activeTopSubscribed.retailSubscription}x`
-                  : `${activeTopSubscribed.currentSubscription}x Subscribed`}
+                  : `${activeTopSubscribed.currentSubscription ?? '—'}x Subscribed`}
               </span>
             </div>
           </div>
@@ -204,12 +201,7 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             <div className="space-y-0.5">
               <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
                 <Flame className="w-3.5 h-3.5 text-purple-400" />
-                <span>Highest Estimated GMP</span>
-                {activeTopGmp.isAiPredictedGmp && (
-                  <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                    AI ML
-                  </span>
-                )}
+                <span>Highest Market GMP</span>
               </span>
               <div className="flex items-baseline gap-2">
                 <span className="font-mono font-extrabold text-white text-base">{activeTopGmp.symbol}</span>
@@ -222,7 +214,7 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             <div className="text-right">
               <span className="font-mono text-xs font-bold text-purple-300 block">+₹{activeTopGmp.gmp}</span>
               <span className="text-[10px] text-slate-400 font-mono">
-                {activeTopGmp.isAiPredictedGmp ? 'AI Predicted' : 'Unofficial GMP'}
+                {activeTopGmp.gmpSource ? `Unofficial · ${activeTopGmp.gmpSource}` : 'Unofficial GMP'}
               </span>
             </div>
           </div>

@@ -6,13 +6,7 @@ import {
   Lock,
   Unlock,
   AlertTriangle,
-  Clock,
-  Building2,
-  TrendingDown,
-  ShieldAlert,
   CheckCircle2,
-  Calendar,
-  Layers,
 } from 'lucide-react';
 
 export const AnchorLockInTracker: React.FC = () => {

@@ -118,3 +118,27 @@ export function applyRateLimitHeaders(
     headers.set('Retry-After', String(result.resetSeconds));
   }
 }
+
+/**
+ * Distributed fixed-window limiter backed by Redis (works across serverless instances).
+ * Key it by user id for authenticated endpoints (e.g. `allotment:${userId}`).
+ */
+export async function checkDistributedRateLimit(
+  key: string,
+  limit: number,
+  windowSeconds: number
+): Promise<RateLimitResult> {
+  const { getRedisClient } = await import('@/lib/redis');
+  const redis = getRedisClient();
+  const bucket = `ratelimit:${key}:${Math.floor(Date.now() / (windowSeconds * 1000))}`;
+  try {
+    const count: number = await redis.incr(bucket);
+    if (count === 1) await redis.expire(bucket, windowSeconds);
+    const resetSeconds = windowSeconds - (Math.floor(Date.now() / 1000) % windowSeconds);
+    return { allowed: count <= limit, limit, remaining: Math.max(0, limit - count), resetSeconds };
+  } catch {
+    // Redis unavailable: degrade to the per-instance limiter rather than failing open entirely.
+    const local = checkRateLimit(key, 'mutating');
+    return { ...local, limit };
+  }
+}

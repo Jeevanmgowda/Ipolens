@@ -7,7 +7,7 @@ export interface LogEntry {
   timestamp: string;
   level: 'debug' | 'info' | 'warn' | 'error';
   message: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
 }
 
 class Logger {
@@ -21,7 +21,7 @@ class Logger {
     this.logLevel = 'production' in process.env ? 'info' : this.logLevel;
   }
 
-  private log(level: LogEntry['level'], message: string, context?: Record<string, any>): void {
+  private log(level: LogEntry['level'], message: string, context?: Record<string, unknown>): void {
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
@@ -45,7 +45,7 @@ class Logger {
     }
   }
 
-  private productionLog(level: LogEntry['level'], message: string, context?: Record<string, any>): void {
+  private productionLog(level: LogEntry['level'], message: string, context?: Record<string, unknown>): void {
     const timestamp = new Date().toISOString();
     const contextStr = context && Object.keys(context).length ? ` ${JSON.stringify(context)}` : '';
 
@@ -65,7 +65,7 @@ class Logger {
     }
   }
 
-  private developmentLog(level: LogEntry['level'], message: string, context?: Record<string, any>): void {
+  private developmentLog(level: LogEntry['level'], message: string, context?: Record<string, unknown>): void {
     const color = this.getLogColor(level);
     const contextStr = context && Object.keys(context).length ? ` ${JSON.stringify(context)}` : '';
 
@@ -93,20 +93,20 @@ class Logger {
   private reset = '\x1b[0m';
 
   // Log level getters
-  get debug(): (message: string, context?: Record<string, any>) => void {
-    return (message: string, context?: Record<string, any>) => this.log('debug', message, context);
+  get debug(): (message: string, context?: Record<string, unknown>) => void {
+    return (message: string, context?: Record<string, unknown>) => this.log('debug', message, context);
   }
 
-  get info(): (message: string, context?: Record<string, any>) => void {
-    return (message: string, context?: Record<string, any>) => this.log('info', message, context);
+  get info(): (message: string, context?: Record<string, unknown>) => void {
+    return (message: string, context?: Record<string, unknown>) => this.log('info', message, context);
   }
 
-  get warn(): (message: string, context?: Record<string, any>) => void {
-    return (message: string, context?: Record<string, any>) => this.log('warn', message, context);
+  get warn(): (message: string, context?: Record<string, unknown>) => void {
+    return (message: string, context?: Record<string, unknown>) => this.log('warn', message, context);
   }
 
-  get error(): (message: string, context?: Record<string, any>) => void {
-    return (message: string, context?: Record<string, any>) => this.log('error', message, context);
+  get error(): (message: string, context?: Record<string, unknown>) => void {
+    return (message: string, context?: Record<string, unknown>) => this.log('error', message, context);
   }
 
   // Export captured logs for monitoring

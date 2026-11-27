@@ -4,9 +4,6 @@ import React, { useState } from 'react';
 import {
   Sparkles,
   RefreshCw,
-  TrendingUp,
-  TrendingDown,
-  ShieldAlert,
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
@@ -84,7 +81,6 @@ export const AiStockPredictionPanel: React.FC<AiStockPredictionPanelProps> = ({
   const {
     signal,
     convictionScore,
-    trendDirection,
     actionSummary,
     technicalTelemetry,
     tradeSetup,

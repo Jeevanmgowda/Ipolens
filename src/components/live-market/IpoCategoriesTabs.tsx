@@ -1,36 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import {
-  LiveMarketIpoItem,
-  IpoCategoryTab,
-} from '@/types/liveMarket';
-import {
-  getCanonicalSymbol,
-  isSameIpo,
-  isFalseOrDemoSymbol,
-} from '@/lib/utils/ipoDeduplication';
-import { predictGmpForIpo } from '@/services/mlListingGainModel';
-import {
-  Search,
-  Filter,
-  Star,
-  Flame,
-  Calendar,
-  Clock,
-  TrendingUp,
-  BarChart2,
-  ExternalLink,
-  Layers,
-  LayoutGrid,
-  List,
-  Sparkles,
-  ArrowUpRight,
-  ArrowDownRight,
-  Eye,
-  CheckCircle2,
-  AlertCircle,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { LiveMarketIpoItem, IpoCategoryTab } from '@/types/liveMarket';
+import { Search, Star, Flame, Calendar, BarChart2, Sparkles, LineChart, Info, Brain, ExternalLink } from 'lucide-react';
 
 interface IpoCategoriesTabsProps {
   ipos: LiveMarketIpoItem[];
@@ -42,127 +14,30 @@ interface IpoCategoriesTabsProps {
   onAnalyzeAi?: (symbol: string, companyName: string) => void;
 }
 
-export function isListingDatePastClient(dateStr?: string | null): boolean {
-  if (!dateStr || dateStr === 'TBD' || dateStr === '—' || dateStr === '-' || dateStr.toLowerCase().includes('t+3')) {
-    return false;
-  }
-  const lower = dateStr.toLowerCase();
-  if (lower.includes('listed') || lower.includes('past')) {
-    return true;
-  }
-  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
-    const isoParsed = Date.parse(dateStr);
-    if (!isNaN(isoParsed)) {
-      return Date.now() >= isoParsed;
-    }
-  }
-  const match = dateStr.match(/(\d{1,2})[-/ ]([a-zA-Z]{3,9})(?:[-/ ](\d{2,4}))?/);
-  if (match) {
-    const day = parseInt(match[1], 10);
-    const mStr = match[2].toLowerCase().slice(0, 3);
-    let year = match[3] ? parseInt(match[3], 10) : 2026;
-    if (year < 100) year += 2000;
-    const months: Record<string, number> = {
-      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
-    };
-    const m = months[mStr];
-    if (m !== undefined) {
-      const listingMs = Date.UTC(year, m, day, 4, 30, 0);
-      return Date.now() >= listingMs;
-    }
-  }
-  const parsed = Date.parse(dateStr);
-  if (!isNaN(parsed)) return Date.now() >= parsed;
-  return false;
+/** Status comes from the server (derived from the issue calendar); this only maps it to a tab id. */
+export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): IpoCategoryTab {
+  return ipo.status.toLowerCase() as IpoCategoryTab;
 }
 
-export function isBiddingStartedClient(dateStr?: string | null): boolean {
-  if (!dateStr || dateStr === 'TBD' || dateStr === '—' || dateStr === '-') return false;
-  const lower = dateStr.toLowerCase();
-  if (lower.includes('past') || lower.includes('closed') || lower.includes('allotted') || lower.includes('listed')) {
-    return true;
-  }
-  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
-    const isoParsed = Date.parse(dateStr);
-    if (!isNaN(isoParsed)) {
-      return Date.now() >= isoParsed;
-    }
-  }
-  const regex = /(\d{1,2})[-/ ]([a-zA-Z]{3,9})(?:[-/ ](\d{2,4}))?/g;
-  let match: RegExpExecArray | null;
-  const matches: { day: number; month: number; year: number }[] = [];
-  const months: Record<string, number> = {
-    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
-  };
-  while ((match = regex.exec(dateStr)) !== null) {
-    const day = parseInt(match[1], 10);
-    const mStr = match[2].toLowerCase().slice(0, 3);
-    let year = match[3] ? parseInt(match[3], 10) : 2026;
-    if (year < 100) year += 2000;
-    const m = months[mStr];
-    if (m !== undefined && day >= 1 && day <= 31) {
-      matches.push({ day, month: m, year });
-    }
-  }
-  if (matches.length > 0) {
-    const target = matches[0];
-    const openMs = Date.UTC(target.year, target.month, target.day, 4, 30, 0); // 10:00 AM IST
-    return Date.now() >= openMs;
-  }
-  const parsed = Date.parse(dateStr);
-  if (!isNaN(parsed)) return Date.now() >= parsed;
-  return false;
-}
+const TABS: Array<{ id: IpoCategoryTab; label: string }> = [
+  { id: 'open', label: 'Open' },
+  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'closed', label: 'Closed' },
+  { id: 'listed', label: 'Listed' },
+];
 
-export function getEffectiveIpoStatus(ipo: LiveMarketIpoItem): 'open' | 'upcoming' | 'closed' | 'listed' {
-  const sym = (ipo.symbol || '').toUpperCase().trim();
-  const isJioFin = sym === 'JIOFIN';
+const fmtDate = (d: string | null | undefined) =>
+  d ? new Date(`${d}T00:00:00+05:30`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+const fmtX = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v}x`);
+const timeAgo = (iso: string | null | undefined) => {
+  if (!iso) return null;
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+  return `${Math.round(mins / 1440)}d ago`;
+};
 
-  // An explicitly upcoming or TBD issue (such as JIOPLAT mega IPO) is never listed
-  if (sym === 'JIOPLAT' && (ipo.status === 'Upcoming' || ipo.openDate === 'TBD')) {
-    return 'upcoming';
-  }
-
-  const isListed =
-    ipo.status === 'Listed' ||
-    ipo.isListed === true ||
-    isJioFin ||
-    (ipo.remainingTime || '').toLowerCase().includes('listed') ||
-    (typeof ipo.currentPrice === 'number' && ipo.currentPrice > 0 && ipo.dayChange !== undefined && ipo.status !== 'Upcoming') ||
-    isListingDatePastClient(ipo.listingDate) ||
-    isListingDatePastClient(ipo.expectedListingDate);
-
-  if (isListed) {
-    return 'listed';
-  }
-  const rem = (ipo.remainingTime || '').toLowerCase();
-  const isClosed =
-    rem.includes('bidding closed') ||
-    rem.includes('closed') ||
-    ipo.status === 'Closed' ||
-    (ipo.closeDate && isListingDatePastClient(ipo.closeDate));
-
-  if (isClosed) {
-    return 'closed';
-  }
-
-  // If bidding start date is in the future, it is strictly UPCOMING!
-  if (ipo.openDate && ipo.openDate !== 'TBD' && !isBiddingStartedClient(ipo.openDate)) {
-    return 'upcoming';
-  }
-
-  if (ipo.status === 'Upcoming') {
-    return 'upcoming';
-  }
-
-  if (ipo.status === 'Open' || (ipo.openDate && isBiddingStartedClient(ipo.openDate))) {
-    return 'open';
-  }
-
-  return 'upcoming';
-}
+type SortKey = 'default' | 'gmp' | 'subscription' | 'issuesize';
 
 export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
   ipos,
@@ -174,984 +49,276 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
   onAnalyzeAi,
 }) => {
   const [activeTab, setActiveTab] = useState<IpoCategoryTab>('open');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [seriesFilter, setSeriesFilter] = useState<'all' | 'EQ' | 'SME' | 'DEBT'>('all');
-  const [watchlistOnly, setWatchlistOnly] = useState<boolean>(false);
-  const [sortBy, setSortBy] = useState<'gmp' | 'subscription' | 'issuesize' | 'listingdate' | 'price' | 'change'>('gmp');
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [series, setSeries] = useState<'all' | 'EQ' | 'SME'>('all');
+  const [query, setQuery] = useState('');
+  const [watchOnly, setWatchOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<SortKey>('default');
 
-  // Deduplicate ipos by canonical symbol and company name so NO tab or grid ever renders duplicate cards!
-  const deduplicatedIpos = useMemo(() => {
-    const result: LiveMarketIpoItem[] = [];
-    for (const rawIpo of ipos) {
-      if (isFalseOrDemoSymbol(rawIpo.symbol)) continue;
-      const canonical = getCanonicalSymbol(rawIpo.symbol);
-      const isDupIdx = result.findIndex((existing) =>
-        isSameIpo(existing.symbol, existing.companyName, canonical, rawIpo.companyName)
-      );
-
-      const rawPrices = String(rawIpo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
-      const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
-      const parsedMin = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[0]) : parsedMax;
-      const pHigh = rawIpo.priceHigh || rawIpo.issuePrice || rawIpo.priceLow || parsedMax || 100;
-      const pLow = rawIpo.priceLow || parsedMin || pHigh;
-
-      const series: 'EQ' | 'SME' | 'DEBT' = rawIpo.series === 'DEBT' ? 'DEBT' : (rawIpo.series === 'SME' ? 'SME' : 'EQ');
-      const lot = series === 'DEBT'
-        ? 1
-        : series === 'SME'
-        ? (rawIpo.lotSize && rawIpo.lotSize >= 600 ? rawIpo.lotSize : 1200)
-        : (rawIpo.lotSize && rawIpo.lotSize > 0 && !(rawIpo.lotSize === 14 && pHigh < 700) && (rawIpo.lotSize * pHigh >= 10000))
-        ? rawIpo.lotSize
-        : Math.max(1, Math.floor(15000 / pHigh));
-      const minInv = series === 'DEBT'
-        ? (pHigh * lot)
-        : series === 'SME'
-        ? (rawIpo.minInvestment && rawIpo.minInvestment >= 90000 ? rawIpo.minInvestment : (pHigh * lot))
-        : (rawIpo.minInvestment && rawIpo.minInvestment >= 10000 ? rawIpo.minInvestment : (pHigh * lot));
-
-      const sanitized: LiveMarketIpoItem = {
-        ...rawIpo,
-        symbol: canonical || rawIpo.symbol,
-        id: (canonical || rawIpo.symbol).toLowerCase(),
-        priceHigh: pHigh,
-        priceLow: pLow,
-        series,
-        lotSize: lot,
-        minInvestment: minInv,
-      };
-
-      if (isDupIdx === -1) {
-        result.push(sanitized);
-      } else {
-        const existing = result[isDupIdx];
-        const isMergedListed = getEffectiveIpoStatus(existing) === 'listed' || getEffectiveIpoStatus(sanitized) === 'listed';
-        const chosenSeries: 'EQ' | 'SME' | 'DEBT' = (existing.series === 'SME' || sanitized.series === 'SME') ? 'SME' : (existing.series === 'DEBT' || sanitized.series === 'DEBT' ? 'DEBT' : 'EQ');
-        const chosenLot = chosenSeries === 'DEBT' ? 1 : chosenSeries === 'SME' ? (existing.lotSize >= 600 ? existing.lotSize : (sanitized.lotSize >= 600 ? sanitized.lotSize : 1200)) : (existing.lotSize > 0 ? existing.lotSize : sanitized.lotSize);
-        const chosenMinInv = chosenSeries === 'DEBT' ? (existing.priceHigh * chosenLot) : chosenSeries === 'SME' ? Math.max(90000, existing.priceHigh * chosenLot) : Math.max(10000, existing.priceHigh * chosenLot);
-
-        result[isDupIdx] = {
-          ...existing,
-          ...sanitized,
-          symbol: canonical || existing.symbol,
-          id: (canonical || existing.symbol).toLowerCase(),
-          series: chosenSeries,
-          lotSize: chosenLot,
-          minInvestment: chosenMinInv,
-          status: isMergedListed ? 'Listed' : (existing.status === 'Open' || sanitized.status === 'Open' ? 'Open' : (sanitized.status || existing.status)),
-          isListed: isMergedListed,
-          gmp: (sanitized.gmp && sanitized.gmp > 0) ? sanitized.gmp : existing.gmp,
-          gmpPercent: (sanitized.gmpPercent && sanitized.gmpPercent > 0) ? sanitized.gmpPercent : existing.gmpPercent,
-          isAiPredictedGmp: sanitized.isAiPredictedGmp ?? existing.isAiPredictedGmp,
-        };
-      }
-    }
-
-    // Pass 2: Predict GMP for any Open or Upcoming IPO with flat 0 or missing GMP!
-    return result.map((item) => {
-      const eff = getEffectiveIpoStatus(item);
-      if (eff !== 'listed' && item.series !== 'DEBT' && (!item.gmp || item.gmp <= 0)) {
-        const pHigh = item.priceHigh || item.priceLow || item.issuePrice || 100;
-        const ml = predictGmpForIpo({
-          symbol: item.symbol,
-          companyName: item.companyName,
-          price: pHigh,
-          series: item.series,
-          currentSubscription: item.currentSubscription || 0,
-          qibSubscription: item.qibSubscription || 0,
-          retailSubscription: item.retailSubscription || 0,
-          niiSubscription: item.niiSubscription || 0,
-          status: eff === 'open' ? 'Open' : 'Upcoming',
-        });
-        if (ml.predictedGmp > 0) {
-          return {
-            ...item,
-            gmp: ml.predictedGmp,
-            gmpPercent: ml.predictedGainPct,
-            isAiPredictedGmp: true,
-            predictedListingPrice: ml.predictedListingPrice,
-          };
-        }
-      }
-      return item;
-    });
+  const counts = useMemo(() => {
+    const c: Record<IpoCategoryTab, number> = { open: 0, upcoming: 0, closed: 0, listed: 0 };
+    ipos.forEach((i) => c[getEffectiveIpoStatus(i)]++);
+    return c;
   }, [ipos]);
 
-  // Counts by category (strictly categorized by effective bidding lifecycle)
-  const counts = useMemo(() => {
-    let upcoming = 0;
-    let open = 0;
-    let closed = 0;
-    let listed = 0;
-    for (const ipo of deduplicatedIpos) {
-      const eff = getEffectiveIpoStatus(ipo);
-      if (eff === 'open') open++;
-      else if (eff === 'upcoming') upcoming++;
-      else if (eff === 'closed') closed++;
-      else if (eff === 'listed') listed++;
-    }
-    return { upcoming, open, closed, listed };
-  }, [deduplicatedIpos]);
-
-  // Filter & Sort
-  const filteredIpos = useMemo(() => {
-    return deduplicatedIpos
-      .filter((ipo) => {
-        const eff = getEffectiveIpoStatus(ipo);
-        // Tab matching
-        if (activeTab === 'upcoming' && eff !== 'upcoming') return false;
-        if (activeTab === 'open' && eff !== 'open') return false;
-        if (activeTab === 'closed' && eff !== 'closed') return false;
-        if (activeTab === 'listed' && eff !== 'listed') return false;
-
-        // Series matching
-        if (seriesFilter !== 'all' && ipo.series !== seriesFilter) return false;
-
-        // Watchlist filter
-        if (watchlistOnly && !watchlist.includes(ipo.symbol.toUpperCase())) return false;
-
-        // Search query
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase().trim();
-          const matchSym = ipo.symbol.toLowerCase().includes(q);
-          const matchName = ipo.companyName.toLowerCase().includes(q);
-          if (!matchSym && !matchName) return false;
-        }
-
-        return true;
-      })
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const val = (v: number | null | undefined) => (v === null || v === undefined ? -Infinity : v);
+    return ipos
+      .filter((i) => getEffectiveIpoStatus(i) === activeTab)
+      .filter((i) => series === 'all' || i.series === series)
+      .filter((i) => !watchOnly || watchlist.includes(i.symbol))
+      .filter((i) => !q || i.symbol.toLowerCase().includes(q) || i.companyName.toLowerCase().includes(q))
       .sort((a, b) => {
-        if (sortBy === 'gmp') return b.gmpPercent - a.gmpPercent;
-        if (sortBy === 'subscription') return b.currentSubscription - a.currentSubscription;
-        if (sortBy === 'price') return (b.currentPrice || b.priceHigh) - (a.currentPrice || a.priceHigh);
-        if (sortBy === 'change') return (b.dayChangePercent || 0) - (a.dayChangePercent || 0);
-        if (sortBy === 'issuesize') return b.priceHigh * b.lotSize - a.priceHigh * a.lotSize;
-        return 0;
+        if (sortBy === 'gmp') return val(b.gmpPercent) - val(a.gmpPercent);
+        if (sortBy === 'subscription') return val(b.currentSubscription) - val(a.currentSubscription);
+        if (sortBy === 'issuesize') return val(b.issueSizeCr) - val(a.issueSizeCr);
+        const key = activeTab === 'listed' ? 'listingDate' : 'openDate';
+        return activeTab === 'upcoming'
+          ? (a[key] || '').localeCompare(b[key] || '')
+          : (b[key] || '').localeCompare(a[key] || '');
       });
-  }, [deduplicatedIpos, activeTab, seriesFilter, watchlistOnly, searchQuery, sortBy, watchlist]);
+  }, [ipos, activeTab, series, watchOnly, watchlist, query, sortBy]);
 
   return (
-    <div className="space-y-5">
-      {/* Category Tabs & Controls Bar */}
-      <div className="glass-panel p-4 rounded-2xl border border-white/10 space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Main 4 Category Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-900/90 border border-white/5">
-            {[
-              { id: 'open', label: 'Open for Bidding', count: counts.open, live: true },
-              { id: 'upcoming', label: 'Upcoming', count: counts.upcoming },
-              { id: 'closed', label: 'Closed / Past', count: counts.closed },
-              { id: 'listed', label: 'Listed Market', count: counts.listed },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-2 ${
-                  activeTab === tab.id
-                    ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-md shadow-cyan-500/25'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                {tab.live && activeTab === tab.id ? (
-                  <span className="w-2 h-2 rounded-full bg-slate-950 animate-ping" />
-                ) : tab.live ? (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                ) : null}
-                <span>{tab.label}</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                    activeTab === tab.id ? 'bg-slate-950/20 text-slate-950' : 'bg-white/5 text-slate-400'
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {/* Quick Filter Controls: Series, Watchlist, View Mode */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Watchlist Toggle */}
-            <button
-              onClick={() => setWatchlistOnly(!watchlistOnly)}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                watchlistOnly
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm shadow-amber-500/10'
-                  : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Star className={`w-3.5 h-3.5 ${watchlistOnly ? 'fill-amber-400 text-amber-400' : ''}`} />
-              <span>Watchlist</span>
-              {watchlist.length > 0 && (
-                <span className="px-1 py-0.2 rounded text-[10px] font-mono bg-white/10 text-slate-300">
-                  {watchlist.length}
-                </span>
-              )}
-            </button>
-
-            {/* Segment Selector (Mainboard vs SME vs Debt) */}
-            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10 text-xs">
-              <button
-                onClick={() => setSeriesFilter('all')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
-                  seriesFilter === 'all' ? 'bg-white/15 text-white font-semibold' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setSeriesFilter('EQ')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
-                  seriesFilter === 'EQ' ? 'bg-blue-500/20 text-blue-300 font-semibold' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Mainboard
-              </button>
-              <button
-                onClick={() => setSeriesFilter('SME')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
-                  seriesFilter === 'SME' ? 'bg-purple-500/20 text-purple-300 font-semibold' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                SME
-              </button>
-              <button
-                onClick={() => setSeriesFilter('DEBT')}
-                className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
-                  seriesFilter === 'DEBT' ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Debt
-              </button>
-            </div>
-
-            {/* View Mode Toggle */}
-            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-white/10">
-              <button
-                onClick={() => setViewMode('grid')}
-                title="Grid View"
-                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                  viewMode === 'grid' ? 'bg-white/15 text-white' : 'text-slate-500 hover:text-white'
-                }`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                title="Table View"
-                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                  viewMode === 'table' ? 'bg-white/15 text-white' : 'text-slate-500 hover:text-white'
-                }`}
-              >
-                <List className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Search & Sort Controls Row */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-white/5">
-          {/* Search Box */}
-          <div className="relative w-full sm:w-96">
-            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setActiveTab(t.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+              activeTab === t.id
+                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
+                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+            }`}
+          >
+            {t.label} <span className="ml-1 font-mono text-slate-400">{counts[t.id]}</span>
+          </button>
+        ))}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-2 top-2 text-slate-500" />
             <input
-              type="text"
-              placeholder="Search IPO or company (e.g. Tata, Swiggy, Premier)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950/80 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search symbol or company"
+              className="pl-7 pr-2 py-1.5 rounded-lg bg-slate-900/70 border border-white/10 text-xs text-slate-200 w-52"
             />
           </div>
-
-          {/* Sort Dropdown */}
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end text-xs text-slate-400">
-            <span className="shrink-0 flex items-center gap-1 font-medium">
-              <Filter className="w-3.5 h-3.5" />
-              Sort By:
-            </span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-slate-950/90 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500/50 cursor-pointer"
-            >
-              <option value="gmp">Highest GMP (%)</option>
-              <option value="subscription">Highest Subscription (x)</option>
-              <option value="price">Issue / Current Price</option>
-              <option value="change">Day % Change</option>
-              <option value="issuesize">Issue Size</option>
-            </select>
-          </div>
+          <select
+            value={series}
+            onChange={(e) => setSeries(e.target.value as typeof series)}
+            className="py-1.5 px-2 rounded-lg bg-slate-900/70 border border-white/10 text-xs text-slate-200"
+            aria-label="Board"
+          >
+            <option value="all">All boards</option>
+            <option value="EQ">Mainboard</option>
+            <option value="SME">SME</option>
+          </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortKey)}
+            className="py-1.5 px-2 rounded-lg bg-slate-900/70 border border-white/10 text-xs text-slate-200"
+            aria-label="Sort"
+          >
+            <option value="default">By date</option>
+            <option value="subscription">Subscription</option>
+            <option value="gmp">Market GMP %</option>
+            <option value="issuesize">Issue size</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setWatchOnly((v) => !v)}
+            className={`flex items-center gap-1 py-1.5 px-2 rounded-lg border text-xs cursor-pointer ${
+              watchOnly ? 'border-amber-400/40 bg-amber-500/10 text-amber-200' : 'border-white/10 bg-white/5 text-slate-300'
+            }`}
+          >
+            <Star className="w-3.5 h-3.5" /> Watchlist
+          </button>
         </div>
       </div>
 
-      {/* Grid or Table Listing */}
-      {filteredIpos.length === 0 ? (
-        <div className="glass-card p-12 rounded-2xl border border-white/10 text-center space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mx-auto">
-            <Search className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-white">No IPOs match your criteria</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Try adjusting your search query, selecting &quot;All Series&quot;, or clearing the watchlist filter.
-          </p>
-        </div>
-      ) : viewMode === 'grid' ? (
-        /* Card Grid View */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredIpos.map((ipo) => {
-            const isWatchlisted = watchlist.includes(ipo.symbol.toUpperCase());
-            const effStatus = getEffectiveIpoStatus(ipo);
-            const isOpen = effStatus === 'open';
-            const isUpcoming = effStatus === 'upcoming';
-            const isListed = effStatus === 'listed';
-            const isClosed = effStatus === 'closed';
-
-            return (
-              <div
-                key={ipo.symbol}
-                className="glass-card rounded-2xl p-5 border border-white/10 flex flex-col justify-between hover:border-cyan-500/40 transition group relative"
-              >
-                <div>
-                  {/* Card Top: Badges & Watchlist */}
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-base text-white">{ipo.symbol}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            ipo.series === 'DEBT'
-                              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                              : ipo.series === 'SME'
-                              ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
-                              : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
-                          }`}
-                        >
-                          {ipo.series}
-                        </span>
-                      </div>
-                      <h4 className="text-xs text-slate-300 font-medium line-clamp-1 group-hover:text-cyan-300 transition">
-                        {ipo.companyName}
-                      </h4>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {isOpen ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          Open
-                        </span>
-                      ) : isUpcoming ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                          Upcoming
-                        </span>
-                      ) : isListed ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                          Listed
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700/50 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                          Closed
-                        </span>
-                      )}
-
-                      {/* Watchlist Star Button */}
-                      <button
-                        onClick={() => onToggleWatchlist(ipo.symbol)}
-                        title={isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-amber-400 transition cursor-pointer"
-                      >
-                        <Star className={`w-3.5 h-3.5 ${isWatchlisted ? 'fill-amber-400 text-amber-400' : ''}`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Dates / Remaining Time */}
-                  <div className="flex items-center justify-between text-[11px] font-mono py-1.5 px-2.5 rounded-lg bg-slate-950/50 border border-white/5 mb-3 text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                      {isUpcoming
-                        ? `Opens: ${ipo.openDate || 'TBD'}`
-                        : isOpen
-                        ? `Closes: ${ipo.closeDate || 'TBD'}`
-                        : isListed
-                        ? `Listed: ${ipo.listingDate && ipo.listingDate !== 'TBD' ? ipo.listingDate : (ipo.closeDate ? `Listed (${ipo.closeDate})` : 'Listed on Exchange')}`
-                        : `Closed: ${ipo.closeDate || 'Recent Offering'}`}
-                    </span>
-                    {isOpen && ipo.remainingTime && (
-                      <span className="text-amber-300 font-bold flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-amber-400 animate-spin" />
-                        {ipo.remainingTime}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Pricing Grid */}
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
-                      <span className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
-                        <span>{isListed ? 'Current Price (LTP)' : 'Price Band'}</span>
-                        {isListed && (
-                          <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            LIVE
-                          </span>
-                        )}
-                      </span>
-                      <span className={`font-mono text-sm font-extrabold mt-0.5 block truncate ${isListed ? 'text-emerald-400' : 'text-white'}`}>
-                        {isListed ? (
-                          ipo.currentPrice !== undefined && ipo.currentPrice !== null ? (
-                            `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                          ) : ipo.listingPrice ? (
-                            `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                          ) : (
-                            ipo.priceBand || '—'
-                          )
-                        ) : (
-                          ipo.priceBand || '—'
-                        )}
-                      </span>
-                    </div>
-
-                    {(() => {
-                      const rawPrices = String(ipo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
-                      const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
-                      const effectivePrice = Math.max(1, ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 100);
-
-                      const displayLot = ipo.series === 'DEBT'
-                        ? 1
-                        : ipo.series === 'SME'
-                        ? (ipo.lotSize && ipo.lotSize >= 600 ? ipo.lotSize : 1200)
-                        : (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && effectivePrice < 700) && (ipo.lotSize * effectivePrice >= 10000))
-                        ? ipo.lotSize
-                        : Math.max(1, Math.floor(15000 / effectivePrice));
-
-                      const displayMinInv = ipo.series === 'DEBT'
-                        ? (effectivePrice * displayLot)
-                        : ipo.series === 'SME'
-                        ? (ipo.minInvestment && ipo.minInvestment >= 90000 ? ipo.minInvestment : (effectivePrice * displayLot))
-                        : (ipo.minInvestment && ipo.minInvestment >= 10000 ? ipo.minInvestment : (effectivePrice * displayLot));
-
-                      return (
-                        <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
-                          <span className="text-[10px] text-slate-400 font-medium block">
-                            {isListed
-                              ? "Today's Change (vs Last Close)"
-                              : ipo.series === 'DEBT'
-                              ? `Min Lot (${displayLot} ${displayLot === 1 ? 'unit' : 'units'})`
-                              : `Lot Size (${displayLot} shares)`}
-                          </span>
-                          {isListed ? (
-                            (() => {
-                              const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
-                              const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
-                              const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
-                                ? ipo.dayChange
-                                : Number((cur - prev).toFixed(2));
-                              const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
-                                ? ipo.dayChangePercent
-                                : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
-
-                              return (
-                                <div>
-                                  <span
-                                    className={`font-mono text-sm font-bold mt-0.5 block ${
-                                      diff > 0
-                                        ? 'text-emerald-400'
-                                        : diff < 0
-                                        ? 'text-rose-400'
-                                        : 'text-slate-400'
-                                    }`}
-                                  >
-                                    {diff >= 0 ? '+' : ''}₹{diff.toFixed(2)}{' '}
-                                    <span className="text-xs font-normal">
-                                      ({pct >= 0 ? '+' : ''}{pct}%)
-                                    </span>
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 block font-mono mt-0.5 truncate">
-                                    vs Close: ₹{prev.toFixed(2)}
-                                  </span>
-                                </div>
-                              );
-                            })()
-                          ) : (
-                            <span className="font-mono text-sm font-bold text-cyan-300 mt-0.5 block">
-                              ₹{displayMinInv.toLocaleString('en-IN')}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Tailored Category Metrics Banner */}
-                  {isListed ? (
-                    /* LISTED MARKET TELEMETRY BANNER */
-                    <div className="space-y-2 p-3 rounded-xl bg-slate-900/60 border border-white/5 mb-4">
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">Prev Close</span>
-                          <span className="font-mono font-bold text-slate-200">
-                            ₹{(ipo.previousClose || ipo.issuePrice || ipo.listingPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">Issue Price</span>
-                          <span className="font-mono font-bold text-slate-200">
-                            {ipo.issuePrice
-                              ? `₹${ipo.issuePrice.toLocaleString('en-IN')}`
-                              : ipo.priceHigh
-                              ? `₹${ipo.priceHigh.toLocaleString('en-IN')}`
-                              : ipo.priceBand || '—'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">Listing Price</span>
-                          <span className="font-mono font-bold text-slate-200">
-                            {ipo.listingPrice
-                              ? `₹${ipo.listingPrice.toLocaleString('en-IN')}`
-                              : ipo.currentPrice
-                              ? `₹${ipo.currentPrice.toLocaleString('en-IN')}`
-                              : '—'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-xs">
-                        <span className="text-slate-400 flex items-center gap-1">
-                          <BarChart2 className="w-3.5 h-3.5 text-cyan-400" />
-                          Traded Volume
-                        </span>
-                        <span className="font-mono font-semibold text-slate-300">
-                          {ipo.volume !== undefined && ipo.volume !== null && ipo.volume > 0
-                            ? `${ipo.volume.toLocaleString('en-IN')} shares`
-                            : ipo.issueSize && ipo.issueSize !== '—'
-                            ? `Issue: ${ipo.issueSize}`
-                            : 'Exchange Traded'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    /* PRIMARY IPO SUBSCRIPTION & GMP BANNER (Upcoming, Open, Closed) */
-                    <div className="space-y-2 p-3 rounded-xl bg-slate-900/60 border border-white/5 mb-4">
-                      {/* Subscription multiple */}
-                      <div>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <BarChart2 className="w-3.5 h-3.5 text-cyan-400" />
-                            {activeTab === 'closed' ? 'Final Subscription' : 'Subscription'}
-                          </span>
-                          <span className="font-mono font-bold text-cyan-300">
-                            {ipo.currentSubscription > 0 ? `${ipo.currentSubscription}x` : isUpcoming ? 'Awaiting Open' : '—'}
-                          </span>
-                        </div>
-                        {/* Sub-category pills */}
-                        {ipo.series === 'DEBT' ? (
-                          <div className="p-1 rounded bg-white/5 text-[10px] font-mono text-center text-slate-400">
-                            Exchange Public Tranche (Overall: {ipo.currentSubscription > 0 ? `${ipo.currentSubscription}x` : 'Open'})
-                          </div>
-                        ) : (ipo.retailSubscription > 0 || ipo.niiSubscription > 0 || ipo.qibSubscription > 0) ? (
-                          <div className="grid grid-cols-3 gap-1 pt-1 text-[10px] font-mono text-center">
-                            <div className="p-1 rounded bg-white/5">
-                              <span className="text-slate-400 block text-[9px]">Retail</span>
-                              <span className="text-slate-200 font-semibold">{ipo.retailSubscription}x</span>
-                            </div>
-                            <div className="p-1 rounded bg-white/5">
-                              <span className="text-slate-400 block text-[9px]">NII</span>
-                              <span className="text-slate-200 font-semibold">{ipo.niiSubscription}x</span>
-                            </div>
-                            <div className="p-1 rounded bg-white/5">
-                              <span className="text-slate-400 block text-[9px]">QIB</span>
-                              <span className="text-slate-200 font-semibold">{ipo.qibSubscription}x</span>
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-
-                      {/* GMP Metric */}
-                      <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-xs">
-                        <span className="text-slate-400 flex items-center gap-1">
-                          <Flame className={`w-3.5 h-3.5 ${ipo.isAiPredictedGmp ? 'text-cyan-400' : 'text-purple-400'}`} />
-                          <span>{ipo.isAiPredictedGmp ? 'AI Predicted GMP' : 'Estimated GMP'}</span>
-                          {ipo.isAiPredictedGmp && (
-                            <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-0.5 ml-0.5">
-                              <Sparkles className="w-2.5 h-2.5" />
-                              ML Model
-                            </span>
-                          )}
-                        </span>
-                        {ipo.series === 'DEBT' ? (
-                          <span className="font-mono text-xs text-slate-400">
-                            N/A (Debt Instrument)
-                          </span>
-                        ) : ipo.gmp > 0 ? (
-                          <div className={`flex items-center gap-1 font-mono font-bold ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
-                            <span>+₹{ipo.gmp}</span>
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded ${ipo.isAiPredictedGmp ? 'bg-cyan-500/15 border border-cyan-500/25 text-cyan-300' : 'bg-purple-500/15 border border-purple-500/25'}`}>
-                              +{ipo.gmpPercent}%
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="font-mono text-xs text-slate-400">
-                            ₹0 (Flat)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Data Source & Freshness Reconciliation Tag */}
-                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-2 pt-2 border-t border-white/5">
-                  <span className="flex items-center gap-1.5 text-slate-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>
-                      {ipo.series === 'SME'
-                        ? 'NSE / BSE SME'
-                        : ipo.series === 'DEBT'
-                        ? 'NSE Debt'
-                        : 'NSE Exchange'} Verified
-                    </span>
-                  </span>
-                  <span className="text-slate-400">
-                    {ipo.remainingTime || 'Live Feed'}
-                  </span>
-                </div>
-
-                {/* Quick Action Buttons */}
-                <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-white/10">
-                  <button
-                    onClick={() => onOpenDetails(ipo)}
-                    className="py-1.5 px-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white text-[11px] font-semibold transition cursor-pointer flex items-center justify-center gap-1 shadow-sm"
-                  >
-                    <Eye className="w-3 h-3 text-cyan-400" />
-                    <span>Details</span>
-                  </button>
-
-                  {isListed ? (
-                    <button
-                      onClick={() => onOpenStockChart(ipo)}
-                      className="col-span-2 py-1.5 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 hover:text-cyan-100 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-cyan-500/10"
-                    >
-                      <TrendingUp className="w-3 h-3 text-cyan-400 animate-pulse" />
-                      <span>Live Chart</span>
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => onOpenGmpTrend(ipo)}
-                        className="py-1.5 px-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 hover:text-purple-200 text-[11px] font-semibold transition cursor-pointer flex items-center justify-center gap-1"
-                      >
-                        <Flame className="w-3 h-3 text-purple-400" />
-                        <span>GMP</span>
-                      </button>
-
-                      <button
-                        onClick={() => onOpenStockChart(ipo)}
-                        className="py-1.5 px-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 text-[11px] font-semibold transition cursor-pointer flex items-center justify-center gap-1"
-                      >
-                        <TrendingUp className="w-3 h-3 text-cyan-400" />
-                        <span>Chart</span>
-                      </button>
-                    </>
-                  )}
-
-                  {onAnalyzeAi && (
-                    <button
-                      onClick={() => onAnalyzeAi(ipo.symbol, ipo.companyName)}
-                      className="py-1.5 px-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/35 border border-purple-500/40 text-purple-300 hover:text-purple-100 text-[11px] font-semibold transition cursor-pointer flex items-center justify-center gap-1"
-                      title="Analyze with AI DRHP RAG model"
-                    >
-                      <Sparkles className="w-3 h-3 text-purple-400" />
-                      <span>DRHP</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      {visible.length === 0 ? (
+        <div className="p-8 rounded-xl border border-white/10 bg-slate-900/40 text-center text-sm text-slate-400">
+          {ipos.length === 0
+            ? 'No IPO data yet. The live ingestion job populates this list; ask an admin to run a sync if it stays empty.'
+            : `No ${activeTab} IPOs match these filters.`}
         </div>
       ) : (
-        /* Detailed Table View */
-        <div className="glass-card rounded-2xl border border-white/10 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-white/10 bg-slate-950/70 text-slate-400 font-semibold">
-                  <th className="py-3 px-4 w-10">★</th>
-                  <th className="py-3 px-4">Company & Symbol</th>
-                  {activeTab === 'listed' ? (
-                    <>
-                      <th className="py-3 px-4">Current Price (LTP)</th>
-                      <th className="py-3 px-4">Today&apos;s Change (vs Close)</th>
-                      <th className="py-3 px-4">Prev Close / Issue</th>
-                      <th className="py-3 px-4">Traded Volume</th>
-                    </>
-                  ) : activeTab === 'closed' ? (
-                    <>
-                      <th className="py-3 px-4">Price Band</th>
-                      <th className="py-3 px-4">Final Subscription</th>
-                      <th className="py-3 px-4">Estimated GMP</th>
-                      <th className="py-3 px-4">Allotment / Listing</th>
-                    </>
-                  ) : (
-                    <>
-                      <th className="py-3 px-4">Price Band</th>
-                      <th className="py-3 px-4">
-                        {activeTab === 'open' ? 'Subscription (Total / QIB)' : 'Dates'}
-                      </th>
-                      <th className="py-3 px-4">Estimated GMP</th>
-                      <th className="py-3 px-4">Lot Size / Issue</th>
-                    </>
-                  )}
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {filteredIpos.map((ipo) => {
-                  const isWatchlisted = watchlist.includes(ipo.symbol.toUpperCase());
-                  const effStatus = getEffectiveIpoStatus(ipo);
-                  const isListed = effStatus === 'listed';
-
-                  return (
-                    <tr key={ipo.symbol} className="hover:bg-white/[0.02] transition">
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => onToggleWatchlist(ipo.symbol)}
-                          title="Watchlist"
-                          className="cursor-pointer text-slate-500 hover:text-amber-400"
-                        >
-                          <Star className={`w-3.5 h-3.5 ${isWatchlisted ? 'fill-amber-400 text-amber-400' : ''}`} />
-                        </button>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-white text-sm">{ipo.symbol}</span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[10px] font-semibold ${
-                              ipo.series === 'DEBT'
-                                ? 'bg-amber-500/15 text-amber-300'
-                                : ipo.series === 'SME'
-                                ? 'bg-purple-500/15 text-purple-300'
-                                : 'bg-white/5 text-slate-300'
-                            }`}
-                          >
-                            {ipo.series}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-400 line-clamp-1 max-w-[200px]">
-                          {ipo.companyName}
-                        </p>
-                      </td>
-
-                      {activeTab === 'listed' ? (
-                        <>
-                          <td className="py-3.5 px-4 font-mono font-extrabold text-emerald-400 text-sm">
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                              <span>
-                                {ipo.currentPrice !== undefined && ipo.currentPrice !== null
-                                  ? `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : ipo.listingPrice
-                                  ? `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : '—'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            {(() => {
-                              const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
-                              const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
-                              const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
-                                ? ipo.dayChange
-                                : Number((cur - prev).toFixed(2));
-                              const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
-                                ? ipo.dayChangePercent
-                                : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
-
-                              return (
-                                <div>
-                                  <span
-                                    className={`font-mono font-bold block ${
-                                      diff > 0
-                                        ? 'text-emerald-400'
-                                        : diff < 0
-                                        ? 'text-rose-400'
-                                        : 'text-slate-400'
-                                    }`}
-                                  >
-                                    {diff >= 0 ? '+' : ''}₹{diff.toFixed(2)} ({pct >= 0 ? '+' : ''}{pct}%)
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 font-mono block">
-                                    vs Close: ₹{prev.toFixed(2)}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-                          </td>
-                          <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
-                            <div>
-                              <span>
-                                {ipo.issuePrice ? `₹${ipo.issuePrice.toLocaleString('en-IN')}` : '—'} /{' '}
-                                {ipo.listingPrice ? `₹${ipo.listingPrice.toLocaleString('en-IN')}` : '—'}
-                              </span>
-                              <span className="block text-[10px] text-slate-400">
-                                Prev Close: ₹{(ipo.previousClose || ipo.issuePrice || ipo.listingPrice || 0).toFixed(2)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4 font-mono text-slate-300 text-xs">
-                            {ipo.volume !== undefined && ipo.volume !== null && ipo.volume > 0
-                              ? ipo.volume.toLocaleString('en-IN')
-                              : '—'}
-                          </td>
-                        </>
-                      ) : activeTab === 'closed' ? (
-                        <>
-                          <td className="py-3.5 px-4 font-mono font-semibold text-white">
-                            {ipo.priceBand}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className="font-mono text-cyan-300 font-bold block">{ipo.currentSubscription}x</span>
-                            {ipo.series !== 'DEBT' && ipo.qibSubscription > 0 && (
-                              <span className="text-[10px] text-slate-400 block font-mono">QIB: {ipo.qibSubscription}x</span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            {ipo.series === 'DEBT' ? (
-                              <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
-                            ) : ipo.gmp > 0 ? (
-                              <div className={`font-mono font-bold flex items-center gap-1.5 ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
-                                <span>+₹{ipo.gmp} ({ipo.gmpPercent}%)</span>
-                                {ipo.isAiPredictedGmp && (
-                                  <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                                    AI
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 font-mono text-slate-300 text-[11px]">
-                            <div>Allot: {ipo.allotmentDate || 'T+3 Days'}</div>
-                            <div className="text-[10px] text-slate-400">List: {ipo.listingDate || 'Approaching'}</div>
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="py-3.5 px-4 font-mono font-semibold text-white">
-                            {ipo.priceBand}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            {activeTab === 'open' ? (
-                              <div className="font-mono">
-                                <span className="text-cyan-300 font-bold block">{ipo.currentSubscription}x Total</span>
-                                {ipo.series !== 'DEBT' && ipo.qibSubscription > 0 && (
-                                  <span className="text-[10px] text-slate-400 block">QIB: {ipo.qibSubscription}x</span>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="font-mono text-slate-300 text-[11px]">
-                                {ipo.openDate} – {ipo.closeDate}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            {ipo.series === 'DEBT' ? (
-                              <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
-                            ) : ipo.gmp > 0 ? (
-                              <div className={`font-mono font-bold flex items-center gap-1.5 ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
-                                <span>+₹{ipo.gmp} ({ipo.gmpPercent}%)</span>
-                                {ipo.isAiPredictedGmp && (
-                                  <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                                    AI
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-300">
-                            {(() => {
-                              const rawPrices = String(ipo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
-                              const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
-                              const effectivePrice = Math.max(1, ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 100);
-
-                              const tblLot = ipo.series === 'DEBT'
-                                ? 1
-                                : ipo.series === 'SME'
-                                ? (ipo.lotSize && ipo.lotSize >= 600 ? ipo.lotSize : 1200)
-                                : (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && effectivePrice < 700) && (ipo.lotSize * effectivePrice >= 10000))
-                                ? ipo.lotSize
-                                : Math.max(1, Math.floor(15000 / effectivePrice));
-                              return (
-                                <span className="font-mono font-medium block">
-                                  {ipo.series === 'DEBT'
-                                    ? `${tblLot} ${tblLot === 1 ? 'unit' : 'units'}`
-                                    : `${tblLot} shares`}
-                                </span>
-                              );
-                            })()}
-                            <span className="text-[10px] text-slate-500 block">{ipo.issueSize}</span>
-                          </td>
-                        </>
-                      )}
-
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => onOpenDetails(ipo)}
-                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-medium transition cursor-pointer"
-                          >
-                            Details
-                          </button>
-                          {isListed ? (
-                            <button
-                              onClick={() => onOpenStockChart(ipo)}
-                              className="px-3 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] transition cursor-pointer flex items-center gap-1"
-                            >
-                              <TrendingUp className="w-3 h-3 text-cyan-400" />
-                              <span>Live Chart</span>
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => onOpenGmpTrend(ipo)}
-                                className="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 text-[11px] font-medium transition cursor-pointer"
-                              >
-                                GMP
-                              </button>
-                              <button
-                                onClick={() => onOpenStockChart(ipo)}
-                                className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-[11px] font-medium transition cursor-pointer"
-                              >
-                                Chart
-                              </button>
-                            </>
-                          )}
-                          {onAnalyzeAi && (
-                            <button
-                              onClick={() => onAnalyzeAi(ipo.symbol, ipo.companyName)}
-                              className="px-2.5 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/35 border border-purple-500/30 text-purple-300 text-[11px] font-semibold transition cursor-pointer flex items-center gap-1"
-                              title="Analyze with AI DRHP RAG model"
-                            >
-                              <Sparkles className="w-3 h-3 text-purple-400" />
-                              <span>DRHP</span>
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {visible.map((ipo) => (
+            <IpoCard
+              key={ipo.id}
+              ipo={ipo}
+              watched={watchlist.includes(ipo.symbol)}
+              onToggleWatchlist={onToggleWatchlist}
+              onOpenDetails={onOpenDetails}
+              onOpenGmpTrend={onOpenGmpTrend}
+              onOpenStockChart={onOpenStockChart}
+              onAnalyzeAi={onAnalyzeAi}
+            />
+          ))}
         </div>
       )}
-    </div>
+      <p className="text-[10px] text-slate-500 flex items-start gap-1">
+        <Info className="w-3 h-3 shrink-0 mt-0.5" />
+        Market GMP is an informal grey-market indication from third-party trackers, not an official price. The AI estimate
+        is a statistical model trained on past listings. Neither is investment advice.
+      </p>
+    </section>
   );
 };
+
+const IpoCard: React.FC<{
+  ipo: LiveMarketIpoItem;
+  watched: boolean;
+  onToggleWatchlist: (s: string) => void;
+  onOpenDetails: (i: LiveMarketIpoItem) => void;
+  onOpenGmpTrend: (i: LiveMarketIpoItem) => void;
+  onOpenStockChart: (i: LiveMarketIpoItem) => void;
+  onAnalyzeAi?: (symbol: string, companyName: string) => void;
+}> = ({ ipo, watched, onToggleWatchlist, onOpenDetails, onOpenGmpTrend, onOpenStockChart, onAnalyzeAi }) => {
+  const listed = ipo.status === 'Listed';
+  const ai = ipo.aiGmp;
+  return (
+    <article className="p-4 rounded-xl glass-panel border border-white/10 space-y-3">
+      <header className="flex items-start justify-between gap-2">
+        <button type="button" onClick={() => onOpenDetails(ipo)} className="text-left cursor-pointer">
+          <h3 className="text-sm font-semibold text-white leading-tight">{ipo.companyName}</h3>
+          <p className="text-[11px] text-slate-400 font-mono">
+            {ipo.symbol} · {ipo.series === 'SME' ? 'SME' : 'Mainboard'}
+            {ipo.sector ? ` · ${ipo.sector}` : ''}
+          </p>
+        </button>
+        <button
+          type="button"
+          aria-label={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+          onClick={() => onToggleWatchlist(ipo.symbol)}
+          className="p-1 rounded hover:bg-white/10 cursor-pointer"
+        >
+          <Star className={`w-4 h-4 ${watched ? 'fill-amber-400 text-amber-400' : 'text-slate-500'}`} />
+        </button>
+      </header>
+
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+        <dt className="text-slate-400">Price band</dt>
+        <dd className="text-right font-mono text-slate-100">{ipo.priceBand}</dd>
+        <dt className="text-slate-400">Lot size</dt>
+        <dd className="text-right font-mono text-slate-100">{ipo.lotSize ?? '—'}</dd>
+        <dt className="text-slate-400">Issue size</dt>
+        <dd className="text-right font-mono text-slate-100">{ipo.issueSize}</dd>
+        {ipo.ofsPercent !== null && ipo.ofsPercent !== undefined && (
+          <>
+            <dt className="text-slate-400">OFS share</dt>
+            <dd className={`text-right font-mono ${ipo.ofsPercent > 50 ? 'text-amber-300' : 'text-slate-100'}`}>{ipo.ofsPercent}%</dd>
+          </>
+        )}
+        <dt className="text-slate-400 flex items-center gap-1">
+          <Calendar className="w-3 h-3" /> {listed ? 'Listed' : 'Dates'}
+        </dt>
+        <dd className="text-right font-mono text-slate-100">
+          {listed ? fmtDate(ipo.listingDate) : `${fmtDate(ipo.openDate)} – ${fmtDate(ipo.closeDate)}`}
+        </dd>
+        {!listed && ipo.allotmentDate && (
+          <>
+            <dt className="text-slate-400">Allotment</dt>
+            <dd className="text-right font-mono text-slate-100">{fmtDate(ipo.allotmentDate)}</dd>
+          </>
+        )}
+      </dl>
+
+      {listed ? (
+        <div className="p-2.5 rounded-lg bg-slate-900/60 border border-white/5 text-[11px] grid grid-cols-2 gap-1">
+          <span className="text-slate-400">Issue price</span>
+          <span className="text-right font-mono">{ipo.issuePrice ? `₹${ipo.issuePrice}` : '—'}</span>
+          <span className="text-slate-400">Listing price</span>
+          <span className="text-right font-mono">{ipo.listingPrice ? `₹${ipo.listingPrice}` : '—'}</span>
+          <span className="text-slate-400">Listing gain</span>
+          <span
+            className={`text-right font-mono font-semibold ${
+              (ipo.listingGainPct ?? 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'
+            }`}
+          >
+            {ipo.listingGainPct !== null && ipo.listingGainPct !== undefined ? `${ipo.listingGainPct > 0 ? '+' : ''}${ipo.listingGainPct}%` : '—'}
+          </span>
+        </div>
+      ) : (
+        <div className="p-2.5 rounded-lg bg-slate-900/60 border border-white/5 space-y-2 text-[11px]">
+          <div className="flex justify-between">
+            <span className="text-slate-400 flex items-center gap-1">
+              <BarChart2 className="w-3 h-3 text-cyan-400" /> Subscription
+            </span>
+            <span className="font-mono text-cyan-200">
+              {fmtX(ipo.currentSubscription)}
+              {ipo.subscriptionUpdatedAt && <span className="text-slate-500 ml-1">({timeAgo(ipo.subscriptionUpdatedAt)})</span>}
+            </span>
+          </div>
+          {ipo.currentSubscription !== null && (
+            <div className="grid grid-cols-3 gap-1 text-center font-mono text-[10px]">
+              <span className="p-1 rounded bg-white/5">Retail {fmtX(ipo.retailSubscription)}</span>
+              <span className="p-1 rounded bg-white/5">NII {fmtX(ipo.niiSubscription)}</span>
+              <span className="p-1 rounded bg-white/5">QIB {fmtX(ipo.qibSubscription)}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-white/5 pt-1.5">
+            <span className="text-slate-400 flex items-center gap-1">
+              <Flame className="w-3 h-3 text-purple-400" /> Market GMP
+            </span>
+            <span className="font-mono text-purple-200">
+              {ipo.gmp !== null ? `₹${ipo.gmp}${ipo.gmpPercent !== null ? ` (${ipo.gmpPercent}%)` : ''}` : 'not reported'}
+            </span>
+          </div>
+          {ipo.gmpSource && (
+            <p className="text-[9px] text-slate-500 text-right">
+              {ipo.gmpSource} · {timeAgo(ipo.gmpUpdatedAt)}
+            </p>
+          )}
+          <div className="flex justify-between">
+            <span className="text-slate-400 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-cyan-400" /> AI estimate
+            </span>
+            <span className="font-mono text-cyan-200" title={ai ? `Model ${ai.modelVersion}` : undefined}>
+              {ai
+                ? `${ai.predictedGainPct > 0 ? '+' : ''}${ai.predictedGainPct}%${ai.predictedGmp !== null ? ` (₹${ai.predictedGmp})` : ''}`
+                : 'needs subscription data'}
+            </span>
+          </div>
+          {ai && (
+            <p className="text-[9px] text-slate-500 text-right">
+              range {ai.lowerPct}% to {ai.upperPct}% · drivers: {ai.drivers.slice(0, 2).map((d) => d.feature).join(', ')}
+            </p>
+          )}
+        </div>
+      )}
+
+      <footer className="flex flex-wrap gap-1.5">
+        <button type="button" onClick={() => onOpenDetails(ipo)} className="btn-chip">
+          <Info className="w-3 h-3" /> Details
+        </button>
+        {!listed && ipo.gmp !== null && (
+          <button type="button" onClick={() => onOpenGmpTrend(ipo)} className="btn-chip">
+            <Flame className="w-3 h-3" /> GMP trend
+          </button>
+        )}
+        {listed && (
+          <button type="button" onClick={() => onOpenStockChart(ipo)} className="btn-chip">
+            <LineChart className="w-3 h-3" /> Chart
+          </button>
+        )}
+        {onAnalyzeAi && (
+          <button type="button" onClick={() => onAnalyzeAi(ipo.symbol, ipo.companyName)} className="btn-chip">
+            <Brain className="w-3 h-3" /> DRHP analysis
+          </button>
+        )}
+        {ipo.rhpUrl && (
+          <a href={ipo.rhpUrl} target="_blank" rel="noopener noreferrer" className="btn-chip">
+            <ExternalLink className="w-3 h-3" /> RHP
+          </a>
+        )}
+      </footer>
+    </article>
+  );
+};
+
+export default IpoCategoriesTabs;

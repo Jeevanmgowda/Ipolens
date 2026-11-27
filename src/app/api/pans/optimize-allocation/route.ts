@@ -1,74 +1,64 @@
 import { NextResponse } from 'next/server';
-import {
-  AllocationOptimizerService,
-  OptimizationStrategy,
-} from '@/lib/services/allocation-optimizer.service';
-import { ExchangeIngestionService } from '@/lib/services/exchange-ingestion.service';
-import { getUserPansStore } from '../route';
-import { FamilyPanProfile } from '@/types/pan';
-import { sanitizeString } from '@/lib/security/sanitize';
+import { z } from 'zod';
+import { AllocationOptimizerService } from '@/lib/services/allocation-optimizer.service';
+import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { IpoRepository } from '@/lib/repositories/ipo.repository';
+import { requireUser } from '@/lib/security/session';
+import { handleRouteError, jsonError } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
+const Body = z.object({
+  symbol: z.string().trim().min(1).max(32),
+  totalBudget: z.coerce.number().positive().max(1e9).default(500000),
+  strategy: z.enum(['max_probability', 'max_expected_profit', 'capital_efficient']).default('max_probability'),
+  selectedPanIds: z.array(z.string().max(64)).optional(),
+  /** Expected gain per share used for expected-profit maths; defaults to the latest market GMP if any. */
+  expectedGainPerShare: z.coerce.number().optional(),
+});
+
+/** Family multi-PAN allocation plan using the IPO's real price band, lot size and live subscription. */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const cleanPrice = Number(body.price) || 500;
-    const defaultLot = Math.max(1, Math.floor(15000 / cleanPrice));
-    const cleanLotSize = Number(body.lotSize) > 0 ? Number(body.lotSize) : defaultLot;
+    const user = await requireUser(request);
+    const body = Body.parse(await request.json());
+    const symbol = body.symbol.toUpperCase();
 
-    const {
-      symbol = 'IPO',
-      companyName = 'IPO Offering',
-      gmp = 0,
-      totalBudget = 500000,
-      strategy = 'max_probability' as OptimizationStrategy,
-      selectedPanIds,
-      pans: clientPans,
-    } = body;
-
-    // 1. Fetch live subscription telemetry
-    const subscription = await ExchangeIngestionService.syncLiveSubscription(sanitizeString(symbol));
-
-    // 2. Resolve family PAN profiles
-    let profiles: FamilyPanProfile[] = [];
-    if (Array.isArray(clientPans) && clientPans.length > 0) {
-      profiles = clientPans;
-    } else {
-      profiles = getUserPansStore();
+    const [view] = await IpoRepository.listView({ symbols: [symbol] });
+    if (!view) return jsonError(404, `IPO ${symbol} not found.`);
+    if (!view.priceHigh || !view.lotSize) return jsonError(422, `${symbol} has no published price band / lot size yet.`);
+    if (view.currentSubscription === null) {
+      return jsonError(422, `Live subscription data for ${symbol} is not available yet; the optimizer needs real demand figures.`);
     }
 
-    // Filter by selectedPanIds if specified
-    if (Array.isArray(selectedPanIds) && selectedPanIds.length > 0) {
-      profiles = profiles.filter((p) => selectedPanIds.includes(p.id));
-    }
+    let pans = await DbRepositoryService.getPans(user.id);
+    if (body.selectedPanIds?.length) pans = pans.filter((p) => body.selectedPanIds!.includes(p.id));
 
-    // 3. Execute mathematical allocation optimization
+    const nii = view.niiSubscription ?? 0;
     const result = AllocationOptimizerService.optimize({
-      symbol: sanitizeString(symbol),
-      companyName: sanitizeString(companyName),
-      price: cleanPrice,
-      lotSize: cleanLotSize,
-      gmp: Number(gmp) || 0,
-      totalBudget: Number(totalBudget) || 500000,
-      strategy,
-      pans: profiles,
-      subscription,
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: result,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error: any) {
-    console.error('Error in /api/pans/optimize-allocation:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to optimize multi-PAN allocation',
+      symbol,
+      companyName: view.companyName,
+      price: view.priceHigh,
+      lotSize: view.lotSize,
+      gmp: body.expectedGainPerShare ?? view.gmp ?? 0,
+      totalBudget: body.totalBudget,
+      strategy: body.strategy,
+      pans,
+      subscription: {
+        symbol,
+        qibMultiple: view.qibSubscription ?? 0,
+        niiMultiple: nii,
+        // The live feed reports NII as one category; sNII/bNII use the combined NII multiple.
+        sNiiMultiple: nii,
+        bNiiMultiple: nii,
+        riiMultiple: view.retailSubscription ?? 0,
+        totalMultiple: view.currentSubscription,
+        updatedAt: view.subscriptionUpdatedAt || new Date().toISOString(),
+        source: view.source || 'InvestorGain',
       },
-      { status: 500 }
-    );
+    });
+    return NextResponse.json({ success: true, data: result });
+  } catch (err) {
+    return handleRouteError(err, 'pans/optimize-allocation');
   }
 }

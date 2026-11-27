@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useEffectEvent } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -19,8 +19,6 @@ import {
   Clock,
   ArrowUpRight,
   ArrowDownRight,
-  ShieldCheck,
-  Maximize2,
   Sparkles,
   Zap,
 } from 'lucide-react';
@@ -36,13 +34,12 @@ interface LiveStockPriceChartProps {
 }
 
 const TIMEFRAMES = [
-  { label: '1m (Live)', value: '1m' },
-  { label: '5m', value: '5m' },
-  { label: '15m', value: '15m' },
-  { label: '30m', value: '30m' },
   { label: '1D', value: '1D' },
-  { label: '1W', value: '1W' },
+  { label: '5D', value: '5D' },
   { label: '1M', value: '1M' },
+  { label: '3M', value: '3M' },
+  { label: '6M', value: '6M' },
+  { label: '1Y', value: '1Y' },
 ];
 
 /**
@@ -79,7 +76,7 @@ const CandlestickView: React.FC<CandlestickViewProps> = ({ candles, quote, timef
   // Limit dense intraday candles to a visible window for optimal readability
   const displayCandles = useMemo(() => {
     if (!candles || candles.length === 0) return [];
-    if (candles.length > 70 && timeframe === '1m') {
+    if (candles.length > 70 && timeframe === '1D') {
       return candles.slice(-70);
     }
     return candles;
@@ -123,7 +120,6 @@ const CandlestickView: React.FC<CandlestickViewProps> = ({ candles, quote, timef
 
   // Coordinate helper functions
   const getY = (val: number) => priceTop + ((maxPrice - val) / priceRange) * priceHeight;
-  const getVolY = (vol: number) => volTop + volHeight - (vol / maxVolume) * volHeight;
   const getPriceAtY = (y: number) => maxPrice - ((y - priceTop) / priceHeight) * priceRange;
 
   // Grid steps (5 steps)
@@ -132,10 +128,10 @@ const CandlestickView: React.FC<CandlestickViewProps> = ({ candles, quote, timef
     const levels: { price: number; y: number }[] = [];
     for (let i = 0; i <= steps; i++) {
       const p = minPrice + (priceRange / steps) * i;
-      levels.push({ price: p, y: getY(p) });
+      levels.push({ price: p, y: priceTop + ((maxPrice - p) / priceRange) * priceHeight });
     }
     return levels;
-  }, [minPrice, priceRange, maxPrice]);
+  }, [minPrice, priceRange, maxPrice, priceTop, priceHeight]);
 
   const activeCandle = hoverIndex !== null && displayCandles[hoverIndex] ? displayCandles[hoverIndex] : null;
 
@@ -440,12 +436,13 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
   initialPrice,
 }) => {
   const [chartType, setChartType] = useState<'candle' | 'line' | 'tradingview'>('candle');
-  const [timeframe, setTimeframe] = useState<string>('1m');
+  const [timeframe, setTimeframe] = useState<string>('1D');
   const [quote, setQuote] = useState<MarketQuoteData | null>(null);
   const [candles, setCandles] = useState<MarketOhlcCandle[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [sseActive, setSseActive] = useState<boolean>(false);
   const [lastTickTime, setLastTickTime] = useState<string>('');
+  const [dataError, setDataError] = useState<string | null>(null);
 
   // AI Stock Trading & Prediction state
   const [showAiPrediction, setShowAiPrediction] = useState<boolean>(true);
@@ -499,77 +496,27 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
       }
       if (ohlcJson.success && Array.isArray(ohlcJson.data) && ohlcJson.data.length > 0) {
         setCandles(ohlcJson.data);
+        setDataError(null);
         fetchAiPrediction(ohlcJson.data);
       } else {
-        const base = quoteJson.data?.ltp || initialPrice || 100;
-        const count = 30;
-        const stepMs = tf === '1m' ? 60000 : 86400000;
-        const now = Date.now();
-        const synthesized: MarketOhlcCandle[] = [];
-        let curr = base * 0.985;
-        for (let i = count - 1; i >= 0; i--) {
-          const t = now - i * stepMs;
-          const d = new Date(t);
-          const open = Number(curr.toFixed(2));
-          const delta = (Math.random() - 0.48) * (base * 0.015);
-          const close = Number(Math.max(1, open + delta).toFixed(2));
-          const high = Number(Math.max(open, close, open + Math.random() * (base * 0.01)).toFixed(2));
-          const low = Number(Math.min(open, close, open - Math.random() * (base * 0.01)).toFixed(2));
-          const timeLabel = ['1m', '5m', '15m', '30m', '1H'].includes(tf)
-            ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-            : d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-          synthesized.push({
-            time: timeLabel,
-            timestamp: t,
-            open,
-            high,
-            low,
-            close,
-            volume: Math.floor(25000 + Math.random() * 50000),
-          });
-          curr = close;
-        }
-        setCandles(synthesized);
-        fetchAiPrediction(synthesized);
+        // No synthetic candles: show the provider's error instead.
+        setCandles([]);
+        setDataError(ohlcJson.error || 'No price data available for this symbol yet.');
       }
     } catch (err) {
       console.error('Error fetching stock price chart data:', err);
-      const base = initialPrice || 100;
-      const count = 30;
-      const stepMs = tf === '1m' ? 60000 : 86400000;
-      const now = Date.now();
-      const synthesized: MarketOhlcCandle[] = [];
-      let curr = base * 0.985;
-      for (let i = count - 1; i >= 0; i--) {
-        const t = now - i * stepMs;
-        const d = new Date(t);
-        const open = Number(curr.toFixed(2));
-        const delta = (Math.random() - 0.48) * (base * 0.015);
-        const close = Number(Math.max(1, open + delta).toFixed(2));
-        const high = Number(Math.max(open, close, open + Math.random() * (base * 0.01)).toFixed(2));
-        const low = Number(Math.min(open, close, open - Math.random() * (base * 0.01)).toFixed(2));
-        const timeLabel = ['1m', '5m', '15m', '30m', '1H'].includes(tf)
-          ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-          : d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-        synthesized.push({
-          time: timeLabel,
-          timestamp: t,
-          open,
-          high,
-          low,
-          close,
-          volume: Math.floor(25000 + Math.random() * 50000),
-        });
-        curr = close;
-      }
-      setCandles(synthesized);
+      setCandles([]);
+      setDataError('Could not reach the market data provider.');
     } finally {
       setLoading(false);
     }
   };
 
+  const loadMarketData = useEffectEvent((sym: string, tf: string) => fetchMarketData(sym, tf));
   useEffect(() => {
-    fetchMarketData(cleanSymbol, timeframe);
+    (async () => {
+      await loadMarketData(cleanSymbol, timeframe);
+    })();
   }, [cleanSymbol, timeframe]);
 
   // 2. Real-Time WebSocket / SSE Streaming
@@ -639,7 +586,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
       };
       eventSource.onerror = () => setSseActive(false);
     } catch {
-      setSseActive(false);
+      // EventSource unsupported: the chart keeps working from the REST snapshot.
     }
 
     return () => {
@@ -844,7 +791,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
         ) : loading && candles.length === 0 ? (
           <div className="h-96 flex flex-col items-center justify-center gap-2.5">
             <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
-            <span className="text-xs text-slate-400 font-mono">Fetching live Upstox NSE exchange candles...</span>
+            <span className="text-xs text-slate-400 font-mono">Fetching price history...</span>
           </div>
         ) : candles.length === 0 ? (
           <div className="h-96 flex flex-col items-center justify-center gap-3 text-center p-6">
@@ -854,7 +801,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
             <div className="space-y-1">
               <p className="text-sm font-semibold text-slate-300">Exchange Chart Unavailable</p>
               <p className="text-xs text-slate-500 max-w-sm">
-                Live historical candlestick data for {cleanSymbol} is not currently published by the exchange feed.
+                {dataError || `Price history for ${cleanSymbol} is not available yet.`}
               </p>
             </div>
           </div>

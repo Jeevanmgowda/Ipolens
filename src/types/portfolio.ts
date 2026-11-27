@@ -26,8 +26,8 @@ export interface PortfolioSummary {
   totalUnrealizedPnlPercent: number;
   totalHoldingsCount: number;
   ipoAllotmentCount: number;
-  dayPnl: number;
-  dayPnlPercent: number;
+  dayPnl: number | null;
+  dayPnlPercent: number | null;
 }
 
 export interface RowParseError {

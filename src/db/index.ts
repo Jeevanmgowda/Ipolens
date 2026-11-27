@@ -1,95 +1,67 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import * as schema from './schema';
+import { databaseUrl } from '@/lib/env';
 
 /**
- * PostgreSQL Database Connection with Drizzle ORM
- * Compatible with Supabase, Neon, AWS RDS, and self-hosted PostgreSQL.
- * Seamlessly provides fallback when running in standalone / test mode without DATABASE_URL.
+ * PostgreSQL (Supabase) connection via Drizzle ORM.
+ *
+ * The database is mandatory: there is no in-memory fallback. Call `getDb()` at the point of
+ * use; it throws `DatabaseUnavailableError` with a clear message when DATABASE_URL is missing.
+ * Tests inject an in-process Postgres (PGlite) through `setDatabaseForTesting`.
  */
 
-let connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
+export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-// If password contains raw '@' symbols before the host, URL-encode the password
-if (connectionString && connectionString.startsWith('postgres')) {
-  const atMatches = connectionString.match(/@/g);
-  if (atMatches && atMatches.length > 1) {
-    const lastAtIndex = connectionString.lastIndexOf('@');
-    const protoEnd = connectionString.indexOf('://') + 3;
-    const firstColonIndex = connectionString.indexOf(':', protoEnd);
-    if (firstColonIndex > -1 && lastAtIndex > firstColonIndex) {
-      const userPart = connectionString.slice(0, firstColonIndex + 1);
-      const passwordPart = connectionString.slice(firstColonIndex + 1, lastAtIndex);
-      const hostPart = connectionString.slice(lastAtIndex);
-      connectionString = userPart + encodeURIComponent(passwordPart) + hostPart;
-    }
+export class DatabaseUnavailableError extends Error {
+  constructor(message = 'Database is not configured. Set DATABASE_URL (Supabase Postgres connection string).') {
+    super(message);
+    this.name = 'DatabaseUnavailableError';
   }
 }
 
-export const isPostgresConfigured = Boolean(
-  connectionString && connectionString.startsWith('postgres')
-);
-
-let dbClient: ReturnType<typeof drizzle<typeof schema>> | null = null;
-let sqlConnection: ReturnType<typeof postgres> | null = null;
-
-let isDbCircuitOpen = false;
-let dbCircuitCooldownUntil = 0;
-let lastDbWarningTime = 0;
-
-export function isDatabaseActive(): boolean {
-  if (!isPostgresConfigured || dbClient === null) return false;
-  if (isDbCircuitOpen) {
-    if (Date.now() < dbCircuitCooldownUntil) return false;
-    isDbCircuitOpen = false;
-  }
-  return true;
+/** URL-encode a password that contains raw '@' characters (common with generated Supabase passwords). */
+function normalizeConnectionString(raw: string): string {
+  if (!raw.startsWith('postgres')) return raw;
+  const atCount = (raw.match(/@/g) || []).length;
+  if (atCount <= 1) return raw;
+  const lastAt = raw.lastIndexOf('@');
+  const protoEnd = raw.indexOf('://') + 3;
+  const firstColon = raw.indexOf(':', protoEnd);
+  if (firstColon === -1 || lastAt < firstColon) return raw;
+  return raw.slice(0, firstColon + 1) + encodeURIComponent(raw.slice(firstColon + 1, lastAt)) + raw.slice(lastAt);
 }
 
-export function reportDatabaseFailure(operation: string, err: any): void {
-  const isNetworkTimeout =
-    err?.code === 'CONNECT_TIMEOUT' ||
-    err?.code === 'ETIMEDOUT' ||
-    err?.code === 'ENOTFOUND' ||
-    err?.code === 'ECONNREFUSED' ||
-    err?.cause?.code === 'CONNECT_TIMEOUT' ||
-    err?.cause?.code === 'ENOTFOUND' ||
-    err?.cause?.code === 'ECONNREFUSED' ||
-    err?.cause?.code === 'ETIMEDOUT' ||
-    err?.message?.includes('CONNECT_TIMEOUT') ||
-    err?.message?.includes('ENOTFOUND') ||
-    err?.message?.includes('ETIMEDOUT');
+let instance: Database | null = null;
+let testOverride: Database | null = null;
 
-  if (isNetworkTimeout) {
-    isDbCircuitOpen = true;
-    dbCircuitCooldownUntil = Date.now() + 60_000;
-
-    const now = Date.now();
-    if (now - lastDbWarningTime > 60_000) {
-      console.warn(
-        `[Database] PostgreSQL connection unreachable (${err?.cause?.code || err?.code || 'TIMEOUT'}). Activating in-memory store fallback for 60s.`
-      );
-      lastDbWarningTime = now;
-    }
-  } else {
-    console.warn(`[Database] ${operation} notice:`, err?.message || err);
-  }
+export function isDatabaseConfigured(): boolean {
+  if (testOverride) return true;
+  const url = databaseUrl();
+  return Boolean(url && url.startsWith('postgres'));
 }
 
-if (isPostgresConfigured) {
-  try {
-    sqlConnection = postgres(connectionString, {
-      max: 5,
-      idle_timeout: 20,
-      connect_timeout: 2,
-      prepare: false, // Recommended for Supabase / Neon connection pooler (PgBouncer)
-    });
-    dbClient = drizzle(sqlConnection, { schema });
-    console.log('[Database] PostgreSQL connection pool initialized with Drizzle ORM.');
-  } catch (error) {
-    console.warn('[Database] Notice: PostgreSQL connection initialization warning:', error);
-  }
+export function getDb(): Database {
+  if (testOverride) return testOverride;
+  if (instance) return instance;
+
+  const url = databaseUrl();
+  if (!url || !url.startsWith('postgres')) throw new DatabaseUnavailableError();
+
+  const client = postgres(normalizeConnectionString(url), {
+    max: 5,
+    idle_timeout: 20,
+    connect_timeout: 10,
+    prepare: false, // Required for the Supabase transaction pooler (PgBouncer)
+  });
+  instance = drizzle(client, { schema }) as unknown as Database;
+  return instance;
 }
 
-export const db = dbClient;
+/** Test-only: route all repository calls to the given database (e.g. PGlite). */
+export function setDatabaseForTesting(db: Database | null): void {
+  testOverride = db;
+}
+
 export { schema };

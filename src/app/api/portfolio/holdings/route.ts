@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { requireUser } from '@/lib/security/session';
+import { handleRouteError } from '@/lib/http';
 import { PortfolioSummary } from '@/types/portfolio';
 
 export async function GET(request: Request) {
   try {
-    const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    const authUser = await requireUser(request);
+    const userId = authUser.id;
 
     const holdings = await DbRepositoryService.getHoldings(userId);
 
@@ -33,8 +34,8 @@ export async function GET(request: Request) {
       totalUnrealizedPnlPercent: Math.round(totalUnrealizedPnlPercent * 100) / 100,
       totalHoldingsCount: holdings.length,
       ipoAllotmentCount,
-      dayPnl: Math.round(totalCurrentValue * 0.012 * 100) / 100,
-      dayPnlPercent: 1.2,
+      dayPnl: null,
+      dayPnlPercent: null,
     };
 
     return NextResponse.json({
@@ -44,15 +45,15 @@ export async function GET(request: Request) {
         holdings,
       },
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleRouteError(err, 'src/app/api/portfolio/holdings/route.ts');
   }
 }
 
 export async function DELETE(request: Request) {
   try {
-    const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    const authUser = await requireUser(request);
+    const userId = authUser.id;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -70,7 +71,7 @@ export async function DELETE(request: Request) {
     }
 
     return NextResponse.json({ success: false, error: 'Holding not found' }, { status: 404 });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleRouteError(err, 'src/app/api/portfolio/holdings/route.ts');
   }
 }

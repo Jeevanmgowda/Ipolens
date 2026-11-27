@@ -537,7 +537,7 @@ export async function runHeadlessPuppeteer(config) {
             }
           }
         }
-      } catch (e) {}
+      } catch {}
 
       try {
         const result = await exchangeCodeForToken(authCode, cfg);
@@ -623,7 +623,7 @@ export function startLocalCallbackServer(onCodeReceived, customRedirectUri) {
           server.close();
           await onCodeReceived(code);
         }
-      } catch (e) {
+      } catch {
         // Ignore parsing errors for random probes
       }
     });
@@ -634,7 +634,7 @@ export function startLocalCallbackServer(onCodeReceived, customRedirectUri) {
 
     server.listen(port);
     return server;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -661,7 +661,7 @@ export function runInteractiveMode(config) {
         ? `open "${authUrl}"`
         : `xdg-open "${authUrl}"`;
       exec(startCmd, () => {});
-    } catch (e) {}
+    } catch {}
 
     let codeHandled = false;
 

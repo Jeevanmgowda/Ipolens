@@ -48,12 +48,12 @@ export async function GET() {
       broker: 'Upstox Developer v2/v3',
       message: 'Active Live Upstox Session connected.',
     });
-  } catch (error: any) {
+  } catch (error) {
     return NextResponse.json({
       configured: true,
       hasToken: true,
       valid: false,
-      error: error.message,
+      error: (error as Error).message,
       message: 'Failed to verify Upstox token connection.',
       authUrl: '/api/auth/upstox',
     });

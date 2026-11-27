@@ -7,14 +7,8 @@ import { TaxImpactWidget } from './TaxImpactWidget';
 import {
   PieChart,
   UploadCloud,
-  TrendingUp,
-  TrendingDown,
   Layers,
-  Sparkles,
   Trash2,
-  CheckCircle2,
-  ShieldCheck,
-  RefreshCw,
   Award,
   Calculator,
 } from 'lucide-react';
@@ -23,7 +17,6 @@ export const PortfolioDashboard: React.FC = () => {
   const [holdings, setHoldings] = useState<HoldingItem[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [loadingDemo, setLoadingDemo] = useState<boolean>(false);
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [filterIpoOnly, setFilterIpoOnly] = useState<boolean>(false);
   const [showTaxWidget, setShowTaxWidget] = useState<boolean>(true);
@@ -44,32 +37,10 @@ export const PortfolioDashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchPortfolio();
-  }, []);
-
-  const handleLoadDemoPortfolio = async () => {
-    setLoadingDemo(true);
-    try {
-      const sampleCsv = `Instrument,ISIN,Qty.,Avg. cost,LTP,Cur. val,P&L,Net chg.
-BAJAJHFL,INE084A01016,214,70.00,131.25,28087.50,13107.50,87.50%
-TATATECH,INE142M01025,30,500.00,985.40,29562.00,14562.00,97.08%
-SWIGGY,INE00H001014,38,390.00,428.50,16283.00,1463.00,9.87%
-HYUNDAI,INE00F201023,7,1960.00,1845.00,12915.00,-805.00,-5.87%
-INFY,INE009A01021,25,1450.00,1885.20,47130.00,10880.00,30.01%
-TCS,INE467B01029,15,3600.00,4120.00,61800.00,7800.00,14.44%`;
-
-      await fetch('/api/portfolio/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csvContent: sampleCsv, fileName: 'zerodha_verified_demo.csv' }),
-      });
+    (async () => {
       await fetchPortfolio();
-    } catch (e) {
-      console.error('Failed to load demo portfolio:', e);
-    } finally {
-      setLoadingDemo(false);
-    }
-  };
+    })();
+  }, []);
 
   const handleDeleteHolding = async (id: string) => {
     try {
@@ -194,16 +165,9 @@ TCS,INE467B01029,15,3600.00,4120.00,61800.00,7800.00,14.44%`;
           </div>
 
           <div className="p-4 rounded-2xl glass-card">
-            <span className="text-xs text-slate-400 block">Est. Day's Drift</span>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-xl font-bold font-mono text-emerald-400">
-                +₹{summary.dayPnl.toLocaleString('en-IN')}
-              </span>
-              <span className="text-xs font-bold font-mono text-emerald-500">
-                (+{summary.dayPnlPercent}%)
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-500 font-mono mt-1">Active market movement</div>
+            <span className="text-xs text-slate-400 block">IPO allotments</span>
+            <div className="text-xl font-bold font-mono text-cyan-300 mt-1">{summary.ipoAllotmentCount}</div>
+            <div className="text-[11px] text-slate-500 font-mono mt-1">Synced automatically from allotment results</div>
           </div>
         </div>
       )}
@@ -267,14 +231,7 @@ TCS,INE467B01029,15,3600.00,4120.00,61800.00,7800.00,14.44%`;
               <UploadCloud className="w-4 h-4" />
               <span>Import Your Broker CSV</span>
             </button>
-            <button
-              onClick={handleLoadDemoPortfolio}
-              disabled={loadingDemo}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold text-xs border border-purple-500/30 cursor-pointer transition disabled:opacity-50"
-            >
-              <Sparkles className="w-4 h-4 text-purple-400" />
-              <span>{loadingDemo ? 'Loading Demo Portfolio...' : 'Load Verified Demo Portfolio (Zerodha)'}</span>
-            </button>
+
           </div>
         </div>
       ) : (

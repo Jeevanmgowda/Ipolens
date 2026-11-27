@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   checkTokenValidity,
   generateTotp,
-  readEnvConfig,
   parseEnvVal,
 } from '../scripts/getUpstoxToken.mjs';
 
@@ -22,7 +21,7 @@ describe('Upstox Dev Runner & Token Lifecycle', () => {
       accessToken: token,
       clientId: 'mock_client',
       clientSecret: 'mock_sec',
-    } as any);
+    } as unknown as Parameters<typeof checkTokenValidity>[0]);
 
     expect(result.valid).toBe(true);
     expect(result.account).toBe('TEST_USER_123');
@@ -38,7 +37,7 @@ describe('Upstox Dev Runner & Token Lifecycle', () => {
       accessToken: token,
       clientId: 'mock_client',
       clientSecret: 'mock_sec',
-    } as any);
+    } as unknown as Parameters<typeof checkTokenValidity>[0]);
 
     expect(result.valid).toBe(false);
     expect(result.account).toBe('EXPIRED_USER');
@@ -46,9 +45,9 @@ describe('Upstox Dev Runner & Token Lifecycle', () => {
   });
 
   it('handles missing, placeholder, or truncated access tokens gracefully', () => {
-    expect(checkTokenValidity({ accessToken: '' } as any).valid).toBe(false);
-    expect(checkTokenValidity({ accessToken: 'your_token_here' } as any).valid).toBe(false);
-    expect(checkTokenValidity({ accessToken: 'too_short' } as any).valid).toBe(false);
+    expect(checkTokenValidity({ accessToken: '' } as unknown as Parameters<typeof checkTokenValidity>[0]).valid).toBe(false);
+    expect(checkTokenValidity({ accessToken: 'your_token_here' } as unknown as Parameters<typeof checkTokenValidity>[0]).valid).toBe(false);
+    expect(checkTokenValidity({ accessToken: 'too_short' } as unknown as Parameters<typeof checkTokenValidity>[0]).valid).toBe(false);
   });
 
   it('generates standard RFC 6238 6-digit TOTP codes', () => {

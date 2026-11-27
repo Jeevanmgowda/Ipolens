@@ -1,24 +1,20 @@
 'use client';
 
+import Image from 'next/image';
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
-  Radio,
   Activity,
   Sparkles,
   Users,
   CheckCircle,
   PieChart,
-  ShieldCheck,
   RefreshCw,
   LogIn,
   LogOut,
-  User as UserIcon,
   ChevronDown,
-  Building2,
-  TrendingUp,
   Bell,
   Star,
   Lock,
@@ -42,11 +38,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeIpoCount = 0,
   isRefreshing = false,
   onRefresh = () => {},
-  lastUpdatedTime,
 }) => {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAuthenticated, signOut, loginWithDemo } = useAuth();
+  const { user, isAuthenticated, signOut } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(3);
@@ -163,41 +158,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </div>
                     </div>
 
-                    <div className="p-1 space-y-0.5 border-b border-white/10 my-1">
-                      <span className="text-[10px] uppercase font-semibold text-slate-400 px-2 py-1 block">
-                        Switch Demo Profile
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          loginWithDemo('institutional');
-                          setIsDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5 transition text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>HNI Desk (Arjun)</span>
-                        </div>
-                        <span className="text-[10px] text-cyan-400 font-medium">bNII</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          loginWithDemo('retail');
-                          setIsDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5 transition text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Users className="w-3.5 h-3.5 text-purple-400" />
-                          <span>Family Office (Priya)</span>
-                        </div>
-                        <span className="text-[10px] text-purple-400 font-medium">Retail</span>
-                      </button>
-                    </div>
-
                     <button
                       type="button"
                       onClick={() => {
@@ -238,8 +198,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Logo & Brand */}
           <div className="flex items-center gap-3">
             <div className="h-10 flex items-center">
-              <img
-                src="/logo.png"
+              <Image
+                src="/logo.png" width={1024} height={409}
                 alt="IPOLENS Logo"
                 className="h-9 w-auto object-contain drop-shadow-[0_0_12px_rgba(16,185,129,0.25)]"
               />

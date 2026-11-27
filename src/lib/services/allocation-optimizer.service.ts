@@ -1,5 +1,24 @@
 import { FamilyPanProfile } from '@/types/pan';
-import { SubscriptionSnapshot, ExchangeIngestionService } from './exchange-ingestion.service';
+
+export interface SubscriptionSnapshot {
+  symbol: string;
+  qibMultiple: number;
+  niiMultiple: number;
+  sNiiMultiple: number;
+  bNiiMultiple: number;
+  riiMultiple: number;
+  totalMultiple: number;
+  updatedAt: string;
+  source?: string;
+}
+
+/** Lottery odds for one minimum application given a category's oversubscription multiple. */
+export function calculateOdds(multiple: number): { probability: number; oddsText: string } {
+  if (multiple <= 1) return { probability: 1, oddsText: '100% (fully covered)' };
+  const prob = 1 / multiple;
+  return { probability: prob, oddsText: `1 in ${multiple.toFixed(1)} (${(prob * 100).toFixed(1)}%)` };
+}
+const ExchangeIngestionService = { calculateOdds };
 
 export type OptimizationStrategy = 'max_probability' | 'max_expected_profit' | 'capital_efficient';
 
@@ -72,7 +91,7 @@ export interface OptimizationInput {
   totalBudget?: number;
   strategy?: OptimizationStrategy;
   pans: FamilyPanProfile[];
-  subscription?: SubscriptionSnapshot;
+  subscription: SubscriptionSnapshot;
 }
 
 export class AllocationOptimizerService {
@@ -127,18 +146,7 @@ export class AllocationOptimizerService {
       subscription,
     } = input;
 
-    // Fallback subscription if not provided
-    const telemetry = subscription || {
-      symbol,
-      qibMultiple: 12.5,
-      niiMultiple: 6.0,
-      sNiiMultiple: 4.2,
-      bNiiMultiple: 7.8,
-      riiMultiple: 11.4,
-      totalMultiple: 9.8,
-      updatedAt: new Date().toISOString(),
-      source: 'Default Telemetry Model',
-    };
+    const telemetry = subscription;
 
     const reqs = this.getCategoryRequirements(price, lotSize);
 

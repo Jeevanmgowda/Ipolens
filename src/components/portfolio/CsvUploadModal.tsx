@@ -8,10 +8,8 @@ import {
   FileSpreadsheet,
   X,
   CheckCircle2,
-  AlertTriangle,
   Download,
   ShieldCheck,
-  Building2,
 } from 'lucide-react';
 
 interface CsvUploadModalProps {
@@ -53,8 +51,8 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
       } else {
         setError(json.error || 'Failed to process CSV file.');
       }
-    } catch (err: any) {
-      setError(err.message || 'Error uploading file.');
+    } catch (err) {
+      setError((err as Error).message || 'Error uploading file.');
     } finally {
       setUploading(false);
     }

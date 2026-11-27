@@ -28,9 +28,10 @@ export interface IpoApplication {
   blockedAmount: number;
   status: ApplicationStatus;
   allottedShares?: number;
+  /** Set only by the allotment gateway. */
+  allotmentStatus?: 'ALLOTTED' | 'NOT_ALLOTTED' | 'PENDING';
+  checkedAt?: string;
   appliedAt: string;
-  registrarSlug?: string;
-  registrarUrl?: string;
 }
 
 export interface DuplicateCheckResult {

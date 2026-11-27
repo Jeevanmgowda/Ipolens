@@ -27,7 +27,7 @@ export function detectBroker(headers: string[]): SupportedBroker {
 /**
  * Clean numeric string from commas, currency symbols, and whitespace
  */
-function cleanNumber(val: any): number {
+function cleanNumber(val: unknown): number {
   if (val === null || val === undefined) return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   const cleaned = String(val).replace(/[₹,$\s]/g, '').trim();

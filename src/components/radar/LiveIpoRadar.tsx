@@ -1,8 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { LiveIpoSummary } from '@/types/ipo';
-import { isFalseOrDemoSymbol, isSameIpo } from '@/lib/utils/ipoDeduplication';
+import React, { useState, useEffect, useCallback, useEffectEvent } from 'react';
 import {
   LiveMarketIpoItem,
   LiveMarketOverviewResponse,
@@ -14,14 +12,12 @@ import { IpoCategoriesTabs } from '@/components/live-market/IpoCategoriesTabs';
 import { IpoDetailModal } from './IpoDetailModal';
 import { LiveGmpTrendChart } from '@/components/live-market/LiveGmpTrendChart';
 import { LiveStockPriceChart } from '@/components/live-market/LiveStockPriceChart';
-import { NseLiveChart } from '@/components/nse-live-chart';
 import {
   X,
   TrendingUp,
   Flame,
   AlertTriangle,
   RefreshCw,
-  Sparkles,
 } from 'lucide-react';
 
 interface LiveIpoRadarProps {
@@ -79,84 +75,14 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
         setErrorNotice('Live market feed temporarily unavailable. Displaying cached telemetry.');
       }
 
-      // Fetch all categorized IPOs (Upcoming, Open, Closed, Listed)
-      const [upcomingRes, openRes, closedRes, listedRes] = await Promise.allSettled([
-        fetch('/api/ipos/upcoming'),
-        fetch('/api/ipos/open'),
-        fetch('/api/ipos/closed'),
-        fetch('/api/ipos/listed'),
-      ]);
-
-      const allItems: LiveMarketIpoItem[] = [];
-
-      if (upcomingRes.status === 'fulfilled') {
-        const uJson = await upcomingRes.value.json();
-        if (uJson.success && Array.isArray(uJson.data)) allItems.push(...uJson.data);
+      // One request: every IPO from the database-backed live directory (already de-duplicated server-side).
+      const listRes = await fetch('/api/ipos?status=all');
+      const listJson = await listRes.json();
+      if (listJson.success && Array.isArray(listJson.data)) {
+        setIpos(listJson.data);
+      } else {
+        setErrorNotice(listJson.error || 'Live IPO directory is unavailable.');
       }
-      if (openRes.status === 'fulfilled') {
-        const oJson = await openRes.value.json();
-        if (oJson.success && Array.isArray(oJson.data)) {
-          allItems.push(...oJson.data);
-          if (onIposLoaded && (!overviewData || !overviewData.overview)) {
-            onIposLoaded(oJson.data.length);
-          }
-        }
-      }
-      if (closedRes.status === 'fulfilled') {
-        const cJson = await closedRes.value.json();
-        if (cJson.success && Array.isArray(cJson.data)) allItems.push(...cJson.data);
-      }
-      if (listedRes.status === 'fulfilled') {
-        const lJson = await listedRes.value.json();
-        if (lJson.success && Array.isArray(lJson.data)) allItems.push(...lJson.data);
-      }
-
-      // Multi-key deduplication and false-symbol purge across all market streams
-      const deduplicated: LiveMarketIpoItem[] = [];
-      allItems.forEach((item) => {
-        if (!item || !item.symbol || isFalseOrDemoSymbol(item.symbol)) return;
-
-        const existingIndex = deduplicated.findIndex((existing) =>
-          isSameIpo(existing.symbol, existing.companyName, item.symbol, item.companyName)
-        );
-
-        if (existingIndex === -1) {
-          deduplicated.push(item);
-        } else {
-          const existing = deduplicated[existingIndex];
-          const isIncomingListed = item.status === 'Listed' || item.isListed || (typeof item.currentPrice === 'number' && item.currentPrice > 0);
-          const isExistingListed = existing.status === 'Listed' || existing.isListed || (typeof existing.currentPrice === 'number' && existing.currentPrice > 0);
-
-          if (isIncomingListed) {
-            deduplicated[existingIndex] = {
-              ...existing,
-              ...item,
-              status: 'Listed',
-              isListed: true,
-              currentPrice: item.currentPrice ?? existing.currentPrice,
-              previousClose: item.previousClose ?? existing.previousClose,
-              dayChange: item.dayChange ?? existing.dayChange,
-              dayChangePercent: item.dayChangePercent ?? existing.dayChangePercent,
-              volume: item.volume ?? existing.volume,
-            };
-          } else if (isExistingListed) {
-            deduplicated[existingIndex] = {
-              ...item,
-              ...existing,
-              status: 'Listed',
-              isListed: true,
-              currentPrice: existing.currentPrice,
-              previousClose: existing.previousClose,
-              dayChange: existing.dayChange,
-              dayChangePercent: existing.dayChangePercent,
-              volume: existing.volume,
-            };
-          } else {
-            deduplicated[existingIndex] = { ...existing, ...item };
-          }
-        }
-      });
-      setIpos(deduplicated);
 
       // Load watchlist
       if (watchlistRes.status === 'fulfilled') {
@@ -165,23 +91,26 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
           setWatchlist(wJson.symbols);
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error fetching live market telemetry:', err);
       setErrorNotice('Live market connection interrupted. Displaying most recent available cache.');
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [onIposLoaded, overviewData]);
+  }, [onIposLoaded]);
 
   // Initial load & periodic background refresh (every 10s for live telemetry & quotes)
+  const pollMarketData = useEffectEvent((silent: boolean) => fetchMarketData(silent));
   useEffect(() => {
-    fetchMarketData();
+    (async () => {
+      await pollMarketData(false);
+    })();
 
-    // Auto-sync market telemetry and listed prices every 10 seconds
+    // Data refreshes server-side every 15 minutes; re-read the directory every minute.
     const interval = setInterval(() => {
-      fetchMarketData(true);
-    }, 10000);
+      pollMarketData(true);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, []);
@@ -386,17 +315,10 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
             </div>
 
             <div className="p-5 overflow-y-auto flex-1">
-              <NseLiveChart
-                instrumentKey={selectedIpoForStockChart.symbol}
+              <LiveStockPriceChart
                 symbol={selectedIpoForStockChart.symbol}
                 companyName={selectedIpoForStockChart.companyName}
-                initialPrice={
-                  selectedIpoForStockChart.currentPrice ||
-                  selectedIpoForStockChart.listingPrice ||
-                  selectedIpoForStockChart.priceHigh ||
-                  selectedIpoForStockChart.priceLow ||
-                  100
-                }
+                initialPrice={selectedIpoForStockChart.listingPrice ?? selectedIpoForStockChart.issuePrice ?? undefined}
               />
             </div>
           </div>

@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { FamilyPanProfile } from '@/types/pan';
+import type { LiveMarketIpoItem } from '@/types/liveMarket';
 import {
   OptimizationResult,
   OptimizationStrategy,
-  PanAllocationRecommendation,
 } from '@/lib/services/allocation-optimizer.service';
 import {
   X,
@@ -16,7 +16,6 @@ import {
   AlertTriangle,
   Users,
   Coins,
-  ArrowRight,
   Info,
   Layers,
   Zap,
@@ -33,44 +32,7 @@ interface ActiveIpoOption {
   series: string;
 }
 
-const FEATURED_IPOS: ActiveIpoOption[] = [
-  {
-    symbol: 'SWIGGY',
-    companyName: 'Swiggy Limited',
-    price: 390,
-    lotSize: 38,
-    gmp: 45,
-    totalMultiple: 3.6,
-    series: 'EQ',
-  },
-  {
-    symbol: 'HYUNDAI',
-    companyName: 'Hyundai Motor India Limited',
-    price: 1960,
-    lotSize: 7,
-    gmp: 65,
-    totalMultiple: 2.4,
-    series: 'EQ',
-  },
-  {
-    symbol: 'BAJAJHFL',
-    companyName: 'Bajaj Housing Finance Limited',
-    price: 70,
-    lotSize: 214,
-    gmp: 82,
-    totalMultiple: 64.0,
-    series: 'EQ',
-  },
-  {
-    symbol: 'PREMIERENE',
-    companyName: 'Premier Energies Limited',
-    price: 450,
-    lotSize: 33,
-    gmp: 380,
-    totalMultiple: 74.5,
-    series: 'EQ',
-  },
-];
+
 
 interface SmartAllocationModalProps {
   isOpen: boolean;
@@ -90,7 +52,6 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
   const [budget, setBudget] = useState<number>(350000);
   const [strategy, setStrategy] = useState<OptimizationStrategy>('max_probability');
 
-  const [loading, setLoading] = useState<boolean>(false);
   const [optimizing, setOptimizing] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [result, setResult] = useState<OptimizationResult | null>(null);
@@ -98,22 +59,17 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Dynamic available IPOs
-  const [availableIpos, setAvailableIpos] = useState<ActiveIpoOption[]>(FEATURED_IPOS);
+  const [availableIpos, setAvailableIpos] = useState<ActiveIpoOption[]>([]);
 
   // Selected IPO details
   const activeIpo = useMemo(() => {
-    return (
-      availableIpos.find((i) => i.symbol === selectedSymbol) ||
-      availableIpos[0] ||
-      FEATURED_IPOS[0]
-    );
+    return availableIpos.find((i) => i.symbol === selectedSymbol) || availableIpos[0] || null;
   }, [availableIpos, selectedSymbol]);
 
   // Load registered PANs and live active IPOs on modal open
   useEffect(() => {
     if (!isOpen) return;
 
-    setLoading(true);
     fetch('/api/pans')
       .then((r) => r.json())
       .then((json) => {
@@ -121,76 +77,61 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
           setProfiles(json.data);
         }
       })
-      .catch((err) => console.error(err))
-      .finally(() => setLoading(false));
+      .catch((err) => console.error(err));
 
-    // Fetch live market IPOs to optimize on actual open or forthcoming offerings
-    fetch('/api/ipos/live')
+    // Live open/upcoming IPOs that have a published price band and lot size.
+    fetch('/api/ipos?status=all')
       .then((r) => r.json())
       .then((json) => {
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          const liveActive = json.data
-            .filter((i: any) => i.status === 'Active' || i.status === 'Forthcoming')
-            .slice(0, 8)
-            .map((item: any) => {
-              const match = (item.issuePrice || '100').match(/(\d+(?:\.\d+)?)/g);
-              const price = match ? parseFloat(match[match.length - 1]) : 100;
-              const lotSize = item.lotSize ? Number(item.lotSize) : (item.series === 'SME' ? 1200 : 14);
-              return {
-                symbol: item.symbol,
-                companyName: item.companyName,
-                price,
-                lotSize,
-                gmp: item.gmpEstimate || 35,
-                totalMultiple: parseFloat(item.noOfTime || '1.0'),
-                series: item.series,
-              };
-            });
-
-          if (liveActive.length > 0) {
-            setAvailableIpos(liveActive);
-            if (!defaultSymbol || defaultSymbol === 'NSE') {
-              setSelectedSymbol(liveActive[0].symbol);
-            }
-          }
-        }
+        if (!json.success || !Array.isArray(json.data)) return;
+        const liveActive: ActiveIpoOption[] = json.data
+          .filter((i: LiveMarketIpoItem) => (i.status === 'Open' || i.status === 'Upcoming') && i.priceHigh && i.lotSize)
+          .map((i: LiveMarketIpoItem) => ({
+            symbol: i.symbol,
+            companyName: i.companyName,
+            price: i.priceHigh as number,
+            lotSize: i.lotSize as number,
+            gmp: i.gmp ?? 0,
+            totalMultiple: i.currentSubscription ?? 0,
+            series: i.series,
+          }));
+        setAvailableIpos(liveActive);
+        if (liveActive.length && !liveActive.some((i) => i.symbol === defaultSymbol)) setSelectedSymbol(liveActive[0].symbol);
       })
       .catch(() => {});
   }, [isOpen, defaultSymbol]);
 
   // Trigger optimization whenever IPO, budget, strategy, or profiles change
   useEffect(() => {
-    if (!isOpen) return;
-
-    setOptimizing(true);
-    setError(null);
-
-    fetch('/api/pans/optimize-allocation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        symbol: activeIpo.symbol,
-        companyName: activeIpo.companyName,
-        price: activeIpo.price,
-        lotSize: activeIpo.lotSize,
-        gmp: activeIpo.gmp,
-        totalBudget: budget,
-        strategy,
-        pans: profiles,
-      }),
-    })
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success && json.data) {
-          setResult(json.data);
-        } else {
-          setError(json.error || 'Optimization failed');
-        }
-      })
-      .catch((err) => {
-        setError(err.message || 'Error reaching optimization engine');
-      })
-      .finally(() => setOptimizing(false));
+    if (!isOpen || !activeIpo) return;
+    let cancelled = false;
+    (async () => {
+      setOptimizing(true);
+      setError(null);
+      try {
+        const res = await fetch('/api/pans/optimize-allocation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: activeIpo.symbol,
+            totalBudget: budget,
+            strategy,
+            selectedPanIds: profiles.map((p) => p.id),
+          }),
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.success && json.data) setResult(json.data);
+        else setError(json.error || 'Optimization failed');
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message || 'Error reaching optimization engine');
+      } finally {
+        if (!cancelled) setOptimizing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, selectedSymbol, budget, strategy, profiles, activeIpo]);
 
   if (!isOpen) return null;
@@ -218,16 +159,10 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ipoSymbol: result.symbol,
-            companyName: result.companyName,
             panId: alloc.panId,
-            panNumber: alloc.panMasked,
-            holderName: alloc.holderName,
-            relationship: alloc.relationship,
             category: alloc.category,
             lots: alloc.lots,
-            shares: alloc.shares,
             bidPrice: result.price,
-            blockedAmount: alloc.blockedCapital,
           }),
         });
 
@@ -237,8 +172,8 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
         } else {
           errors.push(`${alloc.holderName}: ${json.error}`);
         }
-      } catch (err: any) {
-        errors.push(`${alloc.holderName}: ${err.message}`);
+      } catch (err) {
+        errors.push(`${alloc.holderName}: ${(err as Error).message}`);
       }
     }
 

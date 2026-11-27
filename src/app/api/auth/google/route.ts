@@ -1,52 +1,31 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { registerOrLoginWithGoogle } from '@/services/authStore';
-import { createSession } from '@/lib/security/session';
+import { createSession, attachSessionCookie } from '@/lib/security/session';
+import { handleRouteError, jsonError } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
+const Body = z.object({
+  credential: z.string().min(20).max(4096),
+  investorCategory: z.enum(['Retail', 'sNII', 'bNII', 'Institutional']).optional(),
+  primaryPan: z.string().trim().max(10).optional(),
+});
+
+/** Google Identity Services sign-in. Identity comes only from the verified ID token. */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const result = registerOrLoginWithGoogle(body);
-
-    if (!result.valid || !result.user) {
-      return NextResponse.json(
-        { success: false, error: result.error || 'Google authentication failed' },
-        { status: 400 }
-      );
-    }
+    const body = Body.parse(await request.json());
+    const result = await registerOrLoginWithGoogle({ email: '', name: '', ...body });
+    if (!result.valid || !result.user) return jsonError(401, result.error || 'Google authentication failed');
 
     const { token, expiresAt } = await createSession(result.user.id, true);
-    const maxAgeSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
-
-    const response = NextResponse.json({
-      success: true,
-      user: result.user,
+    return attachSessionCookie(
+      NextResponse.json({ success: true, user: result.user, message: 'Signed in with Google successfully' }),
       token,
-      message: 'Signed in with Google successfully',
-    });
-
-    response.cookies.set('ipolens_session', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
-
-    response.cookies.set('ipolens_token', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
-
-    return response;
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
-      { status: 500 }
+      expiresAt
     );
+  } catch (err) {
+    return handleRouteError(err, 'auth/google');
   }
 }

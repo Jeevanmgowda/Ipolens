@@ -1,35 +1,23 @@
 import { NextResponse } from 'next/server';
-import { scanRegistrarText, OFFICIAL_REGISTRARS } from '@/services/allotmentScanner';
+import { z } from 'zod';
+import { scanRegistrarText } from '@/lib/services/allotment/text-parser';
+import { REGISTRARS } from '@/lib/registrars';
+import { handleRouteError } from '@/lib/http';
 
+/** Registrar directory for the manual (Path B) flow. */
 export async function GET() {
-  return NextResponse.json({
-    success: true,
-    registrars: OFFICIAL_REGISTRARS,
-  });
+  return NextResponse.json({ success: true, registrars: Object.values(REGISTRARS) });
 }
 
+const Body = z.object({ text: z.string().min(1).max(20000) });
+
+/** Classifies text the user copied from a registrar's allotment page. */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { text, ipoSymbol } = body;
-
-    if (!text || typeof text !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'Text content is required for allotment scanning.' },
-        { status: 400 }
-      );
-    }
-
-    const scanResult = scanRegistrarText(text);
-
-    return NextResponse.json({
-      success: true,
-      data: scanResult,
-      message: scanResult.parsedSuccessfully
-        ? `Status classified as: ${scanResult.status} (Confidence: ${Math.round(scanResult.rawConfidence * 100)}%)`
-        : 'Could not confidently determine allotment status. Please ensure full registrar output is pasted.',
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const { text } = Body.parse(await request.json());
+    const data = scanRegistrarText(text);
+    return NextResponse.json({ success: true, data });
+  } catch (err) {
+    return handleRouteError(err, 'allotment/scan');
   }
 }

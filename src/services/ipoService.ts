@@ -1,223 +1,174 @@
-import {
+import { IpoRepository, todayIst } from '@/lib/repositories/ipo.repository';
+import type {
   LiveMarketIpoItem,
   LiveMarketOverviewResponse,
   IpoSubscriptionDetails,
   GmpTrendResponse,
   MarketAlertItem,
 } from '@/types/liveMarket';
-import { IPODataProvider, NSEIPOProvider, MockIPOProvider, isIpoListed } from './ipoDataProvider';
-import { MarketService } from './marketService';
-import { GmpService } from './gmpService';
-import { SubscriptionService } from './subscriptionService';
+
+/**
+ * Read facade over the IPO repository. All data comes from the database populated by the
+ * ingestion job; nothing here fabricates or defaults values.
+ */
+
+export const GMP_DISCLAIMER =
+  'Grey Market Premium (GMP) is an informal, unregulated indication reported by third-party trackers. ' +
+  'It is not an official price and is not investment advice. The AI estimate is a statistical model output.';
+
+const findItem = async (idOrSymbol: string): Promise<LiveMarketIpoItem | null> => {
+  const key = idOrSymbol.toUpperCase();
+  const items = await IpoRepository.listView();
+  return items.find((i) => i.symbol === key || i.id.toUpperCase() === key) ?? null;
+};
 
 export class IpoService {
-  private static nseProvider = new NSEIPOProvider();
-  private static mockProvider = new MockIPOProvider();
-  private static latestIposCache: LiveMarketIpoItem[] = [];
-
-  /**
-   * Determine whether to use mock demo IPO data or live exchange scraping
-   */
-  static isMockMode(): boolean {
-    return process.env.USE_MOCK_MARKET_DATA === 'true';
+  static async getAllIpos() {
+    return IpoRepository.listView();
   }
-
-  static getProvider(): IPODataProvider {
-    return this.isMockMode() ? this.mockProvider : this.nseProvider;
+  static async getUpcomingIpos() {
+    return IpoRepository.listView({ status: 'Upcoming' });
   }
-
-  /**
-   * Generates overall Live Market Dashboard summary statistics
-   */
-  static async getOverview(): Promise<LiveMarketOverviewResponse> {
-    const provider = this.getProvider();
-    const all = await provider.getAllIpos();
-    this.latestIposCache = all;
-
-    const listed = all.filter((i) => isIpoListed(i));
-    const primary = all.filter((i) => !isIpoListed(i));
-    const upcoming = primary.filter((i) => i.status === 'Upcoming' && i.remainingTime !== 'Bidding Closed');
-    const open = primary.filter((i) => i.status === 'Open' && i.remainingTime !== 'Bidding Closed');
-    const closingSoon = primary.filter((i) => i.status === 'Open' && i.isClosingSoon && i.remainingTime !== 'Bidding Closed');
-
-    // Top Gainer strictly among listed secondary market stocks
-    const validGainers = listed.filter((i) => i.currentPrice && i.dayChangePercent !== undefined);
-    const topGainer = validGainers.length > 0
-      ? [...validGainers].sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))[0]
-      : (listed.length > 0 ? listed[0] : undefined);
-
-    // Highest Subscribed strictly among primary market offerings
-    const validSubscribed = primary.filter((i) => (i.currentSubscription || 0) > 0);
-    const topSubscribed = validSubscribed.length > 0
-      ? [...validSubscribed].sort((a, b) => (b.currentSubscription || 0) - (a.currentSubscription || 0))[0]
-      : (primary.length > 0 ? primary[0] : undefined);
-
-    // Highest estimated GMP strictly among primary market offerings
-    const validGmp = primary.filter((i) => (i.gmp || 0) > 0);
-    const topGmp = validGmp.length > 0
-      ? [...validGmp].sort((a, b) => (b.gmpPercent || 0) - (a.gmpPercent || 0))[0]
-      : (primary.length > 0 ? primary[0] : undefined);
-
-    return {
-      success: true,
-      marketStatus: MarketService.getMarketStatus(),
-      connectionStatus: this.isMockMode() ? 'DEMO' : 'LIVE',
-      isMock: this.isMockMode(),
-      lastUpdated: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      overview: {
-        upcomingCount: upcoming.length,
-        openCount: open.length,
-        closingSoonCount: closingSoon.length,
-        recentlyListedCount: listed.length,
-        totalTrackedCount: all.length,
-      },
-      topGainer,
-      topSubscribed,
-      topGmp,
-    };
+  static async getOpenIpos() {
+    return IpoRepository.listView({ status: 'Open' });
   }
-
-  static async getAllIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.getProvider().getAllIpos();
+  static async getClosedIpos() {
+    return IpoRepository.listView({ status: 'Closed' });
   }
-
-  static async getUpcomingIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.getProvider().getUpcomingIpos();
+  static async getListedIpos() {
+    const items = await IpoRepository.listView({ status: 'Listed' });
+    return items.sort((a, b) => (b.listingDate || '').localeCompare(a.listingDate || ''));
   }
-
-  static async getOpenIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.getProvider().getOpenIpos();
-  }
-
-  static async getClosedIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.getProvider().getClosedIpos();
-  }
-
-  static async getListedIpos(): Promise<LiveMarketIpoItem[]> {
-    return this.getProvider().getListedIpos();
-  }
-
-  static async getIpoDetails(idOrSymbol: string): Promise<LiveMarketIpoItem | null> {
-    return this.getProvider().getIpoDetails(idOrSymbol);
+  static async getIpoDetails(idOrSymbol: string) {
+    return findItem(idOrSymbol);
   }
 
   static async getSubscription(idOrSymbol: string): Promise<IpoSubscriptionDetails | null> {
-    const ipo = await this.getIpoDetails(idOrSymbol);
-    if (!ipo) return null;
-
-    return SubscriptionService.getSubscriptionDetails(
-      ipo.symbol,
-      ipo.companyName,
-      ipo.currentSubscription,
-      ipo.retailSubscription,
-      ipo.niiSubscription,
-      ipo.qibSubscription,
-      ipo.employeeSubscription
-    );
-  }
-
-  static async getGmp(idOrSymbol: string): Promise<{ symbol: string; gmp: number; gmpPercent: number; disclaimer: string } | null> {
-    const ipo = await this.getIpoDetails(idOrSymbol);
-    if (!ipo) return null;
-
+    const item = await findItem(idOrSymbol);
+    if (!item) return null;
+    const sub = await IpoRepository.latestSubscription(item.symbol);
+    if (!sub) return null;
     return {
-      symbol: ipo.symbol,
-      gmp: ipo.gmp,
-      gmpPercent: ipo.gmpPercent,
-      disclaimer: 'Grey Market Premium (GMP) is an unofficial, unregulated indicator and does not represent an official exchange price.',
+      symbol: item.symbol,
+      companyName: item.companyName,
+      retail: sub.retail,
+      nii: sub.nii,
+      qib: sub.qib,
+      employee: sub.employee ?? undefined,
+      total: sub.total,
+      allotmentDate: item.allotmentDate ?? undefined,
+      listingDate: item.listingDate ?? undefined,
+      recordedAt: sub.recordedAt,
     };
   }
 
-  static async getGmpHistory(
-    idOrSymbol: string,
-    timeframe: '1D' | '7D' | '1M' | 'All' = '7D'
-  ): Promise<GmpTrendResponse | null> {
-    const ipo = await this.getIpoDetails(idOrSymbol);
-    if (!ipo) return null;
-
-    return GmpService.getGmpHistory(
-      ipo.symbol,
-      ipo.companyName,
-      ipo.gmp ?? 0,
-      ipo.priceHigh || ipo.priceLow || 100,
-      timeframe
-    );
+  static async getGmpHistory(idOrSymbol: string, timeframe: GmpTrendResponse['timeframe']): Promise<GmpTrendResponse | null> {
+    const item = await findItem(idOrSymbol);
+    if (!item) return null;
+    const all = await IpoRepository.gmpHistory(item.symbol);
+    if (!all.length) return null;
+    const days = timeframe === '1D' ? 1 : timeframe === '7D' ? 7 : timeframe === '1M' ? 31 : 3650;
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const pts = all.filter((p) => timeframe === 'All' || p.date >= cutoff);
+    const usePts = pts.length ? pts : all.slice(-1);
+    const points = usePts.map((p) => ({
+      date: p.date,
+      timestamp: new Date(`${p.date}T12:00:00+05:30`).getTime(),
+      gmp: p.gmp,
+      gmpPercent: p.gmpPercent ?? undefined,
+      estimatedListingPrice: item.priceHigh !== null ? item.priceHigh + p.gmp : undefined,
+    }));
+    const values = points.map((p) => p.gmp);
+    const last = all[all.length - 1];
+    return {
+      symbol: item.symbol,
+      companyName: item.companyName,
+      currentGmp: last.gmp,
+      gmpChange: points.length > 1 ? points[points.length - 1].gmp - points[0].gmp : 0,
+      highestGmp: Math.max(...values),
+      lowestGmp: Math.min(...values),
+      timeframe,
+      points,
+      history: points,
+      disclaimer: GMP_DISCLAIMER,
+      sources: [{ sourceName: last.source, gmp: last.gmp, lastUpdated: last.fetchedAt, reliability: 'UNOFFICIAL' }],
+      freshnessLabel: `Updated ${new Date(last.fetchedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`,
+    };
   }
 
-  /**
-   * Notification-ready simulated/real alert queue dynamically generated from live market data
-   */
-  static getAlerts(items?: LiveMarketIpoItem[]): MarketAlertItem[] {
-    const all = items && items.length > 0 ? items : this.latestIposCache;
+  static async getOverview(): Promise<LiveMarketOverviewResponse> {
+    const items = await IpoRepository.listView();
+    const today = todayIst();
+    const in2Days = todayIst(new Date(Date.now() + 2 * 86400000));
+    const open = items.filter((i) => i.status === 'Open');
+    const listed = items.filter((i) => i.status === 'Listed');
+    const recent = listed.filter((i) => i.listingDate && i.listingDate >= todayIst(new Date(Date.now() - 30 * 86400000)));
+    const closingSoon = open.filter((i) => i.closeDate && i.closeDate >= today && i.closeDate <= in2Days);
+    const byMax = <T,>(arr: T[], f: (t: T) => number | null | undefined) =>
+      arr.filter((x) => f(x) !== null && f(x) !== undefined).sort((a, b) => (f(b) as number) - (f(a) as number))[0];
+    const lastUpdated = items.map((i) => i.lastUpdated || '').sort().pop() || null;
+    const istHour = new Date(Date.now() + 5.5 * 3600000);
+    const minutes = istHour.getUTCHours() * 60 + istHour.getUTCMinutes();
+    const weekday = istHour.getUTCDay();
+    return {
+      success: true,
+      marketStatus: weekday >= 1 && weekday <= 5 && minutes >= 555 && minutes <= 930 ? 'OPEN' : 'CLOSED',
+      connectionStatus: items.length ? 'LIVE' : 'DISCONNECTED',
+      isMock: false,
+      lastUpdated: lastUpdated || new Date(0).toISOString(),
+      overview: {
+        upcomingCount: items.filter((i) => i.status === 'Upcoming').length,
+        openCount: open.length,
+        closingSoonCount: closingSoon.length,
+        recentlyListedCount: recent.length,
+        totalTrackedCount: items.length,
+      },
+      topGainer: byMax(recent, (i) => i.listingGainPct),
+      topSubscribed: byMax(open, (i) => i.currentSubscription),
+      topGmp: byMax([...open, ...items.filter((i) => i.status === 'Upcoming')], (i) => i.gmpPercent),
+    };
+  }
+
+  /** Alerts derived from real state: closing soon, allotment today, listing today. */
+  static async getAlerts(): Promise<MarketAlertItem[]> {
+    const items = await IpoRepository.listView();
+    const today = todayIst();
     const alerts: MarketAlertItem[] = [];
-
-    const open = all.filter((i) => i.status === 'Open');
-    const listed = all.filter((i) => i.status === 'Listed');
-    const topGmp = all.filter((i) => i.gmp > 0).sort((a, b) => b.gmpPercent - a.gmpPercent)[0];
-    const topGainer = listed.filter((i) => i.currentPrice).sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))[0];
-    const closingSoon = open.find((i) => i.isClosingSoon || i.remainingTime?.includes('Hours'));
-
-    if (open.length > 0) {
-      const active = open[0];
-      alerts.push({
-        id: `alert-open-${active.symbol}`,
-        type: 'SUBSCRIPTION',
-        title: 'Active Primary Bidding',
-        message: `${active.companyName} (${active.symbol}) bidding window is open on exchange${active.currentSubscription > 0 ? ` (${active.currentSubscription}x subscribed)` : ''}.`,
-        symbol: active.symbol,
-        timestamp: 'Live Feed',
-        read: false,
-      });
+    for (const i of items) {
+      if (i.status === 'Open' && i.closeDate === today) {
+        alerts.push({
+          id: `close_${i.symbol}`,
+          type: 'CLOSING_SOON',
+          title: `${i.companyName} closes today`,
+          message: `Bidding for ${i.symbol} closes today${i.currentSubscription !== null ? ` (subscribed ${i.currentSubscription}x so far)` : ''}.`,
+          symbol: i.symbol,
+          timestamp: new Date().toISOString(),
+          read: false,
+        });
+      }
+      if (i.allotmentDate === today) {
+        alerts.push({
+          id: `allot_${i.symbol}`,
+          type: 'ALLOTMENT',
+          title: `${i.companyName} allotment today`,
+          message: `Basis of allotment for ${i.symbol} is expected today. Check your family PANs in the Allotment tab.`,
+          symbol: i.symbol,
+          timestamp: new Date().toISOString(),
+          read: false,
+        });
+      }
+      if (i.listingDate === today) {
+        alerts.push({
+          id: `list_${i.symbol}`,
+          type: 'LISTED',
+          title: `${i.companyName} lists today`,
+          message: `${i.symbol} is scheduled to list on ${i.series === 'SME' ? 'the SME platform' : 'the exchanges'} today.`,
+          symbol: i.symbol,
+          timestamp: new Date().toISOString(),
+          read: false,
+        });
+      }
     }
-
-    if (topGmp) {
-      alerts.push({
-        id: `alert-gmp-${topGmp.symbol}`,
-        type: 'GMP',
-        title: 'GMP Surge Detected',
-        message: `${topGmp.companyName} estimated GMP trading at +₹${topGmp.gmp} (+${topGmp.gmpPercent}%).`,
-        symbol: topGmp.symbol,
-        timestamp: 'Live Market',
-        read: false,
-      });
-    }
-
-    if (closingSoon) {
-      alerts.push({
-        id: `alert-closing-${closingSoon.symbol}`,
-        type: 'CLOSING_SOON',
-        title: 'Bidding Window Closing',
-        message: `${closingSoon.companyName} (${closingSoon.symbol}) issue closes on ${closingSoon.closeDate}.`,
-        symbol: closingSoon.symbol,
-        timestamp: 'Action Required',
-        read: false,
-      });
-    }
-
-    if (topGainer && topGainer.currentPrice) {
-      alerts.push({
-        id: `alert-move-${topGainer.symbol}`,
-        type: 'PRICE_MOVE',
-        title: 'Post-Listing Outperformer',
-        message: `${topGainer.companyName} gained ${(topGainer.dayChangePercent || 0) >= 0 ? '+' : ''}${topGainer.dayChangePercent}% intraday, trading at ₹${topGainer.currentPrice.toFixed(2)}.`,
-        symbol: topGainer.symbol,
-        timestamp: 'Live Secondary Feed',
-        read: true,
-      });
-    }
-
-    if (alerts.length === 0) {
-      alerts.push({
-        id: 'alert-default-live',
-        type: 'SUBSCRIPTION',
-        title: 'Live Market Telemetry Active',
-        message: 'Real-time primary exchange gateway synchronized.',
-        symbol: 'MARKET',
-        timestamp: 'Live Feed',
-        read: false,
-      });
-    }
-
     return alerts;
   }
 }

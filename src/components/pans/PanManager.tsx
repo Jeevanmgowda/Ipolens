@@ -7,14 +7,8 @@ import {
   Users,
   UserPlus,
   Trash2,
-  ShieldCheck,
   AlertTriangle,
   Building2,
-  CheckCircle2,
-  CreditCard,
-  Sparkles,
-  TrendingUp,
-  RefreshCw,
 } from 'lucide-react';
 
 interface PanManagerProps {
@@ -25,7 +19,6 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
   const [profiles, setProfiles] = useState<FamilyPanProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [loadingSample, setLoadingSample] = useState<boolean>(false);
 
   // Form inputs
   const [name, setName] = useState<string>('');
@@ -52,7 +45,9 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
   };
 
   useEffect(() => {
-    fetchProfiles();
+    (async () => {
+      await fetchProfiles();
+    })();
   }, []);
 
   const handleAddPan = async (e: React.FormEvent) => {
@@ -91,8 +86,8 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
       } else {
         setError(json.error || 'Failed to add PAN profile');
       }
-    } catch (err: any) {
-      setError(err.message || 'Error communicating with server');
+    } catch (err) {
+      setError((err as Error).message || 'Error communicating with server');
     } finally {
       setSubmitting(false);
     }
@@ -109,30 +104,6 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
     } catch (err) {
       console.error('Failed to delete PAN:', err);
     }
-  };
-
-  const handleLoadSamplePans = async () => {
-    setLoadingSample(true);
-    const demoFamily = [
-      { name: 'Jeevan Gowda', relationship: 'Self' as PanRelationship, pan: 'ABCDE1234F', broker: 'Zerodha', bankUpi: 'jeevan@oksbi' },
-      { name: 'Rekha Gowda', relationship: 'Spouse' as PanRelationship, pan: 'BCDEF2345G', broker: 'Groww', bankUpi: 'rekha@okhdfcbank' },
-      { name: 'M. Gowda', relationship: 'Parent' as PanRelationship, pan: 'CDEFG3456H', broker: 'AngelOne', bankUpi: 'mgowda@okicici' },
-      { name: 'Sunita Gowda', relationship: 'Parent' as PanRelationship, pan: 'DEFGH4567I', broker: 'Upstox', bankUpi: 'sunita@paytm' },
-    ];
-
-    for (const p of demoFamily) {
-      try {
-        await fetch('/api/pans', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(p),
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    await fetchProfiles();
-    setLoadingSample(false);
   };
 
   return (
@@ -204,14 +175,7 @@ export const PanManager: React.FC<PanManagerProps> = ({ onOpenMultiApply }) => {
               <UserPlus className="w-4 h-4" />
               <span>Add First Family PAN</span>
             </button>
-            <button
-              onClick={handleLoadSamplePans}
-              disabled={loadingSample}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold text-xs border border-purple-500/30 cursor-pointer transition disabled:opacity-50"
-            >
-              <Sparkles className="w-4 h-4 text-purple-400" />
-              <span>{loadingSample ? 'Loading Demo Profiles...' : 'Load 4 Demo Family Accounts'}</span>
-            </button>
+
           </div>
         </div>
       ) : (

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { panHashSecret } from '@/lib/env';
 
 /**
  * Enterprise PAN Encryption & Masking Service (AES-256-GCM)
@@ -94,4 +95,20 @@ export function maskPan(pan: string, style: 'sebi' | 'income_tax' = 'sebi'): str
 export function isValidPan(pan: string): boolean {
   if (!pan) return false;
   return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.trim().toUpperCase());
+}
+
+/**
+ * Deterministic, keyed (HMAC-SHA256) PAN fingerprint for cache/lock keys.
+ * The raw PAN never appears in Redis keys or logs.
+ */
+export function hashPan(pan: string): string {
+  return crypto
+    .createHmac('sha256', panHashSecret())
+    .update(pan.trim().toUpperCase())
+    .digest('hex')
+    .slice(0, 32);
+}
+
+export function normalizePan(pan: string): string {
+  return (pan || '').trim().toUpperCase();
 }

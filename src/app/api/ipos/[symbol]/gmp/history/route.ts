@@ -31,10 +31,10 @@ export async function GET(
       success: true,
       data: history,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API Error in /api/ipos/[symbol]/gmp/history:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch GMP history', message: error.message },
+      { success: false, error: 'Failed to fetch GMP history', message: (error as Error).message },
       { status: 500 }
     );
   }

@@ -1,53 +1,31 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { requireUser } from '@/lib/security/session';
+import { handleRouteError } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
-
-  const notifications = await DbRepositoryService.getNotifications(userId);
-
-  return NextResponse.json({
-    success: true,
-    data: notifications,
-    unreadCount: notifications.filter((n: any) => !n.read).length,
-  });
+  try {
+    const user = await requireUser(request);
+    const notifications = await DbRepositoryService.getNotifications(user.id);
+    return NextResponse.json({ success: true, data: notifications, unreadCount: notifications.filter((n) => !n.read).length });
+  } catch (err) {
+    return handleRouteError(err, 'notifications:GET');
+  }
 }
 
+const Body = z.object({ action: z.literal('markRead'), id: z.string().min(1).max(64) });
+
+/** Notifications are created by the server (allotment engine, alerts); clients can only mark them read. */
 export async function POST(request: Request) {
   try {
-    const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
-
-    const body = await request.json();
-    const { action, id, type, title, message, symbol, metadata } = body;
-
-    if (action === 'markRead' && id) {
-      await DbRepositoryService.markNotificationRead(id, userId);
-      return NextResponse.json({ success: true, message: 'Notification marked as read' });
-    }
-
-    if (!title || !message) {
-      return NextResponse.json({ success: false, error: 'Title and message are required' }, { status: 400 });
-    }
-
-    const created = await DbRepositoryService.createNotification(
-      userId,
-      type || 'SYSTEM',
-      title,
-      message,
-      symbol,
-      metadata
-    );
-
-    return NextResponse.json({
-      success: true,
-      data: created,
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const user = await requireUser(request);
+    const { id } = Body.parse(await request.json());
+    await DbRepositoryService.markNotificationRead(id, user.id);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    return handleRouteError(err, 'notifications:POST');
   }
 }

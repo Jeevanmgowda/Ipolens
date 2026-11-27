@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
+import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
 import { Navbar, ActiveTab } from '@/components/Navbar';
 import { LiveIpoRadar } from '@/components/radar/LiveIpoRadar';
 import { AiResearchView } from '@/components/research/AiResearchView';
@@ -11,28 +13,25 @@ import { AllotmentChecker } from '@/components/allotment/AllotmentChecker';
 import { PortfolioDashboard } from '@/components/portfolio/PortfolioDashboard';
 import { WatchlistView } from '@/components/watchlist/WatchlistView';
 import { AnchorLockInTracker } from '@/components/radar/AnchorLockInTracker';
-import { Shield, Sparkles, Layers, Activity } from 'lucide-react';
+
+const TABS: ActiveTab[] = ['radar', 'analyst', 'pans', 'allotment', 'portfolio', 'watchlist', 'lockin'];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('radar');
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const params = useSearchParams();
+  const tabParam = params.get('tab') as ActiveTab | null;
+  const symbolParam = params.get('symbol');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(tabParam && TABS.includes(tabParam) ? tabParam : 'radar');
   const [activeIpoCount, setActiveIpoCount] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [refreshKey, setRefreshKey] = useState<number>(0);
-
-  // Sync tab and symbol from URL parameters if navigated from /live-market
-  React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab') as ActiveTab | null;
-      if (tab && ['radar', 'analyst', 'pans', 'allotment', 'portfolio', 'watchlist', 'lockin'].includes(tab)) {
-        setActiveTab(tab);
-      }
-      const sym = params.get('symbol');
-      if (sym) {
-        setSelectedIpoForAi({ symbol: sym, companyName: sym });
-      }
-    }
-  }, []);
 
   // Multi-PAN Bidding Modal State
   const [isMultiApplyOpen, setIsMultiApplyOpen] = useState<boolean>(false);
@@ -42,10 +41,10 @@ export default function Home() {
     price: number;
     lotSize: number;
   }>({
-    symbol: 'JIOPLAT',
-    companyName: 'Jio Platforms Limited',
-    price: 450,
-    lotSize: 33,
+    symbol: '',
+    companyName: '',
+    price: 0,
+    lotSize: 0,
   });
 
   // AI Analyst selection state
@@ -53,8 +52,8 @@ export default function Home() {
     symbol: string;
     companyName: string;
   }>({
-    symbol: 'JIOPLAT',
-    companyName: 'Jio Platforms Limited',
+    symbol: symbolParam || '',
+    companyName: symbolParam || '',
   });
 
   const handleApplyWithPans = (
@@ -168,11 +167,11 @@ export default function Home() {
       <footer className="border-t border-white/5 py-6 bg-slate-950/80 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="IPOLENS" className="h-6 w-auto object-contain opacity-80" />
-            <span>• Production-Ready Primary Market & Portfolio Platform</span>
+            <Image src="/logo.png" width={1024} height={409} alt="IPOLENS" className="h-6 w-auto object-contain opacity-80" />
+            <span>• IPO research, family PAN tracking and allotment checks</span>
           </div>
           <div className="text-slate-400 font-mono text-[11px]">
-            Direct Feeds from NSE India • Zero Broker Credentials Required • SEBI Rule Compliant
+            Data: InvestorGain, BSE, Yahoo Finance (delayed) • No broker credentials required • Not investment advice
           </div>
         </div>
       </footer>

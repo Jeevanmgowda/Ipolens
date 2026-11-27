@@ -28,10 +28,10 @@ export async function GET(
       success: true,
       data: subscription,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API Error in /api/ipos/[symbol]/subscription:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch subscription breakdown', message: error.message },
+      { success: false, error: 'Failed to fetch subscription breakdown', message: (error as Error).message },
       { status: 500 }
     );
   }

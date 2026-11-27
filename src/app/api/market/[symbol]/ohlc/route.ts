@@ -1,36 +1,17 @@
 import { NextResponse } from 'next/server';
-import { MarketService } from '@/services/marketService';
+import { MarketService, MarketDataUnavailableError } from '@/services/marketService';
+import { handleRouteError, jsonError } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-  request: Request,
-  props: { params: Promise<{ symbol: string }> }
-) {
+export async function GET(request: Request, props: { params: Promise<{ symbol: string }> }) {
   try {
-    const params = await props.params;
-    const symbol = params.symbol;
-    const { searchParams } = new URL(request.url);
-    const timeframe = searchParams.get('timeframe') || '1D';
-
-    if (!symbol) {
-      return NextResponse.json({ success: false, error: 'Symbol parameter is required' }, { status: 400 });
-    }
-
-    const candles = await MarketService.getOhlc(symbol, timeframe);
-
-    return NextResponse.json({
-      success: true,
-      symbol: symbol.toUpperCase(),
-      timeframe,
-      count: candles.length,
-      data: candles,
-    });
-  } catch (error: any) {
-    console.error('API Error in /api/market/[symbol]/ohlc:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch OHLC candles', message: error.message },
-      { status: 500 }
-    );
+    const { symbol } = await props.params;
+    const timeframe = new URL(request.url).searchParams.get('timeframe') || '1D';
+    const { candles, source, ticker } = await MarketService.getOhlc(symbol, timeframe);
+    return NextResponse.json({ success: true, symbol: symbol.toUpperCase(), ticker, timeframe, source, count: candles.length, data: candles });
+  } catch (err) {
+    if (err instanceof MarketDataUnavailableError) return jsonError(404, err.message);
+    return handleRouteError(err, 'market/ohlc');
   }
 }

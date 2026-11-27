@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { parseBrokerCsv } from '@/services/brokerParser';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { requireUser } from '@/lib/security/session';
+import { handleRouteError } from '@/lib/http';
 
 export async function POST(request: Request) {
   try {
-    const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    const authUser = await requireUser(request);
+    const userId = authUser.id;
 
     const contentType = request.headers.get('content-type') || '';
     let csvText = '';
@@ -48,8 +49,7 @@ export async function POST(request: Request) {
       totalHoldingsCount,
       message: `Parsed ${importResult.totalRowsProcessed} rows from ${importResult.brokerDetected.toUpperCase()} export. Imported ${importResult.validHoldingsImported} holdings, skipped ${importResult.duplicateRowsSkipped} duplicates.`,
     });
-  } catch (err: any) {
-    console.error('Error in /api/portfolio/upload:', err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleRouteError(err, 'src/app/api/portfolio/upload/route.ts');
   }
 }

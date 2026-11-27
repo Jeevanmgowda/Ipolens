@@ -1,139 +1,65 @@
 import { NextResponse } from 'next/server';
-import { AllotmentService } from '@/lib/services/allotment/allotment.service';
-import { TrustedIpoRegistry } from '@/lib/services/allotment/trustedIpoRegistry';
+import { z } from 'zod';
+import { requireUser } from '@/lib/security/session';
+import { checkDistributedRateLimit, applyRateLimitHeaders } from '@/lib/security/rateLimiter';
+import { handleRouteError, jsonError } from '@/lib/http';
+import { AllotmentGatewayService } from '@/lib/services/allotment/allotment-gateway.service';
+import { notifyAllotmentOutcome } from '@/lib/services/notification.service';
+import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { PAN_REGEX } from '@/lib/services/allotment/helpers';
 
 export const dynamic = 'force-dynamic';
 
-const MAX_PAYLOAD_BYTES = 8192; // 8 KB payload guard
-
-/**
- * Helper to securely extract client IP for rate limiting
- */
-function getClientIp(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
-  }
-  return '127.0.0.1';
-}
-
-/**
- * GET /api/allotment/check
- * Returns list of trusted IPO offerings from authoritative server directory
- * and privacy policy guarantees.
- */
-export async function GET() {
-  const ipos = TrustedIpoRegistry.getTrustedIposList();
-  return NextResponse.json({
-    success: true,
-    data: {
-      ipos,
-      privacyPolicy: {
-        zeroRetention: true,
-        panStorage: 'none',
-        description:
-          'PAN numbers are sensitive personal financial data. They are processed strictly in-memory for the single requested lookup, never persisted, never logged, and never sent to client analytics or third parties.',
-        sebiCompliance: 'Fully compliant with SEBI and Indian Digital Personal Data Protection (DPDP) Act rules.',
-      },
-    },
-  });
-}
+const Body = z.union([
+  z.object({ applicationId: z.string().min(1).max(64) }),
+  z.object({
+    symbol: z.string().trim().min(1).max(32),
+    pan: z.string().trim().toUpperCase().regex(PAN_REGEX, 'PAN must look like ABCDE1234F'),
+  }),
+]);
 
 /**
  * POST /api/allotment/check
- * Securely verifies IPO allotment status for a given PAN number without storing or exposing raw credentials.
+ *  { applicationId }  -> verify one of the signed-in user's applications (persisted, notified)
+ *  { symbol, pan }    -> ad-hoc check of any PAN (not persisted)
+ * Returns 200 for all four outcomes, including MANUAL_VERIFICATION_REQUIRED with the registrar link.
  */
 export async function POST(request: Request) {
   try {
-    // 1. Guard against payload abuse
-    const contentLength = request.headers.get('content-length');
-    if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
-      return NextResponse.json(
-        { success: false, error: 'Request payload too large (max 8KB).' },
-        { status: 413 }
-      );
+    const user = await requireUser(request);
+    const limit = await checkDistributedRateLimit(`allotment:${user.id}`, 10, 60);
+    if (!limit.allowed) {
+      const res = jsonError(429, `Too many checks. Retry in ${limit.resetSeconds}s.`);
+      applyRateLimitHeaders(res.headers, limit);
+      return res;
     }
 
-    const clientIp = getClientIp(request);
-    let body: any;
+    const body = Body.parse(await request.json());
+    const gateway = new AllotmentGatewayService();
 
-    try {
-      body = await request.json();
-    } catch {
-      return NextResponse.json(
-        { success: false, error: 'Malformed JSON payload.' },
-        { status: 400 }
-      );
+    if ('applicationId' in body) {
+      const app = await DbRepositoryService.getApplicationForUser(body.applicationId, user.id);
+      if (!app) return jsonError(404, 'Application not found.');
+      const result = await gateway.verifyApplication(app.id, { userId: user.id });
+      if (result.transitioned && (result.status === 'ALLOTTED' || result.status === 'NOT_ALLOTTED')) {
+        await notifyAllotmentOutcome({
+          applicationId: app.id,
+          userId: user.id,
+          outcome: result.status,
+          symbol: app.ipoSymbol,
+          companyName: app.companyName,
+          holderName: app.holderName,
+          panMasked: app.panNumber,
+          sharesAllotted: result.sharesAllotted,
+          refundAmount: result.refundAmount ?? 0,
+        }).catch(() => undefined);
+      }
+      return NextResponse.json({ success: true, data: result });
     }
 
-    const {
-      symbol,
-      ipoId,
-      pan,
-      applicationNo,
-      dpClientId,
-      price,
-      lotSize,
-    } = body || {};
-
-    const targetSymbol = symbol || ipoId;
-    if (!targetSymbol || typeof targetSymbol !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'IPO Symbol or ID is required.' },
-        { status: 400 }
-      );
-    }
-
-    if (!pan || typeof pan !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'PAN number is required for official allotment inquiry.' },
-        { status: 400 }
-      );
-    }
-
-    // Call secure allotment service (PAN is validated and scoped strictly in-memory)
-    const result = await AllotmentService.checkAllotment({
-      symbol: targetSymbol,
-      pan,
-      clientIp,
-      applicationNo,
-      dpClientId,
-      price: price ? Number(price) : undefined,
-      lotSize: lotSize ? Number(lotSize) : undefined,
-    });
-
-    if (!result.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: result.error,
-        },
-        { status: result.status }
-      );
-    }
-
-    // Return strictly normalized result containing masked PAN only
-    return NextResponse.json(
-      {
-        success: true,
-        data: result.data,
-        message: result.data?.explanation,
-      },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    // Note: Do NOT log request parameters or PAN to protect user privacy
-    console.error('[Allotment Check API] Internal execution error:', err?.message || 'Unknown error');
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'An internal error occurred while processing the allotment inquiry. Please try again.',
-      },
-      { status: 500 }
-    );
+    const result = await gateway.checkPan(body.symbol.toUpperCase(), body.pan);
+    return NextResponse.json({ success: true, data: result });
+  } catch (err) {
+    return handleRouteError(err, 'allotment/check');
   }
 }

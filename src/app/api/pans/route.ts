@@ -1,105 +1,72 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { FamilyPanProfile } from '@/types/pan';
-import { isValidPan, maskPan } from '@/services/duplicateEnforcer';
+import { isValidPan, maskPan, normalizePan } from '@/lib/security/panEncryption';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { requireUser } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { handleRouteError, jsonError } from '@/lib/http';
 
-// In-memory store for server-side persistence (clean slate, zero mock dummy data)
-let userPansStore: FamilyPanProfile[] = [];
-
-export function getUserPansStore(): FamilyPanProfile[] {
-  return userPansStore;
-}
+const CreatePan = z.object({
+  name: z.string().trim().min(1).max(100),
+  relationship: z.enum(['Self', 'Spouse', 'Parent', 'Child', 'HUF', 'Other']),
+  pan: z.string().trim().length(10),
+  broker: z.string().trim().max(50).optional(),
+  dematId: z.string().trim().max(30).optional(),
+  bankUpi: z.string().trim().max(80).optional(),
+});
 
 export async function GET(request: Request) {
-  const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
-
-  const data = await DbRepositoryService.getPans(userId);
-  return NextResponse.json({
-    success: true,
-    data,
-    userId,
-    databaseActive: DbRepositoryService.isDatabaseActive(),
-  });
+  try {
+    const user = await requireUser(request);
+    return NextResponse.json({ success: true, data: await DbRepositoryService.getPans(user.id) });
+  } catch (err) {
+    return handleRouteError(err, 'pans:GET');
+  }
 }
 
 export async function POST(request: Request) {
   try {
-    const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
-
-    const body = await request.json();
-    const { name, relationship, pan, broker, dematId, bankUpi } = body;
-
-    if (!name || !pan || !relationship) {
-      return NextResponse.json(
-        { success: false, error: 'Name, PAN number, and Relationship are required.' },
-        { status: 400 }
-      );
+    const user = await requireUser(request);
+    const body = CreatePan.parse(await request.json());
+    const cleanPan = normalizePan(body.pan);
+    if (!isValidPan(cleanPan)) {
+      return jsonError(400, 'Invalid PAN format. PAN must be 10 characters (e.g. ABCDE1234F).');
     }
 
-    if (!isValidPan(pan)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid PAN format. PAN must be 10 characters (e.g. ABCDE1234F).' },
-        { status: 400 }
-      );
-    }
+    const existing = await DbRepositoryService.hasPan(user.id, cleanPan);
+    if (existing) return jsonError(409, `This PAN is already registered under profile "${existing.name}".`);
 
-    // Check if PAN is already added in user's family profiles
-    const cleanPan = pan.trim().toUpperCase();
-    const allPans = await DbRepositoryService.getPans(userId);
-    const existing = allPans.find((p) => p.pan.toUpperCase() === cleanPan || p.pan.toUpperCase() === maskPan(cleanPan));
-    if (existing) {
-      return NextResponse.json(
-        { success: false, error: `This PAN is already registered under profile "${existing.name}".` },
-        { status: 400 }
-      );
-    }
-
-    const newProfile: FamilyPanProfile = {
-      id: `pan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      name: sanitizeString(name).slice(0, 100),
-      relationship: (sanitizeString(relationship).slice(0, 50) as any),
+    const profile: FamilyPanProfile = {
+      id: `pan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: sanitizeString(body.name),
+      relationship: body.relationship,
       pan: cleanPan,
-      broker: sanitizeString(broker || 'Zerodha').slice(0, 50),
-      dematId: dematId ? sanitizeString(dematId).slice(0, 30) : undefined,
-      bankUpi: bankUpi ? sanitizeString(bankUpi).slice(0, 80) : undefined,
+      broker: sanitizeString(body.broker || 'Other'),
+      dematId: body.dematId ? sanitizeString(body.dematId) : undefined,
+      bankUpi: body.bankUpi ? sanitizeString(body.bankUpi) : undefined,
       createdAt: new Date().toISOString(),
     };
-
-    const saved = await DbRepositoryService.savePan(newProfile, userId, cleanPan);
-
+    const saved = await DbRepositoryService.savePan(profile, user.id, cleanPan);
     return NextResponse.json({
       success: true,
       data: saved,
-      message: `Successfully registered encrypted PAN profile for ${saved.name} (${maskPan(cleanPan)}).`,
+      message: `Saved encrypted PAN profile for ${saved.name} (${maskPan(cleanPan)}).`,
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleRouteError(err, 'pans:POST');
   }
 }
 
 export async function DELETE(request: Request) {
   try {
-    const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID is required' }, { status: 400 });
-    }
-
-    await DbRepositoryService.deletePan(id, userId);
-
-    return NextResponse.json({
-      success: true,
-      message: 'PAN profile deleted successfully.',
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const user = await requireUser(request);
+    const id = new URL(request.url).searchParams.get('id');
+    if (!id) return jsonError(400, 'ID is required');
+    const deleted = await DbRepositoryService.deletePan(id, user.id);
+    if (!deleted) return jsonError(404, 'PAN profile not found.');
+    return NextResponse.json({ success: true, message: 'PAN profile deleted.' });
+  } catch (err) {
+    return handleRouteError(err, 'pans:DELETE');
   }
 }

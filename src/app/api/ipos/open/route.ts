@@ -31,10 +31,10 @@ export async function GET(request: Request) {
       data: items,
       timestamp: new Date().toISOString(),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('API Error in /api/ipos/open:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch open IPOs', message: error.message },
+      { success: false, error: 'Failed to fetch open IPOs', message: (error as Error).message },
       { status: 500 }
     );
   }

@@ -58,7 +58,7 @@ export function sanitizeObject<T>(obj: T, escapeEntities = false): T {
   }
 
   if (typeof obj === 'object') {
-    const result: Record<string, any> = {};
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       // Also sanitize keys against prototype pollution
       if (key === '__proto__' || key === 'constructor' || key === 'prototype') {

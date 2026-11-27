@@ -1,85 +1,55 @@
-import { RegistrarSlug, RegistrarServerMirror } from '@/types/allotment';
+/** Shared contracts for the allotment engine (see the Allotment Checker architecture plan). */
 
-export type AllotmentStatus =
-  | 'allotted'
-  | 'not_allotted'
-  | 'pending'
-  | 'unavailable'
-  | 'technical_rejection';
+export type AllotmentStatus = 'ALLOTTED' | 'NOT_ALLOTTED' | 'PENDING' | 'MANUAL_VERIFICATION_REQUIRED';
 
-export interface RegistrarQueryOptions {
-  applicationNo?: string;
-  dpClientId?: string;
-  price?: number;
-  lotSize?: number;
-}
+/** Final states are the only ones cached or persisted. */
+export const FINAL_STATUSES: ReadonlySet<AllotmentStatus> = new Set(['ALLOTTED', 'NOT_ALLOTTED']);
 
-export interface AllotmentAdapterResult {
-  status: AllotmentStatus;
-  sharesAllotted: number;
-  sharesApplied?: number;
-  applicantName?: string;
-  applicationNo?: string;
-  dpClientId?: string;
-  category?: string;
-  explanation: string;
-  source: string;
-  isOfficialGatewayRequired: boolean;
-  directPortalUrl: string;
-  mirrors: RegistrarServerMirror[];
-  checkedAt: string;
-}
+export type AllotmentErrorCode =
+  | 'NOT_PUBLISHED'
+  | 'DIRECT_QUERY_DISABLED'
+  | 'UNSUPPORTED_REGISTRAR'
+  | 'COMPANY_NOT_FOUND'
+  | 'HTTP_ERROR'
+  | 'TIMEOUT'
+  | 'CAPTCHA_OR_HTML'
+  | 'MALFORMED_RESPONSE'
+  | 'CIRCUIT_OPEN'
+  | 'LOCKED'
+  | 'INVALID_PAN';
 
-export interface IRegistrarAdapter {
-  readonly slug: RegistrarSlug;
-  readonly name: string;
-  readonly isEnabled: boolean;
-  readonly portalUrl: string;
-  readonly mirrors: RegistrarServerMirror[];
-  checkAllotment(
-    symbol: string,
-    pan: string,
-    options?: RegistrarQueryOptions
-  ): Promise<AllotmentAdapterResult>;
-}
-
-export interface TrustedIpoInfo {
-  id?: string;
+export interface AllotmentResult {
   symbol: string;
-  companyName: string;
-  registrarName: string;
-  registrarSlug: RegistrarSlug;
-  portalUrl: string;
-  mirrors: RegistrarServerMirror[];
-  bseAllotmentUrl?: string;
-  priceHigh: number;
-  lotSize: number;
-  status: string;
-  allotmentDate?: string;
-  isSample?: boolean;
-}
-
-export interface AllotmentCheckResult {
-  symbol: string;
-  companyName: string;
-  panMasked: string; // Strictly masked (e.g. ABCDE****F), raw PAN is never returned
+  /** Always masked (ABCDE****F). Raw PANs never leave the server. */
+  panNumber: string;
   status: AllotmentStatus;
-  sharesAllotted: number;
   sharesApplied: number;
-  lotSize: number;
-  bidPrice: number;
-  allotmentValue: number;
-  refundAmount: number;
-  applicantName?: string;
-  applicationNo?: string;
-  dpClientId?: string;
-  category: string;
-  registrarName: string;
-  registrarSlug: RegistrarSlug;
-  explanation: string;
-  sourceBadge: string;
-  isOfficialGatewayRequired: boolean;
-  directPortalUrl: string;
-  mirrors: RegistrarServerMirror[];
+  sharesAllotted: number;
+  applicationNumber?: string;
+  dpId?: string;
+  message: string;
+  /** Registrar portal for one-click manual verification (Path B). */
+  fallbackUrl: string;
+  registrar: string;
+  source: 'registrar' | 'cache' | 'database' | 'fallback';
+  errorCode?: AllotmentErrorCode;
   checkedAt: string;
+}
+
+/** What an adapter reports; the gateway adds symbol, masking, applied shares and bookkeeping. */
+export interface AdapterOutcome {
+  status: AllotmentStatus;
+  sharesAllotted?: number;
+  sharesApplied?: number;
+  applicationNumber?: string;
+  dpId?: string;
+  message: string;
+  errorCode?: AllotmentErrorCode;
+}
+
+export interface RegistrarAdapter {
+  readonly slug: string;
+  checkStatus(companyIdentifier: string, panNumber: string): Promise<AdapterOutcome>;
+  /** Looks up the registrar's internal company id from the issuer name, when the registrar exposes a list. */
+  resolveCompanyId?(companyName: string): Promise<string | null>;
 }

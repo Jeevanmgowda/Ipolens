@@ -1,212 +1,97 @@
-# IPOLENS — Institutional IPO Discovery & Live Market Platform
+# IPOLENS
 
-IPOLENS is a fintech web platform for primary market IPO discovery, multi-PAN family bidding, allotment tracking, Demat portfolio management, and real-time live market telemetry.
+IPO research and family-PAN tracking for Indian primary markets:
 
----
+- **Live IPO radar:** upcoming, open, closed and listed issues from live sources, stored in Postgres. There is no mock data.
+- **DRHP AI analyst:** a Gemini-powered RAG over the actual RHP/DRHP that applies a 4-factor checklist and gives a rating out of 10 with page citations.
+- **Allotment checker:** a registrar check (or one-click registrar link) for each family PAN, with results persisted, synced to the portfolio and notified.
+- **Market GMP vs AI GMP:** the scraped grey-market premium (source and time shown) next to an independent model estimate.
 
-## Live Market Feature
+Setup, jobs, data-source limits and runbooks are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-The **Live Market** engine provides live Indian IPO market subscription feeds, real-time Grey Market Premium (GMP) trend curves, and live listed-market candlestick charts.
-
-### 1. Architecture
-
-```text
-External Market API (Upstox Market Data Feed V3 / NSE Scraper)
-                             │
-                             ▼
-              Next.js 16 / Node.js Backend
-                             │
-    ┌────────────────────────┴────────────────────────┐
-    ▼                                                 ▼
-Provider Layer (UpstoxProvider / MockProvider)    In-Memory / Redis Cache
-    │                                                 │
-    └────────────────────────┬────────────────────────┘
-                             │
-            Server-Sent Events (SSE) / WebSocket
-                             │
-                             ▼
-            React Real-Time Live Charts & Telemetry
-```
-
-- **Clean Provider Abstraction**:
-  - `MarketDataProvider` interface implemented by `UpstoxProvider` and `MockMarketProvider`.
-  - `IPODataProvider` interface implemented by `NSEIPOProvider` and `MockIPOProvider`.
-- **Zero Secrets on Client**: All API keys, secrets, and bearer tokens reside exclusively on the server in environment variables.
-- **Resilient Fallback**: If Upstox or external APIs disconnect or encounter rate-limits, the engine falls back gracefully without crashing.
-
----
-
-### 2. API Providers
-
-- **Upstox API (Market Data Feed V3)**: Preferred real-time market data provider for LTP, OHLC candles, and market depth.
-- **National Stock Exchange (NSE India)**: Official primary market order book, category subscriptions, and bidding distribution curves.
-- **Mock Provider (Free Development)**: Built-in deterministic simulated market generator conforming to Indian equity market microstructures.
-
----
-
-### 3. Environment Variables
-
-Create a `.env.local` file by copying `.env.example`:
+## Quick start
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env.local   # fill in DATABASE_URL, GEMINI_API_KEY and the secrets
+npm install
+npm run dev:direct           # app on http://localhost:3000
+npm run inngest:dev          # cron + background jobs (set INNGEST_DEV=1)
 ```
 
-Configured variables:
+Then sign up, trigger IPO ingestion (see DEPLOYMENT.md), add family PANs in the PAN tab, and record applications.
 
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `NODE_ENV` | Runtime environment (`development` / `production`) | `development` |
-| `USE_MOCK_MARKET_DATA` | Free-development mode toggle | `true` |
-| `UPSTOX_CLIENT_ID` | Upstox Developer API Key (Client ID) | (Optional) |
-| `UPSTOX_CLIENT_SECRET` | Upstox App Secret | (Optional) |
-| `UPSTOX_ACCESS_TOKEN` | OAuth2 Bearer Access Token | (Optional) |
-| `IPO_API_KEY` | External primary market API key | (Optional) |
-| `GMP_API_KEY` | Grey market premium aggregator key | (Optional) |
-| `REDIS_URL` | Redis URL for quotation caching | (Optional) |
-| `CLIENT_URL` | Frontend origin for CORS verification | `http://localhost:3000` |
+## Architecture
 
----
+```
+InvestorGain (list + detail) ─┐
+BSE public issues ────────────┼─> ingestion job (Inngest cron) ─> Postgres: ipos, ipo_subscription, ipo_gmp_history
+                              │                                        │
+                              │                       IpoRepository ───┴─> /api/ipos/**, /api/live-market (one shape, nulls not defaults)
+Yahoo Finance (delayed) ─────────> MarketService ─> /api/market/[symbol]/{quote,ohlc}, /api/market/stream
 
-### 4. How to Obtain API Credentials
+RHP/DRHP PDF (upload or BSE/SEBI link) ─> unpdf (per page) ─> section tagging + chunking ─> Gemini embeddings
+   ─> pgvector + full-text (RRF hybrid search) ─> 4 targeted extractions (Gemini, JSON schema) ─> deterministic scorecard
 
-#### Upstox Market Data Feed V3
-1. Register or log in to the **[Upstox Developer Console](https://developer.upstox.com/)**.
-2. Navigate to **Apps** and click **New App**.
-3. Set your Redirect URI to `http://localhost:3000/api/auth/callback/upstox`.
-4. Copy your **API Key** into `UPSTOX_CLIENT_ID` and **API Secret** into `UPSTOX_CLIENT_SECRET`.
-5. Authenticate via OAuth2 to generate your daily `UPSTOX_ACCESS_TOKEN`.
-
-#### Gemini AI (DRHP Prospectus Analysis)
-1. Visit **[Google AI Studio](https://aistudio.google.com/)**.
-2. Create an API Key and place it in `GEMINI_API_KEY`.
-
----
-
-### 5. How to Run in Mock Mode (Free Development)
-
-No paid API keys or exchange logins are required to run and test the complete application.
-
-1. Ensure `USE_MOCK_MARKET_DATA=true` is set in your `.env.local` (or leave it unset; it defaults to `true`).
-2. Run the development server:
-   ```bash
-   npm run dev
-   ```
-3. Navigate to `http://localhost:3000/live-market`.
-4. The dashboard will display the **🟡 DEMO DATA** status chip with realistic price action, tick feeds, subscription books, and GMP trends.
-
----
-
-### 6. How to Enable Live Mode
-
-To connect to live exchange feeds:
-
-1. Add your valid credentials to `.env.local`:
-   ```env
-   USE_MOCK_MARKET_DATA=false
-   UPSTOX_CLIENT_ID=your_client_id
-   UPSTOX_CLIENT_SECRET=your_client_secret
-   UPSTOX_ACCESS_TOKEN=your_live_token
-   ```
-2. Restart the development server.
-3. The dashboard will display the **🟢 LIVE** status indicator.
-
----
-
-### 7. Real-Time Streaming Architecture
-
-- **SSE / WebSocket Endpoint**: `/api/market/stream?symbols=SWIGGY,TATATECH`
-- Emits high-frequency JSON ticks containing:
-  - `ltp`: Last Traded Price
-  - `change`: Absolute price delta
-  - `changePercent`: Percentage change
-  - `volume`: Cumulative traded volume
-  - `high`, `low`, `open`, `close`
-- Frontend components auto-reconnect on network drops and gracefully handle offline states.
-
----
-
-### 8. Database Schema Extensions
-
-Drizzle ORM schema has been extended in `src/db/schema.ts` with:
-
-- `iposTable`: Master table for IPO issues and company metadata.
-- `ipoSubscriptionsTable`: Historical and live category-wise subscription multiples.
-- `ipoGmpHistoryTable`: Timestamps, price deltas, and estimated listing gains.
-- `marketQuotesTable`: Cached real-time market quotes (LTP, OHLC, volume).
-- `marketOhlcTable`: Intraday and historical candlestick bars.
-- `marketWatchlistTable`: User-curated watchlist with alerts and tracking.
-
----
-
-### 9. API Endpoints
-
-#### Live Market & Overview
-- `GET /api/live-market` — Full market overview, top gainers, top subscribed, and active alerts.
-- `GET /api/ipos/upcoming` — Forthcoming IPOs.
-- `GET /api/ipos/open` — Currently active IPOs open for bidding.
-- `GET /api/ipos/closed` — Issues that have concluded bidding.
-- `GET /api/ipos/listed` — Newly and recently listed IPOs with day change %.
-
-#### IPO Details & Analytics
-- `GET /api/ipos/:symbol` — Deep-dive prospectus, timetable, and registrar details.
-- `GET /api/ipos/:symbol/subscription` — Real-time subscription breakdown (Retail, NII, QIB, Employee, Total).
-- `GET /api/ipos/:symbol/gmp` — Current Grey Market Premium and percentage estimate.
-- `GET /api/ipos/:symbol/gmp/history?timeframe=7D` — Historical GMP trend curve (`1D`, `7D`, `1M`, `All`).
-
-#### Market Quotes & Charts
-- `GET /api/market/:symbol/quote` — Live ticker quote (LTP, OHLC, day change, volume).
-- `GET /api/market/:symbol/ohlc?timeframe=1D` — Multi-timeframe OHLC candlestick bars (`1m` to `1M`).
-- `GET /api/market/stream?symbols=...` — Real-time Server-Sent Events tick stream.
-- `GET /api/market/watchlist` — Retrieve saved symbols.
-- `POST /api/market/watchlist` — Add or remove symbols from watchlist.
-
----
-
-### 10. Regulatory Disclaimer
-
-> **Grey Market Premium (GMP) Disclaimer:**
-> Grey Market Premium is an unofficial, unregulated indicator traded over-the-counter and is not endorsed by SEBI, NSE, or BSE. GMP does not guarantee actual listing gains or exchange opening prices.
-
----
-
-### 11. Multi-Exchange Python Scraper Pipeline
-
-The application includes an automated Python scraper pipeline under `scripts/scraper/` that merges primary market data from NSE India, BSE India, and InvestorGain GMP:
-
-```text
-  scripts/scraper/
-  ├── nse.py              # NSE official session cookie handshake & issue fetcher
-  ├── bse.py              # BSE India API fetcher (Mainboard & SME issues)
-  ├── gmp.py              # InvestorGain unofficial live GMP and subscription fetcher
-  ├── common.py           # Retry with exponential backoff & name normalization
-  ├── merge.py            # Deduplicates and compiles feeds into data/ipos.json
-  └── requirements.txt    # Python dependencies (requests)
+ipo_applications ─> AllotmentGatewayService (cache → lock → breaker → registrar adapter | deep link)
+   ─> idempotent persist ─> P&L journal + holdings ─> notifications (in-app, Web Push, WhatsApp)
 ```
 
-#### Running the Scraper:
-- Run the full pipeline:
-  ```bash
-  npm run scrape
-  ```
-- Run individual scrapers:
-  ```bash
-  npm run scrape:nse
-  npm run scrape:bse
-  npm run scrape:gmp
-  ```
+Key code:
 
-#### Scraper API Endpoints:
-- `GET /api/scraper/sync` — Inspect status, record count, lifecycle distribution, and feed freshness.
-- `POST /api/scraper/sync` — Execute scraper worker on demand to generate fresh `data/ipos.json`.
+- **Ingestion:** `src/lib/ingestion/`, read path in `src/lib/repositories/ipo.repository.ts`.
+- **AI GMP:** `src/lib/services/gmp-prediction.service.ts`. A ridge regression trained on real listings; it does not use market GMP as an input.
+- **DRHP analyst:** `src/lib/services/drhp/`. Scoring lives in `scoring.ts` and is pure code; the LLM writes only the narrative.
+- **Allotment:**
+  - `src/lib/services/allotment/` (types, config, helpers, three adapters, gateway, family check)
+  - `src/lib/services/notification.service.ts`
+  - `src/lib/services/pnl.service.ts`
+- **Jobs:** `src/inngest/functions/`.
 
----
+## The DRHP checklist
 
-### 12. Troubleshooting
+| Factor (2.5 pts each) | What is extracted (with page citations) | How it is scored |
+| --- | --- | --- |
+| OFS vs fresh issue | Fresh issue, OFS, selling shareholders, objects of the issue | Lower OFS share scores higher; majority OFS and promoter selling are penalised |
+| Cash flow & P&L | 3 years of revenue, EBITDA, PAT, operating cash flow, debt, net worth | Profitability, PAT trend, revenue CAGR, positive CFO, cash conversion, leverage |
+| Valuation | EPS, P/E at upper band, listed peers from "Basis for Offer Price" | Issue P/E vs peer median |
+| DRHP overview | Risks (rated), growth drivers, litigation, concentration | Deductions for high and medium risks, litigation and concentration |
 
-- **Server-Sent Events / WebSocket connection dropped:**
-  The frontend chart displays `🔴 DISCONNECTED` and triggers exponential backoff reconnection. Check your network or refresh with the Sync button.
-- **Unlisted IPO chart showing benchmark:**
-  Primary issues that have not listed on the exchange do not have secondary market ticker symbols; IPOLENS automatically displays the primary issue order book and NIFTY 50 reference feed.
-- **Stale Cache:**
-  Click the "Sync NSE" or "Refresh" button in the header to purge in-memory cache and fetch fresh exchange telemetry.
+Verdict: 7 or more → Apply; 5 to 7 → Apply only for listing gains or with caution; below 5 → Avoid. This is educational analysis, not investment advice.
+
+## Allotment API
+
+| Route | Body | Notes |
+| --- | --- | --- |
+| `POST /api/allotment/check` | `{ applicationId }` | Your application. Persisted once final; notifies |
+| `POST /api/allotment/check` | `{ symbol, pan }` | Ad-hoc check, not stored |
+| `POST /api/allotment/check-family` | `{ symbol }` | Every family PAN you applied with, plus totals and refunds |
+| `POST/DELETE /api/push/subscribe` | Push subscription | Web Push devices |
+| `GET/PUT /api/user/notification-settings` | `{ phone, whatsappOptIn }` | WhatsApp alerts |
+
+All four outcomes return HTTP 200:
+
+- `ALLOTTED`
+- `NOT_ALLOTTED`
+- `PENDING`
+- `MANUAL_VERIFICATION_REQUIRED`, which includes `fallbackUrl`
+
+Other responses:
+
+- 400: invalid body
+- 401: signed out
+- 404: not found or not yours
+- 429: more than 10 checks per minute
+
+## Testing
+
+```bash
+npm run typecheck
+npm test        # runs against an in-process Postgres (PGlite + pgvector) with all migrations applied
+npm run build
+```
+
+Tests never call Gemini or registrars. Ingestion parsers are tested against real captured InvestorGain and BSE responses in `tests/fixtures/ingestion/`.
+
+## Disclaimer
+
+IPOLENS is not a SEBI-registered investment adviser or research analyst. GMP figures are unofficial, and AI outputs can be wrong. Nothing here is investment advice.

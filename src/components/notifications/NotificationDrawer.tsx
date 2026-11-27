@@ -1,16 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useEffectEvent } from 'react';
 import {
   Bell,
   X,
   TrendingUp,
-  AlertTriangle,
   Lock,
-  CheckCircle2,
   Sparkles,
-  Send,
-  Sliders,
   Check,
 } from 'lucide-react';
 
@@ -39,11 +35,6 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'feed' | 'channels'>('feed');
 
-  // Channel toggles simulation
-  const [webPushEnabled, setWebPushEnabled] = useState<boolean>(true);
-  const [telegramEnabled, setTelegramEnabled] = useState<boolean>(false);
-  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState<boolean>(true);
-  const [telegramHandle, setTelegramHandle] = useState<string>('@investor_desk');
 
   const fetchNotifications = async () => {
     try {
@@ -51,7 +42,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setNotifications(json.data);
-        const unread = json.data.filter((n: any) => !n.read).length;
+        const unread = json.data.filter((n: { read: boolean }) => !n.read).length;
         if (onCountChange) onCountChange(unread);
       }
     } catch (err) {
@@ -61,8 +52,11 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
     }
   };
 
+  const loadNotifications = useEffectEvent(() => fetchNotifications());
   useEffect(() => {
-    fetchNotifications();
+    (async () => {
+      await loadNotifications();
+    })();
   }, [isOpen]);
 
   const handleMarkAsRead = async (id: string) => {
@@ -77,46 +71,6 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
       });
       const unread = notifications.filter((n) => n.id !== id && !n.read).length;
       if (onCountChange) onCountChange(unread);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleCreateMockAlert = async (type: string) => {
-    let alertData = {
-      type: 'GMP_JUMP',
-      title: 'Grey Market Premium Alert',
-      message: 'Swiggy Limited GMP increased to ₹35 with strong grey market buyer demand.',
-      symbol: 'SWIGGY',
-    };
-
-    if (type === 'SUBSCRIPTION') {
-      alertData = {
-        type: 'SUBSCRIPTION_MILESTONE',
-        title: 'Institutional QIB Surge',
-        message: 'Bajaj Housing Finance QIB portion crossed 150x oversubscription!',
-        symbol: 'BAJAJHFL',
-      };
-    } else if (type === 'LOCKIN') {
-      alertData = {
-        type: 'LOCKIN_EXPIRY',
-        title: 'Anchor Share Release Imminent',
-        message: 'Waaree Energies 90-day anchor lock-in concludes next week.',
-        symbol: 'WAAREE',
-      };
-    }
-
-    try {
-      const res = await fetch('/api/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(alertData),
-      });
-      const json = await res.json();
-      if (json.success && json.data) {
-        setNotifications((prev) => [json.data, ...prev]);
-        if (onCountChange) onCountChange(notifications.filter((n) => !n.read).length + 1);
-      }
     } catch (err) {
       console.error(err);
     }
@@ -175,29 +129,6 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {activeTab === 'feed' ? (
             <>
-              {/* Quick simulation buttons for test demonstration */}
-              <div className="p-2.5 rounded-xl bg-slate-900/40 border border-white/5 flex items-center justify-between gap-1 text-[11px]">
-                <span className="text-slate-400">Trigger Alert:</span>
-                <button
-                  onClick={() => handleCreateMockAlert('GMP')}
-                  className="px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 cursor-pointer font-medium"
-                >
-                  + GMP Jump
-                </button>
-                <button
-                  onClick={() => handleCreateMockAlert('SUBSCRIPTION')}
-                  className="px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 cursor-pointer font-medium"
-                >
-                  + Sub Surge
-                </button>
-                <button
-                  onClick={() => handleCreateMockAlert('LOCKIN')}
-                  className="px-2 py-0.5 rounded bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 cursor-pointer font-medium"
-                >
-                  + Lock-In
-                </button>
-              </div>
-
               {loading ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
@@ -264,61 +195,9 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
               )}
             </>
           ) : (
-            /* Notification Channels Config */
-            <div className="space-y-4 text-xs">
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-semibold text-white">Browser Web Push</h4>
-                    <p className="text-[11px] text-slate-400">Instant desktop popups on subscription spikes</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={webPushEnabled}
-                    onChange={(e) => setWebPushEnabled(e.target.checked)}
-                    className="rounded text-cyan-500 focus:ring-0 cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-semibold text-white">Telegram Direct Bot</h4>
-                    <p className="text-[11px] text-slate-400">Send instant allotment & GMP notifications</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={telegramEnabled}
-                    onChange={(e) => setTelegramEnabled(e.target.checked)}
-                    className="rounded text-cyan-500 focus:ring-0 cursor-pointer"
-                  />
-                </div>
-                {telegramEnabled && (
-                  <input
-                    type="text"
-                    value={telegramHandle}
-                    onChange={(e) => setTelegramHandle(e.target.value)}
-                    placeholder="@your_telegram_username"
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-white/10 rounded-lg text-xs text-white"
-                  />
-                )}
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-900/60 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-semibold text-white">Institutional Email Digest</h4>
-                    <p className="text-[11px] text-slate-400">Daily 5 PM issue close & allotment summary</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={emailAlertsEnabled}
-                    onChange={(e) => setEmailAlertsEnabled(e.target.checked)}
-                    className="rounded text-cyan-500 focus:ring-0 cursor-pointer"
-                  />
-                </div>
-              </div>
+            <div className="p-3 rounded-xl bg-slate-900/60 border border-white/10 text-xs text-slate-300 space-y-2">
+              <p>Allotment results are delivered in-app, by browser push and on WhatsApp.</p>
+              <p className="text-slate-400">Manage browser push and your WhatsApp number in the Allotment tab, under Alerts.</p>
             </div>
           )}
         </div>

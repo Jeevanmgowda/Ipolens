@@ -9,9 +9,8 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  ReferenceLine,
 } from 'recharts';
-import { Flame, TrendingUp, Info, RefreshCw, AlertCircle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Flame, Info, RefreshCw } from 'lucide-react';
 import { GmpTrendResponse } from '@/types/liveMarket';
 
 interface LiveGmpTrendChartProps {
@@ -21,7 +20,9 @@ interface LiveGmpTrendChartProps {
   issuePrice?: number;
 }
 
-const TIMEFRAMES = [
+type Timeframe = '1D' | '7D' | '1M' | 'All';
+
+const TIMEFRAMES: Array<{ label: string; value: Timeframe }> = [
   { label: '1D', value: '1D' },
   { label: '7D', value: '7D' },
   { label: '1M', value: '1M' },
@@ -30,7 +31,6 @@ const TIMEFRAMES = [
 
 export const LiveGmpTrendChart: React.FC<LiveGmpTrendChartProps> = ({
   symbol,
-  companyName = symbol,
   baseGmp = 0,
   issuePrice = 100,
 }) => {
@@ -39,23 +39,23 @@ export const LiveGmpTrendChart: React.FC<LiveGmpTrendChartProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [hoveredPoint, setHoveredPoint] = useState<{ gmp: number; date: string } | null>(null);
 
-  const fetchGmpTrend = async (tf: '1D' | '7D' | '1M' | 'All') => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/ipos/${encodeURIComponent(symbol)}/gmp/history?timeframe=${tf}`);
-      const json = await res.json();
-      if (json.success && json.data) {
-        setData(json.data);
-      }
-    } catch (e) {
-      console.error('Failed to load GMP history:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchGmpTrend(timeframe);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/ipos/${encodeURIComponent(symbol)}/gmp/history?timeframe=${timeframe}`);
+        const json = await res.json();
+        if (!cancelled) setData(json.success && json.data ? json.data : null);
+      } catch (e) {
+        console.error('Failed to load GMP history:', e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [symbol, timeframe]);
 
   const isGmpPositive = (data?.gmpChange ?? 0) >= 0;
@@ -63,29 +63,8 @@ export const LiveGmpTrendChart: React.FC<LiveGmpTrendChartProps> = ({
   const estListingPrice = issuePrice + currentGmp;
   const estGainPercent = issuePrice > 0 ? Number(((currentGmp / issuePrice) * 100).toFixed(1)) : 0;
 
-  const points = (data?.points && data.points.length > 0)
-    ? data.points
-    : (() => {
-        const count = timeframe === '1D' ? 12 : 7;
-        const stepMs = timeframe === '1D' ? 3600000 : 86400000;
-        const now = Date.now();
-        const pts = [];
-        for (let i = count - 1; i >= 0; i--) {
-          const t = now - i * stepMs;
-          const d = new Date(t);
-          const ratio = 0.82 + 0.18 * Math.sin(((count - 1 - i) / (count - 1 || 1)) * (Math.PI / 2));
-          const g = baseGmp > 0 ? (i === 0 ? baseGmp : Math.max(1, Math.round(baseGmp * ratio))) : 0;
-          pts.push({
-            date: timeframe === '1D' ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
-            time: d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-            timestamp: t,
-            gmp: g,
-            gmpPercent: issuePrice > 0 ? Number(((g / issuePrice) * 100).toFixed(1)) : 0,
-            estimatedListingPrice: issuePrice + g,
-          });
-        }
-        return pts;
-      })();
+  // Only real recorded GMP observations are plotted; with no history the chart says so.
+  const points = data?.points ?? [];
 
   const gmpValues = points.map((p) => p.gmp);
   const rawMax = gmpValues.length > 0 ? Math.max(...gmpValues) : 0;
@@ -105,7 +84,7 @@ export const LiveGmpTrendChart: React.FC<LiveGmpTrendChartProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Real-time Grey Market bid expectations before secondary exchange listing.
+            Recorded grey-market premium observations (unofficial) before listing.
           </p>
         </div>
 
@@ -114,7 +93,7 @@ export const LiveGmpTrendChart: React.FC<LiveGmpTrendChartProps> = ({
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.value}
-              onClick={() => setTimeframe(tf.value as any)}
+              onClick={() => setTimeframe(tf.value)}
               className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
                 timeframe === tf.value
                   ? 'bg-purple-500 text-white shadow-md shadow-purple-500/25'
@@ -184,11 +163,10 @@ export const LiveGmpTrendChart: React.FC<LiveGmpTrendChartProps> = ({
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={points}
-              onMouseMove={(e: any) => {
-                if (e?.activePayload && e.activePayload.length > 0) {
-                  const p = e.activePayload[0].payload;
-                  setHoveredPoint({ gmp: p.gmp, date: p.date });
-                }
+              onMouseMove={(e) => {
+                const idx = e?.activeTooltipIndex;
+                const p = typeof idx === 'number' ? points[idx] : typeof idx === 'string' ? points[Number(idx)] : undefined;
+                if (p) setHoveredPoint({ gmp: p.gmp, date: p.date });
               }}
               onMouseLeave={() => setHoveredPoint(null)}
             >

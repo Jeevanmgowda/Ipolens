@@ -1,9 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import {
   AllocationOptimizerService,
-  OptimizationInput,
 } from '../src/lib/services/allocation-optimizer.service';
 import { FamilyPanProfile } from '../src/types/pan';
+
+const SUBSCRIPTION = {
+  symbol: 'NSE',
+  qibMultiple: 12.5,
+  niiMultiple: 6.0,
+  sNiiMultiple: 4.2,
+  bNiiMultiple: 7.8,
+  riiMultiple: 11.4,
+  totalMultiple: 9.8,
+  updatedAt: '2026-11-27T00:00:00.000Z',
+  source: 'test fixture',
+};
 
 describe('Smart Multi-PAN Allocation Engine (Probability Maximizer)', () => {
   const mockPans: FamilyPanProfile[] = [
@@ -72,6 +83,7 @@ describe('Smart Multi-PAN Allocation Engine (Probability Maximizer)', () => {
         lotSize: 14,
         totalBudget: 200000,
         pans: [],
+        subscription: SUBSCRIPTION,
       });
 
       expect(result.totalPansCount).toBe(0);
@@ -172,6 +184,7 @@ describe('Smart Multi-PAN Allocation Engine (Probability Maximizer)', () => {
         totalBudget: 55000, // Enough for 2 lots (49,980), but not 3 (74,970)
         strategy: 'capital_efficient',
         pans: mockPans,
+        subscription: SUBSCRIPTION,
       });
 
       expect(result.allocatedPansCount).toBe(2);

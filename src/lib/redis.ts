@@ -15,15 +15,55 @@ class InMemoryRedisEmitter extends EventEmitter {
     return item.value;
   }
 
-  async set(key: string, value: string, mode?: string, duration?: number): Promise<string> {
-    let expiry: number | undefined = undefined;
-    if (mode === 'EX' && typeof duration === 'number') {
-      expiry = Date.now() + duration * 1000;
-    } else if (mode === 'PX' && typeof duration === 'number') {
-      expiry = Date.now() + duration;
+  /** Supports SET key value [EX s | PX ms] [NX | XX] like ioredis. Returns null when NX/XX blocks the write. */
+  async set(key: string, value: string, ...args: Array<string | number>): Promise<'OK' | null> {
+    let expiry: number | undefined;
+    let nx = false;
+    let xx = false;
+    for (let i = 0; i < args.length; i++) {
+      const a = String(args[i]).toUpperCase();
+      if (a === 'EX') expiry = Date.now() + Number(args[++i]) * 1000;
+      else if (a === 'PX') expiry = Date.now() + Number(args[++i]);
+      else if (a === 'NX') nx = true;
+      else if (a === 'XX') xx = true;
     }
+    const exists = (await this.get(key)) !== null;
+    if ((nx && exists) || (xx && !exists)) return null;
     this.store.set(key, { value, expiry });
     return 'OK';
+  }
+
+  async del(...keys: string[]): Promise<number> {
+    let n = 0;
+    for (const k of keys) if (this.store.delete(k)) n++;
+    return n;
+  }
+
+  async incr(key: string): Promise<number> {
+    const current = await this.get(key);
+    const next = (current ? Number(current) : 0) + 1;
+    const prev = this.store.get(key);
+    this.store.set(key, { value: String(next), expiry: prev?.expiry });
+    return next;
+  }
+
+  async expire(key: string, seconds: number): Promise<number> {
+    const item = this.store.get(key);
+    if (!item) return 0;
+    item.expiry = Date.now() + seconds * 1000;
+    return 1;
+  }
+
+  async pttl(key: string): Promise<number> {
+    const item = this.store.get(key);
+    if (!item) return -2;
+    if (!item.expiry) return -1;
+    return Math.max(0, item.expiry - Date.now());
+  }
+
+  /** Test helper: wipe all keys. */
+  flushall(): void {
+    this.store.clear();
   }
 
   async publish(channel: string, message: string): Promise<number> {
@@ -36,7 +76,7 @@ class InMemoryRedisEmitter extends EventEmitter {
     return 1;
   }
 
-  async unsubscribe(channel: string): Promise<number> {
+  async unsubscribe(): Promise<number> {
     return 1;
   }
 
@@ -50,10 +90,24 @@ class InMemoryRedisEmitter extends EventEmitter {
   }
 }
 
-// Global in-memory singleton fallback
-const globalMemoryFallback = new InMemoryRedisEmitter();
+/** The subset of the Redis API the app uses; implemented by ioredis and the in-memory fallback. */
+export interface RedisClientLike {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ...args: Array<string | number>): Promise<'OK' | null>;
+  del(...keys: string[]): Promise<number>;
+  incr(key: string): Promise<number>;
+  expire(key: string, seconds: number): Promise<number>;
+  publish(channel: string, message: string): Promise<number>;
+  subscribe(channel: string, cb?: (err: Error | null, count?: number) => void): Promise<unknown>;
+  unsubscribe(channel: string): Promise<unknown>;
+  on(event: string, listener: (...args: unknown[]) => void): unknown;
+  removeListener(event: string, listener: (...args: unknown[]) => void): unknown;
+}
 
-let singletonClient: any = null;
+// Global in-memory singleton fallback
+export const globalMemoryFallback = new InMemoryRedisEmitter();
+
+let singletonClient: RedisClientLike | null = null;
 let isRedisCircuitOpen = false;
 let redisCircuitCooldownUntil = 0;
 let hasLoggedWarning = false;
@@ -79,7 +133,7 @@ function cleanRedisUrl(rawUrl?: string): string | null {
   return isPlaceholder ? null : url;
 }
 
-export function getRedisClient(): any {
+export function getRedisClient(): RedisClientLike {
   if (process.env.NODE_ENV === 'test') {
     return globalMemoryFallback;
   }
@@ -121,13 +175,13 @@ export function getRedisClient(): any {
       },
     });
 
-    client.on('error', (err: any) => {
+    client.on('error', (err: Error) => {
       // Trip circuit breaker immediately on network timeout or connection refused
       isRedisCircuitOpen = true;
       redisCircuitCooldownUntil = Date.now() + 60000;
 
       if (!hasLoggedWarning) {
-        console.warn(`[Redis] Connection notice: ${err.message}. Seamlessly using in-memory store fallback.`);
+        console.warn(`[Redis] Connection notice: ${(err as Error).message}. Seamlessly using in-memory store fallback.`);
         hasLoggedWarning = true;
       }
 
@@ -144,13 +198,13 @@ export function getRedisClient(): any {
       hasLoggedWarning = false;
     });
 
-    singletonClient = client;
-    return client;
-  } catch (err: any) {
+    singletonClient = client as unknown as RedisClientLike;
+    return singletonClient;
+  } catch (err) {
     isRedisCircuitOpen = true;
     redisCircuitCooldownUntil = Date.now() + 60000;
     if (!hasLoggedWarning) {
-      console.warn(`[Redis] Initialization notice: ${err.message}. Using in-memory fallback.`);
+      console.warn(`[Redis] Initialization notice: ${(err as Error).message}. Using in-memory fallback.`);
       hasLoggedWarning = true;
     }
     singletonClient = globalMemoryFallback;

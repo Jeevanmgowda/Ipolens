@@ -3,13 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { IpoApplication, ApplicationStatus } from '@/types/pan';
 import {
-  CheckCircle,
-  Clock,
-  ExternalLink,
   Trash2,
   FileCheck,
-  AlertCircle,
-  TrendingUp,
 } from 'lucide-react';
 
 interface ApplicationTrackerProps {
@@ -35,15 +30,17 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onRefres
   };
 
   useEffect(() => {
-    fetchApplications();
+    (async () => {
+      await fetchApplications();
+    })();
   }, [onRefreshTrigger]);
 
-  const handleUpdateStatus = async (id: string, newStatus: ApplicationStatus, allottedQty?: number) => {
+  const handleUpdateStatus = async (id: string, newStatus: ApplicationStatus) => {
     try {
       const res = await fetch('/api/applications', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status: newStatus, allottedShares: allottedQty }),
+        body: JSON.stringify({ id, status: newStatus }),
       });
       const json = await res.json();
       if (json.success) {
@@ -138,6 +135,18 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onRefres
                   </td>
 
                   <td className="py-3.5 px-4">
+                    {app.allotmentStatus === 'ALLOTTED' || app.allotmentStatus === 'NOT_ALLOTTED' ? (
+                      <span
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                          app.allotmentStatus === 'ALLOTTED'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                        }`}
+                        title="Set by the allotment checker"
+                      >
+                        {app.allotmentStatus === 'ALLOTTED' ? `Allotted (${app.allottedShares ?? 0} sh)` : 'Not Allotted'}
+                      </span>
+                    ) : (
                     <select
                       value={app.status}
                       onChange={(e) => handleUpdateStatus(app.id, e.target.value as ApplicationStatus)}
@@ -153,10 +162,9 @@ export const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onRefres
                     >
                       <option value="Applied">Applied</option>
                       <option value="Mandate Approved">Mandate Approved</option>
-                      <option value="Allotted">Allotted</option>
-                      <option value="Not Allotted">Not Allotted</option>
                       <option value="Refunded">Refunded</option>
                     </select>
+                    )}
                   </td>
 
                   <td className="py-3.5 px-4 text-right">

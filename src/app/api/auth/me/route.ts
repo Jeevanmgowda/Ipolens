@@ -1,26 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/security/session';
-import { registeredUsersStore } from '@/services/authStore';
+import { handleRouteError, jsonError } from '@/lib/http';
 
 export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-
-    if (user) {
-      return NextResponse.json({
-        success: true,
-        user,
-      });
-    }
-
-    return NextResponse.json(
-      { success: false, error: 'Not authenticated' },
-      { status: 401 }
-    );
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
-      { status: 500 }
-    );
+    if (!user) return jsonError(401, 'Not authenticated');
+    return NextResponse.json({ success: true, user });
+  } catch (err) {
+    return handleRouteError(err, 'auth/me');
   }
 }

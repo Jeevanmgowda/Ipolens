@@ -1,182 +1,119 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { IpoApplication } from '@/types/pan';
-import { checkDuplicatePanBid, maskPan } from '@/services/duplicateEnforcer';
+import { checkDuplicatePanBid } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
-import { sanitizeString } from '@/lib/security/sanitize';
+import { IpoRepository } from '@/lib/repositories/ipo.repository';
+import { requireUser } from '@/lib/security/session';
+import { handleRouteError, jsonError } from '@/lib/http';
 
-// Server-side store for applications (clean slate)
-let applicationsStore: IpoApplication[] = [];
+const CreateApplication = z.object({
+  ipoSymbol: z.string().trim().min(1).max(32),
+  panId: z.string().trim().min(1).max(64),
+  category: z.enum(['Retail', 'sNII', 'bNII', 'Employee']).default('Retail'),
+  lots: z.coerce.number().int().min(1).max(10000),
+  bidPrice: z.coerce.number().positive().optional(),
+});
 
-export function getApplicationsStore(): IpoApplication[] {
-  return applicationsStore;
-}
-
-export function updateApplicationStatus(
-  id: string,
-  status: IpoApplication['status'],
-  allottedShares?: number
-): boolean {
-  const index = applicationsStore.findIndex((a) => a.id === id);
-  if (index === -1) return false;
-  applicationsStore[index].status = status;
-  if (allottedShares !== undefined) {
-    applicationsStore[index].allottedShares = allottedShares;
-  }
-  return true;
-}
+const UpdateApplication = z.object({
+  id: z.string().min(1).max(64),
+  status: z.enum(['Applied', 'Mandate Approved', 'Refunded']),
+});
 
 export async function GET(request: Request) {
-  const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
-
-  const { searchParams } = new URL(request.url);
-  const symbol = searchParams.get('symbol');
-
-  const list = await DbRepositoryService.getApplications(symbol || undefined, userId);
-
-  return NextResponse.json({
-    success: true,
-    data: list,
-    count: list.length,
-    userId,
-    databaseActive: DbRepositoryService.isDatabaseActive(),
-  });
-}
-
-export async function POST(request: Request) {
   try {
-    const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
-
-    const body = await request.json();
-    const {
-      ipoSymbol,
-      companyName,
-      panId,
-      panNumber,
-      holderName,
-      relationship,
-      category,
-      lots,
-      shares,
-      bidPrice,
-      blockedAmount,
-    } = body;
-
-    if (!ipoSymbol || !panId || !lots || !bidPrice) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required application fields.' },
-        { status: 400 }
-      );
-    }
-
-    // Retrieve existing user applications for duplicate check
-    const existingApps = await DbRepositoryService.getApplications(ipoSymbol, userId);
-
-    // SEBI Duplicate Bid Enforcement Check!
-    const dupCheck = checkDuplicatePanBid(
-      existingApps,
-      panId,
-      ipoSymbol,
-      panNumber,
-      holderName
-    );
-
-    if (dupCheck.hasDuplicate) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: dupCheck.message,
-          isDuplicateBid: true,
-          duplicatePan: dupCheck.duplicatePan,
-        },
-        { status: 409 } // Conflict
-      );
-    }
-
-    const cleanSymbol = sanitizeString(ipoSymbol).toUpperCase().slice(0, 20);
-    const numPrice = Number(bidPrice) || 100;
-    const numLots = Math.max(1, Number(lots) || 1);
-    const computedShares = Number(shares) || Math.max(1, Math.floor(15000 / numPrice)) * numLots;
-    const computedBlocked = Number(blockedAmount) || (computedShares * numPrice);
-
-    const newApp: IpoApplication = {
-      id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      ipoSymbol: cleanSymbol,
-      companyName: sanitizeString(companyName || ipoSymbol).slice(0, 150),
-      panId: sanitizeString(panId).slice(0, 50),
-      panNumber: maskPan(panNumber || 'ABCDE1234F'),
-      holderName: sanitizeString(holderName || 'Family Member').slice(0, 100),
-      relationship: (sanitizeString(relationship || 'Self').slice(0, 50) as any),
-      category: (sanitizeString(category || 'Retail').slice(0, 50) as any),
-      lots: numLots,
-      shares: computedShares,
-      bidPrice: numPrice,
-      blockedAmount: computedBlocked,
-      status: 'Applied',
-      appliedAt: new Date().toISOString(),
-    };
-
-    await DbRepositoryService.saveApplication(newApp, userId);
-
-    return NextResponse.json({
-      success: true,
-      data: newApp,
-      message: `Application recorded successfully for ${newApp.holderName} (${newApp.panNumber}). Total blocked amount: ₹${newApp.blockedAmount.toLocaleString('en-IN')}.`,
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const user = await requireUser(request);
+    const symbol = new URL(request.url).searchParams.get('symbol') || undefined;
+    const list = await DbRepositoryService.getApplications(user.id, symbol);
+    return NextResponse.json({ success: true, data: list, count: list.length });
+  } catch (err) {
+    return handleRouteError(err, 'applications:GET');
   }
 }
 
-export async function PATCH(request: Request) {
+/**
+ * Records an application for one of the user's own PAN profiles. Lot size and price band come
+ * from the live IPO record, never from the client.
+ */
+export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { id, status, allottedShares } = body;
+    const user = await requireUser(request);
+    const body = CreateApplication.parse(await request.json());
+    const symbol = body.ipoSymbol.toUpperCase();
 
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Application ID is required' }, { status: 400 });
+    const [ipo, pans, existingApps] = await Promise.all([
+      IpoRepository.getBySymbol(symbol),
+      DbRepositoryService.getPans(user.id),
+      DbRepositoryService.getApplications(user.id, symbol),
+    ]);
+    if (!ipo) return jsonError(404, `IPO ${symbol} was not found in the live IPO directory.`);
+    if (!ipo.lotSize || !ipo.priceHigh) {
+      return jsonError(422, `${symbol} has no published lot size / price band yet.`);
+    }
+    const pan = pans.find((p) => p.id === body.panId);
+    if (!pan) return jsonError(404, 'PAN profile not found.');
+
+    const dup = checkDuplicatePanBid(existingApps, pan.id, symbol, pan.pan, pan.name);
+    if (dup.hasDuplicate) {
+      return jsonError(409, dup.message, { isDuplicateBid: true, duplicatePan: dup.duplicatePan });
     }
 
-    const updated = await DbRepositoryService.updateApplicationStatus(
-      id,
-      status,
-      allottedShares !== undefined ? Number(allottedShares) : undefined
-    );
-
-    if (!updated) {
-      return NextResponse.json({ success: false, error: 'Application not found' }, { status: 404 });
+    const bidPrice = body.bidPrice ?? ipo.priceHigh;
+    if (ipo.priceLow && (bidPrice < ipo.priceLow || bidPrice > ipo.priceHigh)) {
+      return jsonError(400, `Bid price must be within the price band Rs ${ipo.priceLow} to Rs ${ipo.priceHigh}.`);
     }
+    const shares = body.lots * ipo.lotSize;
 
-    const app = (await DbRepositoryService.getApplications()).find((a) => a.id === id);
-
+    const app: IpoApplication = {
+      id: `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      ipoSymbol: symbol,
+      companyName: ipo.companyName,
+      panId: pan.id,
+      panNumber: pan.pan,
+      holderName: pan.name,
+      relationship: pan.relationship,
+      category: body.category,
+      lots: body.lots,
+      shares,
+      bidPrice,
+      blockedAmount: shares * bidPrice,
+      status: 'Applied',
+      allotmentStatus: 'PENDING',
+      appliedAt: new Date().toISOString(),
+    };
+    await DbRepositoryService.saveApplication(app, user.id);
     return NextResponse.json({
       success: true,
       data: app,
-      message: 'Application status updated successfully.',
+      message: `Application recorded for ${app.holderName} (${app.panNumber}). Blocked amount: Rs ${app.blockedAmount.toLocaleString('en-IN')}.`,
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleRouteError(err, 'applications:POST');
+  }
+}
+
+/** Lifecycle updates only. Allotment outcomes are set exclusively by the allotment gateway. */
+export async function PATCH(request: Request) {
+  try {
+    const user = await requireUser(request);
+    const body = UpdateApplication.parse(await request.json());
+    const updated = await DbRepositoryService.updateApplicationLifecycle(body.id, user.id, body.status);
+    if (!updated) return jsonError(404, 'Application not found.');
+    return NextResponse.json({ success: true, data: updated });
+  } catch (err) {
+    return handleRouteError(err, 'applications:PATCH');
   }
 }
 
 export async function DELETE(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID is required' }, { status: 400 });
-    }
-
-    applicationsStore = applicationsStore.filter((a) => a.id !== id);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Application record removed.',
-    });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const user = await requireUser(request);
+    const id = new URL(request.url).searchParams.get('id');
+    if (!id) return jsonError(400, 'ID is required');
+    const deleted = await DbRepositoryService.deleteApplication(id, user.id);
+    if (!deleted) return jsonError(404, 'Application not found.');
+    return NextResponse.json({ success: true, message: 'Application removed.' });
+  } catch (err) {
+    return handleRouteError(err, 'applications:DELETE');
   }
 }

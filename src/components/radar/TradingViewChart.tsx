@@ -62,10 +62,9 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = memo(({
 
     containerRef.current.appendChild(script);
 
+    const container = containerRef.current;
     return () => {
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
+      container.innerHTML = '';
     };
   }, [symbol, theme, numHeight, rawNum]);
 

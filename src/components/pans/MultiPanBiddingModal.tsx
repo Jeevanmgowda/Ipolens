@@ -5,12 +5,8 @@ import { FamilyPanProfile } from '@/types/pan';
 import { maskPan } from '@/services/duplicateEnforcer';
 import {
   X,
-  Calculator,
   AlertTriangle,
   CheckCircle2,
-  Users,
-  CreditCard,
-  Building2,
   ShieldCheck,
 } from 'lucide-react';
 
@@ -27,10 +23,10 @@ interface MultiPanBiddingModalProps {
 export const MultiPanBiddingModal: React.FC<MultiPanBiddingModalProps> = ({
   isOpen,
   onClose,
-  defaultSymbol = 'NSE',
-  defaultCompanyName = 'National Stock Exchange of India Ltd',
-  defaultPrice = 1785,
-  defaultLotSize = 14,
+  defaultSymbol = '',
+  defaultCompanyName = '',
+  defaultPrice = 0,
+  defaultLotSize = 0,
   onSuccess,
 }) => {
   const [profiles, setProfiles] = useState<FamilyPanProfile[]>([]);
@@ -46,12 +42,16 @@ export const MultiPanBiddingModal: React.FC<MultiPanBiddingModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  // When the parent opens the modal for a different IPO, adopt its details (during render).
+  const incoming = `${defaultSymbol}|${defaultCompanyName}|${defaultPrice}|${defaultLotSize}`;
+  const [seenIncoming, setSeenIncoming] = useState(incoming);
+  if (incoming !== seenIncoming) {
+    setSeenIncoming(incoming);
     if (defaultSymbol) setSymbol(defaultSymbol);
     if (defaultCompanyName) setCompanyName(defaultCompanyName);
     if (defaultPrice) setPrice(defaultPrice);
     if (defaultLotSize) setLotSize(defaultLotSize);
-  }, [defaultSymbol, defaultCompanyName, defaultPrice, defaultLotSize]);
+  }
 
   useEffect(() => {
     if (!isOpen) return;
@@ -105,16 +105,10 @@ export const MultiPanBiddingModal: React.FC<MultiPanBiddingModalProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ipoSymbol: symbol,
-            companyName,
             panId: profile.id,
-            panNumber: profile.pan,
-            holderName: profile.name,
-            relationship: profile.relationship,
             category,
             lots,
-            shares: sharesPerMember,
             bidPrice: price,
-            blockedAmount: amountPerMember,
           }),
         });
 
@@ -124,8 +118,8 @@ export const MultiPanBiddingModal: React.FC<MultiPanBiddingModalProps> = ({
         } else {
           errors.push(json.error || `Failed for ${profile.name}`);
         }
-      } catch (err: any) {
-        errors.push(err.message || `Network error for ${profile.name}`);
+      } catch (err) {
+        errors.push((err as Error).message || `Network error for ${profile.name}`);
       }
     }
 
@@ -189,7 +183,7 @@ export const MultiPanBiddingModal: React.FC<MultiPanBiddingModalProps> = ({
             <label className="block text-slate-400 mb-1 font-medium">Bidding Category</label>
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value as any)}
+              onChange={(e) => setCategory(e.target.value as 'Retail' | 'sNII' | 'bNII')}
               className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-cyan-500"
             >
               <option value="Retail">Retail (Max ₹2 Lakhs)</option>
