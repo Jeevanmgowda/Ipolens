@@ -1,4 +1,7 @@
-import { pgTable, text, varchar, integer, numeric, boolean, timestamp, serial, jsonb } from 'drizzle-orm/pg-core';
+import {
+  pgTable, text, varchar, integer, numeric, boolean, timestamp, serial, jsonb,
+  index, uniqueIndex, vector, doublePrecision,
+} from 'drizzle-orm/pg-core';
 
 /**
  * IPOLENS Production Database Schema (Drizzle ORM for PostgreSQL / Supabase / Neon)
@@ -37,7 +40,15 @@ export const ipoApplicationsTable = pgTable('ipo_applications', {
   status: varchar('status', { length: 32 }).notNull().default('Applied'), // 'Applied' | 'Mandate Approved' | 'Allotted' | 'Not Allotted' | 'Refunded'
   allottedShares: integer('allotted_shares').default(0),
   appliedAt: timestamp('applied_at').notNull().defaultNow(),
-});
+  // Allotment engine bookkeeping (additive)
+  allotmentStatus: varchar('allotment_status', { length: 40 }).notNull().default('PENDING'), // ALLOTTED | NOT_ALLOTTED | PENDING
+  checkedAt: timestamp('checked_at'),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  lastErrorCode: varchar('last_error_code', { length: 64 }),
+}, (t) => [
+  index('ipo_applications_status_symbol_idx').on(t.allotmentStatus, t.ipoSymbol),
+  index('ipo_applications_user_idx').on(t.userId),
+]);
 
 // 3. Demat Portfolio Holdings Table (Credential-free Broker Ingestion)
 export const portfolioHoldingsTable = pgTable('portfolio_holdings', {
@@ -94,6 +105,19 @@ export const iposTable = pgTable('ipos', {
   registrar: varchar('registrar', { length: 128 }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  // Live-ingestion additions
+  registrarSlug: varchar('registrar_slug', { length: 32 }),
+  registrarCompanyId: varchar('registrar_company_id', { length: 64 }),
+  exchange: varchar('exchange', { length: 16 }), // NSE | BSE | NSE,BSE
+  isin: varchar('isin', { length: 16 }),
+  issuePrice: numeric('issue_price', { precision: 12, scale: 2 }),
+  listingPrice: numeric('listing_price', { precision: 12, scale: 2 }),
+  freshIssueCr: numeric('fresh_issue_cr', { precision: 14, scale: 2 }),
+  ofsCr: numeric('ofs_cr', { precision: 14, scale: 2 }),
+  issueSizeCr: numeric('issue_size_cr', { precision: 14, scale: 2 }),
+  source: varchar('source', { length: 64 }),
+  fetchedAt: timestamp('fetched_at'),
+  raw: jsonb('raw'),
 });
 
 // 6. IPO Subscription Telemetry Table
@@ -107,7 +131,7 @@ export const ipoSubscriptionsTable = pgTable('ipo_subscription', {
   employee: numeric('employee', { precision: 8, scale: 2 }).default('0.00'),
   total: numeric('total', { precision: 8, scale: 2 }).notNull().default('0.00'),
   recordedAt: timestamp('recorded_at').notNull().defaultNow(),
-});
+}, (t) => [index('ipo_subscription_symbol_idx').on(t.symbol, t.recordedAt)]);
 
 // 7. IPO Grey Market Premium (GMP) History Table
 export const ipoGmpHistoryTable = pgTable('ipo_gmp_history', {
@@ -118,7 +142,8 @@ export const ipoGmpHistoryTable = pgTable('ipo_gmp_history', {
   gmpPercent: numeric('gmp_percent', { precision: 8, scale: 2 }),
   source: varchar('source', { length: 64 }).default('Market Feed'),
   recordedAt: timestamp('recorded_at').notNull().defaultNow(),
-});
+  fetchedAt: timestamp('fetched_at'),
+}, (t) => [index('ipo_gmp_history_symbol_idx').on(t.symbol, t.recordedAt)]);
 
 // 8. Live Market Quotes Table
 export const marketQuotesTable = pgTable('market_quotes', {
@@ -171,6 +196,8 @@ export const usersTable = pgTable('users', {
   termsAccepted: boolean('terms_accepted').default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  phone: varchar('phone', { length: 20 }),
+  whatsappOptIn: boolean('whatsapp_opt_in').notNull().default(false),
 });
 
 // 12. User Sessions Table (HttpOnly Session Security)
@@ -222,3 +249,127 @@ export type SessionInsert = typeof sessionsTable.$inferInsert;
 export type NotificationSelect = typeof notificationsTable.$inferSelect;
 export type NotificationInsert = typeof notificationsTable.$inferInsert;
 
+
+// ==========================================================================
+// Additive tables: allotment engine, notifications, P&L, DRHP RAG, GMP model
+// ==========================================================================
+
+export const pushSubscriptionsTable = pgTable('push_subscriptions', {
+  id: serial('id').primaryKey(),
+  userId: varchar('user_id', { length: 64 }).notNull(),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [index('push_subscriptions_user_idx').on(t.userId)]);
+
+export const notificationLogTable = pgTable('notification_log', {
+  id: serial('id').primaryKey(),
+  applicationId: varchar('application_id', { length: 64 }).notNull(),
+  channel: varchar('channel', { length: 16 }).notNull(), // IN_APP | WHATSAPP | WEB_PUSH
+  outcome: varchar('outcome', { length: 40 }).notNull(), // ALLOTTED | NOT_ALLOTTED
+  status: varchar('status', { length: 16 }).notNull(), // SENT | FAILED | SKIPPED
+  error: text('error'),
+  sentAt: timestamp('sent_at').notNull().defaultNow(),
+}, (t) => [uniqueIndex('notification_log_dedupe_idx').on(t.applicationId, t.channel, t.outcome)]);
+
+export const portfolioPnlJournalTable = pgTable('portfolio_pnl_journal', {
+  id: serial('id').primaryKey(),
+  userId: varchar('user_id', { length: 64 }).notNull(),
+  applicationId: varchar('application_id', { length: 64 }).notNull().unique(),
+  symbol: varchar('symbol', { length: 32 }).notNull(),
+  sharesApplied: integer('shares_applied').notNull(),
+  sharesAllotted: integer('shares_allotted').notNull(),
+  issuePrice: numeric('issue_price', { precision: 12, scale: 2 }).notNull(),
+  investedAmount: numeric('invested_amount', { precision: 14, scale: 2 }).notNull(),
+  refundAmount: numeric('refund_amount', { precision: 14, scale: 2 }).notNull(),
+  listingPrice: numeric('listing_price', { precision: 12, scale: 2 }),
+  listingGainAmount: numeric('listing_gain_amount', { precision: 14, scale: 2 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [index('pnl_journal_user_idx').on(t.userId)]);
+
+export const drhpDocumentsTable = pgTable('drhp_documents', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  userId: varchar('user_id', { length: 64 }).notNull(),
+  symbol: varchar('symbol', { length: 32 }),
+  companyName: varchar('company_name', { length: 256 }),
+  sourceUrl: text('source_url'),
+  fileName: varchar('file_name', { length: 256 }),
+  sha256: varchar('sha256', { length: 64 }).notNull(),
+  pageCount: integer('page_count').notNull().default(0),
+  chunkCount: integer('chunk_count').notNull().default(0),
+  status: varchar('status', { length: 16 }).notNull().default('QUEUED'), // QUEUED | INDEXING | READY | FAILED
+  error: text('error'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [index('drhp_documents_symbol_idx').on(t.symbol), index('drhp_documents_sha_idx').on(t.sha256)]);
+
+export const drhpPagesTable = pgTable('drhp_pages', {
+  id: serial('id').primaryKey(),
+  documentId: varchar('document_id', { length: 64 }).notNull(),
+  pageNumber: integer('page_number').notNull(),
+  text: text('text').notNull(),
+}, (t) => [uniqueIndex('drhp_pages_doc_page_idx').on(t.documentId, t.pageNumber)]);
+
+export const drhpChunksTable = pgTable('drhp_chunks', {
+  id: serial('id').primaryKey(),
+  documentId: varchar('document_id', { length: 64 }).notNull(),
+  chunkIndex: integer('chunk_index').notNull(),
+  pageStart: integer('page_start').notNull(),
+  pageEnd: integer('page_end').notNull(),
+  section: varchar('section', { length: 64 }).notNull(),
+  content: text('content').notNull(),
+  embedding: vector('embedding', { dimensions: 768 }),
+}, (t) => [
+  index('drhp_chunks_doc_idx').on(t.documentId, t.section),
+  index('drhp_chunks_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+]);
+
+export const drhpAnalysesTable = pgTable('drhp_analyses', {
+  id: serial('id').primaryKey(),
+  documentId: varchar('document_id', { length: 64 }).notNull(),
+  model: varchar('model', { length: 64 }).notNull(),
+  status: varchar('status', { length: 16 }).notNull().default('RUNNING'), // RUNNING | READY | FAILED
+  result: jsonb('result'),
+  error: text('error'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [index('drhp_analyses_doc_idx').on(t.documentId)]);
+
+export const gmpPredictionsTable = pgTable('gmp_predictions', {
+  id: serial('id').primaryKey(),
+  symbol: varchar('symbol', { length: 32 }).notNull(),
+  modelVersion: varchar('model_version', { length: 64 }).notNull(),
+  predictedGainPct: doublePrecision('predicted_gain_pct').notNull(),
+  predictedGmp: doublePrecision('predicted_gmp'),
+  lowerPct: doublePrecision('lower_pct').notNull(),
+  upperPct: doublePrecision('upper_pct').notNull(),
+  drivers: jsonb('drivers').notNull(),
+  features: jsonb('features').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [index('gmp_predictions_symbol_idx').on(t.symbol, t.createdAt)]);
+
+export const gmpModelsTable = pgTable('gmp_models', {
+  id: serial('id').primaryKey(),
+  version: varchar('version', { length: 64 }).notNull().unique(),
+  coefficients: jsonb('coefficients').notNull(),
+  metrics: jsonb('metrics').notNull(),
+  trainedOn: integer('trained_on').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const providerTokensTable = pgTable('provider_tokens', {
+  provider: varchar('provider', { length: 32 }).primaryKey(), // 'upstox'
+  accessToken: text('access_token').notNull(),
+  expiresAt: timestamp('expires_at'),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type PushSubscriptionSelect = typeof pushSubscriptionsTable.$inferSelect;
+export type NotificationLogSelect = typeof notificationLogTable.$inferSelect;
+export type PnlJournalSelect = typeof portfolioPnlJournalTable.$inferSelect;
+export type DrhpDocumentSelect = typeof drhpDocumentsTable.$inferSelect;
+export type DrhpChunkSelect = typeof drhpChunksTable.$inferSelect;
+export type DrhpAnalysisSelect = typeof drhpAnalysesTable.$inferSelect;
+export type GmpPredictionSelect = typeof gmpPredictionsTable.$inferSelect;
