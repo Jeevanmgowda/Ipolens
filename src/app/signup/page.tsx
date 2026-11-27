@@ -86,8 +86,8 @@ export default function SignUpPage() {
       return;
     }
 
-    if (!password || password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (!password || password.length < 8) {
+      setError('Password must be at least 8 characters long.');
       return;
     }
 
@@ -207,7 +207,7 @@ export default function SignUpPage() {
                 <div className="w-6 h-6 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
                   ✓
                 </div>
-                <span>Instant registrar allotment scanner (KFintech, Link Intime)</span>
+                <span>Family PAN allotment checks with one-click registrar links</span>
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-300">
                 <div className="w-6 h-6 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
@@ -223,7 +223,7 @@ export default function SignUpPage() {
                 <span>Regulatory Safety Guaranteed</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                All PAN and demographic data is locally encrypted in memory. We never route UPI mandates without your broker or banking app approval.
+                PANs are encrypted at rest (AES-256-GCM) and shown masked. IPOLENS never places bids or touches UPI mandates; you apply through your own broker or bank.
               </p>
             </div>
           </div>
@@ -337,7 +337,7 @@ export default function SignUpPage() {
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
-                      placeholder="Min 6 characters"
+                      placeholder="Min 8 characters"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full pl-9 pr-10 py-2 bg-slate-900/90 border border-white/10 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition font-mono"

@@ -102,9 +102,13 @@ export async function registerPdf(input: {
   const existing = await db
     .select()
     .from(schema.drhpDocumentsTable)
-    .where(and(eq(schema.drhpDocumentsTable.sha256, sha256), eq(schema.drhpDocumentsTable.status, 'READY')))
+    .where(eq(schema.drhpDocumentsTable.sha256, sha256))
+    .orderBy(desc(schema.drhpDocumentsTable.createdAt))
     .limit(1);
-  if (existing[0]) return { document: existing[0], reused: true };
+  // Same file seen before: READY documents are reused as-is; others keep their stored pages and
+  // are simply re-indexed by the caller (e.g. after an AI quota error).
+  if (existing[0]?.status === 'READY') return { document: existing[0], reused: true };
+  if (existing[0]) return { document: existing[0], reused: false };
 
   let pages: string[];
   try {

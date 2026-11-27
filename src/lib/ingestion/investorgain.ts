@@ -215,6 +215,7 @@ export function parseDetailPayload(payload: IgDetailPayload): IgIpoDetail | null
   const bidsRaw = payload.biddingData?.ipoBiddingData;
   const lastBid = Array.isArray(bidsRaw) && bidsRaw.length ? bidsRaw[bidsRaw.length - 1] : null;
 
+  const positive = (n: number | null) => (n !== null && n > 0 ? n : null);
   const crore = (amt: unknown) => {
     const n = toNumber(amt);
     return n !== null ? Math.round((n / 1e7) * 100) / 100 : null;
@@ -240,7 +241,7 @@ export function parseDetailPayload(payload: IgDetailPayload): IgIpoDetail | null
     priceHigh,
     finalPrice: toNumber(d.issue_price_final),
     lotSize: toNumber(d.market_lot_size),
-    issueSizeCr: crore(d.issue_size_in_amt) ?? toNumber(d.issue_size),
+    issueSizeCr: positive(crore(d.issue_size_in_amt)) ?? positive(toNumber(d.issue_size)) ?? positive((crore(d.issue_size_fresh_in_amt) ?? 0) + (crore(d.issue_size_ofs_in_amt) ?? 0)),
     freshIssueCr: crore(d.issue_size_fresh_in_amt),
     ofsCr: crore(d.issue_size_ofs_in_amt),
     openDate: isoDate(d.issue_open_date),

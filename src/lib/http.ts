@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { DatabaseUnavailableError } from '@/db';
-import { ConfigurationError } from '@/lib/env';
+import { ConfigurationError, AiQuotaError } from '@/lib/env';
 import { UnauthorizedError } from '@/lib/security/session';
 
 /** Domain "not found or not owned" error, mapped to 404 so ownership is never leaked. */
@@ -31,9 +31,12 @@ export function handleRouteError(err: unknown, context: string) {
   if (err instanceof ZodError) {
     return jsonError(400, 'Invalid request body.', { issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) });
   }
+  if (err instanceof AiQuotaError) return jsonError(503, err.message, { retryable: true });
   if (err instanceof DatabaseUnavailableError || err instanceof ConfigurationError) {
     return jsonError(503, err.message);
   }
-  console.error(`[${context}]`, err instanceof Error ? err.message : err);
+  // Log the root cause (e.g. the Postgres error behind a Drizzle "Failed query"); never sent to clients.
+  const cause = err instanceof Error && err.cause instanceof Error ? ` | cause: ${err.cause.message}` : '';
+  console.error(`[${context}]`, (err instanceof Error ? err.message.split('\nparams:')[0].slice(0, 200) : err) + cause);
   return jsonError(500, 'Internal server error.');
 }

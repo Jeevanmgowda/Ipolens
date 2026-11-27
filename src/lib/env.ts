@@ -69,6 +69,14 @@ export function env(): ServerEnv {
   return cached;
 }
 
+/** The AI provider rejected the call because the API key is out of quota or rate-limited. */
+export class AiQuotaError extends Error {
+  constructor(public readonly provider: string, detail?: string) {
+    super(`${provider} API quota or rate limit exceeded for the configured key. Try again later or raise the quota.${detail ? ` (${detail})` : ''}`);
+    this.name = 'AiQuotaError';
+  }
+}
+
 export class ConfigurationError extends Error {
   constructor(public readonly feature: string, public readonly missing: string[]) {
     super(`${feature} is not configured. Missing: ${missing.join(', ')}`);

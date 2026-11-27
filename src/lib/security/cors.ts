@@ -16,6 +16,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
  */
 export function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return true; // Same-origin or non-browser server request
+  // In development, any local port is fine (the dev server may not get port 3000).
+  if (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
   return DEFAULT_ALLOWED_ORIGINS.some((allowed) => allowed === origin || origin.endsWith('.ipolens.in'));
 }
 

@@ -1,3 +1,15 @@
+-- Databases created by an earlier IPOLENS version may contain an unused, differently-shaped
+-- portfolio_pnl_journal (uuid ids). Keep it, renamed, so the new table can be created.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'portfolio_pnl_journal' AND column_name = 'user_id' AND data_type = 'uuid'
+  ) THEN
+    ALTER TABLE public.portfolio_pnl_journal RENAME TO legacy_portfolio_pnl_journal;
+  END IF;
+END
+$$;--> statement-breakpoint
 CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint
 CREATE TABLE "drhp_analyses" (
 	"id" serial PRIMARY KEY NOT NULL,

@@ -44,7 +44,46 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { user, isAuthenticated, signOut } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [unreadNotifCount, setUnreadNotifCount] = useState(3);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [indices, setIndices] = useState<Array<{ name: string; last: number; changePercent: number }>>([]);
+
+  // Delayed index levels; refreshed every 2 minutes. Nothing is shown if the feed is unavailable.
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const json = await (await fetch('/api/market/indices')).json();
+        if (active && json.success) setIndices(json.indices);
+      } catch {
+        /* leave the ticker empty */
+      }
+    };
+    (async () => {
+      await load();
+    })();
+    const t = setInterval(load, 120000);
+    return () => {
+      active = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  // Unread count only exists for a signed-in user.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    (async () => {
+      try {
+        const json = await (await fetch('/api/notifications')).json();
+        if (active && json.success) setUnreadNotifCount(json.unreadCount ?? 0);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleTabClick = (tab: ActiveTab) => {
@@ -73,23 +112,19 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-14 border-b border-white/5 py-2 text-xs">
           {/* Market Indices Ticker */}
           <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-1">
-            <div className="flex items-center gap-1.5 font-mono">
-              <span className="text-slate-400 font-medium">NIFTY 50</span>
-              <span className="text-slate-200 font-semibold">25,385.20</span>
-              <span className="text-emerald-400 font-medium">+0.48%</span>
-            </div>
-            <div className="h-3 w-px bg-white/10" />
-            <div className="flex items-center gap-1.5 font-mono">
-              <span className="text-slate-400 font-medium">SENSEX</span>
-              <span className="text-slate-200 font-semibold">82,912.45</span>
-              <span className="text-emerald-400 font-medium">+0.42%</span>
-            </div>
-            <div className="h-3 w-px bg-white/10 hidden sm:block" />
-            <div className="hidden sm:flex items-center gap-1.5 font-mono">
-              <span className="text-slate-400 font-medium">NIFTY IPO INDEX</span>
-              <span className="text-slate-200 font-semibold">14,240.10</span>
-              <span className="text-emerald-400 font-medium">+1.85%</span>
-            </div>
+            {indices.map((i, idx) => (
+              <React.Fragment key={i.name}>
+                {idx > 0 && <div className="h-3 w-px bg-white/10" />}
+                <div className="flex items-center gap-1.5 font-mono" title="Yahoo Finance, delayed">
+                  <span className="text-slate-400 font-medium">{i.name}</span>
+                  <span className="text-slate-200 font-semibold">{i.last.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  <span className={`font-medium ${i.changePercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {i.changePercent >= 0 ? '+' : ''}
+                    {i.changePercent}%
+                  </span>
+                </div>
+              </React.Fragment>
+            ))}
           </div>
 
           {/* Right Side: Refresh & User Authentication */}
@@ -97,11 +132,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onRefresh}
               disabled={isRefreshing}
-              title="Refresh live data from NSE India"
+              title="Reload the live IPO directory"
               className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
-              <span className="hidden md:inline">{isRefreshing ? 'Syncing...' : 'Sync NSE'}</span>
+              <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
             </button>
 
             {/* Notification Center Trigger */}

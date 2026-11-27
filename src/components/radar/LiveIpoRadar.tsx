@@ -85,7 +85,7 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
       }
 
       // Load watchlist
-      if (watchlistRes.status === 'fulfilled') {
+      if (watchlistRes.status === 'fulfilled' && watchlistRes.value.ok) {
         const wJson = await watchlistRes.value.json();
         if (wJson.success && Array.isArray(wJson.symbols)) {
           setWatchlist(wJson.symbols);

@@ -189,7 +189,12 @@ export async function refitGmpModel(): Promise<{ trained: boolean; rows: number;
 
 /** Writes a fresh prediction for each open/closed (pre-listing) IPO that has subscription data. */
 export async function predictActiveIpos(): Promise<{ predicted: number; skipped: string | null }> {
-  const model = await loadLatestModel();
+  let model = await loadLatestModel();
+  if (!model) {
+    // First run: train immediately instead of waiting for the nightly refit.
+    const fit = await refitGmpModel();
+    if (fit.trained) model = await loadLatestModel();
+  }
   if (!model) return { predicted: 0, skipped: `model not trained yet (needs ${MIN_TRAINING_ROWS}+ listed IPOs with subscription data)` };
   const active = (await IpoRepository.listAll()).filter((r) => r.status === 'Open' || r.status === 'Closed');
   let predicted = 0;

@@ -3,7 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 
 export const metadata: Metadata = {
-  title: 'IPOLENS — Production Ready IPO Intelligence & Portfolio Platform',
+  title: 'IPOLENS — IPO research, allotment checks and DRHP analysis',
   description:
     'Live NSE India exchange feeds, real-time bidding demand curves, category subscription telemetry, SEBI-compliant family PAN application management, 1-click registrar allotment verification, and credential-free demat portfolio tracking.',
   icons: {

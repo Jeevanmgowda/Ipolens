@@ -63,7 +63,7 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             </span>
             <span className="text-xs text-emerald-400 block font-medium mt-0.5">Bidding Active</span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-2">SEBI ASBA/UPI enabled</p>
+          <p className="text-[10px] text-slate-500 mt-2">Accepting bids now</p>
         </div>
 
         {/* Card 2: Upcoming IPOs */}
@@ -78,7 +78,7 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             </span>
             <span className="text-xs text-blue-400 block font-medium mt-0.5">In Pipeline</span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-2">SEBI cleared & scheduled</p>
+          <p className="text-[10px] text-slate-500 mt-2">Announced, not yet open</p>
         </div>
 
         {/* Card 3: Closing Soon */}
@@ -93,7 +93,7 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             </span>
             <span className="text-xs text-rose-400 block font-medium mt-0.5">Final 24 Hours</span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-2">Mandate cutoff approaching</p>
+          <p className="text-[10px] text-slate-500 mt-2">Bidding closes within 2 days</p>
         </div>
 
         {/* Card 4: Recently Listed */}
@@ -108,7 +108,7 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             </span>
             <span className="text-xs text-purple-400 block font-medium mt-0.5">Secondary Trading</span>
           </div>
-          <p className="text-[10px] text-slate-500 mt-2">Live NSE quotes active</p>
+          <p className="text-[10px] text-slate-500 mt-2">Listed in the last 30 days</p>
         </div>
 
         {/* Card 5: Total IPOs Tracked */}
@@ -137,27 +137,25 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
             <div className="space-y-0.5">
               <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
                 <Award className="w-3.5 h-3.5 text-emerald-400" />
-                Top Secondary Market Performer
+                Best Recent Listing (30 days)
               </span>
               <div className="flex items-baseline gap-2">
                 <span className="font-mono font-extrabold text-white text-base">{activeTopGainer.symbol}</span>
-                <span className={`font-mono font-bold text-xs ${(activeTopGainer.dayChangePercent || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {(activeTopGainer.dayChangePercent || 0) >= 0 ? '+' : ''}{activeTopGainer.dayChangePercent}% today
-                </span>
+                {activeTopGainer.listingGainPct !== null && activeTopGainer.listingGainPct !== undefined && (
+                  <span className={`font-mono font-bold text-xs ${activeTopGainer.listingGainPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {activeTopGainer.listingGainPct >= 0 ? '+' : ''}
+                    {activeTopGainer.listingGainPct}% on listing
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{activeTopGainer.companyName}</p>
             </div>
             <div className="text-right">
               <span className="font-mono text-xs font-bold text-white block">
-                ₹{(activeTopGainer.currentPrice || activeTopGainer.listingPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {activeTopGainer.listingPrice ? `₹${activeTopGainer.listingPrice.toLocaleString('en-IN')}` : '—'}
               </span>
-              <span className={`text-[10px] font-mono block ${(activeTopGainer.dayChange || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                {(activeTopGainer.dayChange || 0) >= 0 ? '+' : ''}₹{(activeTopGainer.dayChange || 0).toFixed(2)}
-              </span>
-              {(activeTopGainer.previousClose || activeTopGainer.issuePrice) && (
-                <span className="text-[9px] text-slate-400 font-mono block">
-                  Close: ₹{(activeTopGainer.previousClose || activeTopGainer.issuePrice || 0).toFixed(2)}
-                </span>
+              {activeTopGainer.issuePrice && (
+                <span className="text-[9px] text-slate-400 font-mono block">Issue: ₹{activeTopGainer.issuePrice}</span>
               )}
             </div>
           </div>

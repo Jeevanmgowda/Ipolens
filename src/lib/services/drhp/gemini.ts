@@ -1,6 +1,20 @@
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
-import { env, requireGemini } from '@/lib/env';
+import { env, requireGemini, AiQuotaError } from '@/lib/env';
+
+function isQuotaError(err: unknown): boolean {
+  const e = err as { status?: number; code?: number; message?: string };
+  return e?.status === 429 || e?.code === 429 || /RESOURCE_EXHAUSTED|"code":\s*429|exceeded your current quota/i.test(e?.message || '');
+}
+
+async function guard<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (isQuotaError(err)) throw new AiQuotaError('Gemini');
+    throw err;
+  }
+}
 
 /**
  * Thin Gemini wrapper: embeddings and schema-constrained JSON generation. Errors surface to the
@@ -20,11 +34,11 @@ export async function embedTexts(texts: string[], taskType: 'RETRIEVAL_DOCUMENT'
   const BATCH = 50;
   for (let i = 0; i < texts.length; i += BATCH) {
     const batch = texts.slice(i, i + BATCH);
-    const res = await ai().models.embedContent({
+    const res = await guard(() => ai().models.embedContent({
       model: env().GEMINI_EMBED_MODEL,
       contents: batch,
       config: { taskType, outputDimensionality: EMBEDDING_DIMENSIONS },
-    });
+    }));
     const vectors = (res.embeddings || []).map((e) => normalize(e.values || []));
     if (vectors.length !== batch.length) throw new Error('Gemini returned an unexpected number of embeddings.');
     out.push(...vectors);
@@ -45,7 +59,7 @@ export async function generateJson<T extends z.ZodTypeAny>(opts: {
   model?: string;
   temperature?: number;
 }): Promise<z.infer<T>> {
-  const res = await ai().models.generateContent({
+  const res = await guard(() => ai().models.generateContent({
     model: opts.model || env().GEMINI_ANALYSIS_MODEL,
     contents: opts.prompt,
     config: {
@@ -54,7 +68,7 @@ export async function generateJson<T extends z.ZodTypeAny>(opts: {
       responseMimeType: 'application/json',
       responseJsonSchema: z.toJSONSchema(opts.schema, { target: 'draft-7' }),
     },
-  });
+  }));
   const text = res.text;
   if (!text) throw new Error('Gemini returned an empty response.');
   return opts.schema.parse(JSON.parse(text));
