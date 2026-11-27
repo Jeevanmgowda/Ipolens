@@ -164,6 +164,9 @@ const num = (v: string | number | null | undefined): number | null => {
 const dec = (v: number | null | undefined, digits = 2): string | null =>
   v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(digits);
 
+/** Rows imported from the data/ipos.json snapshot carry a source starting with this. */
+export const SNAPSHOT_SOURCE_PREFIX = 'NSE/BSE snapshot';
+
 /** Today's date in IST as YYYY-MM-DD (IPO calendars are Indian market days). */
 export function todayIst(now = new Date()): string {
   return new Date(now.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
@@ -248,6 +251,26 @@ export class IpoRepository {
       updatedAt: now,
     };
 
+    // Another row may already hold this symbol. A JSON-snapshot row for the same company is
+    // superseded by the richer record (its GMP points move across); any other clash keeps both
+    // rows by giving this one an id-suffixed symbol.
+    const holder = await db
+      .select({ id: schema.iposTable.id, source: schema.iposTable.source })
+      .from(schema.iposTable)
+      .where(eq(schema.iposTable.symbol, rec.symbol))
+      .limit(1);
+    if (holder[0] && holder[0].id !== rec.id) {
+      if (holder[0].source?.startsWith(SNAPSHOT_SOURCE_PREFIX)) {
+        await db
+          .update(schema.ipoGmpHistoryTable)
+          .set({ ipoId: rec.id })
+          .where(eq(schema.ipoGmpHistoryTable.ipoId, holder[0].id));
+        await db.delete(schema.iposTable).where(eq(schema.iposTable.id, holder[0].id));
+      } else {
+        values.symbol = `${rec.symbol.slice(0, 18)}_${rec.id}`.slice(0, 32).toUpperCase();
+      }
+    }
+
     // If the symbol changed (e.g. NSE symbol published after we first saw the issue), move
     // the user's applications along with it so allotment checks keep working.
     const existing = await db
@@ -255,10 +278,10 @@ export class IpoRepository {
       .from(schema.iposTable)
       .where(eq(schema.iposTable.id, rec.id))
       .limit(1);
-    if (existing[0] && existing[0].symbol !== rec.symbol) {
+    if (existing[0] && existing[0].symbol !== values.symbol) {
       await db
         .update(schema.ipoApplicationsTable)
-        .set({ ipoSymbol: rec.symbol })
+        .set({ ipoSymbol: values.symbol })
         .where(eq(schema.ipoApplicationsTable.ipoSymbol, existing[0].symbol));
     }
 

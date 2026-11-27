@@ -21,7 +21,10 @@
     "workers:build": "tsc --noEmit -p tsconfig.json",
     "workers:start": "node workers/market-feed-worker.js",
     "workers:refresh": "node src/lib/scheduler.js",
-    "build:workers": "tsc --noEmit -p tsconfig.json"
+    "build:workers": "tsc --noEmit -p tsconfig.json",
+    "ingest": "node scripts/ingest.mjs live",
+    "ingest:all": "node scripts/ingest.mjs all",
+    "ingest:watch": "node scripts/ingest.mjs watch"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
