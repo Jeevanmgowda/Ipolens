@@ -15,6 +15,7 @@ import {
 import { AllotmentCheckResult, AllotmentStatus } from '@/lib/services/allotment/types';
 import { FamilyPanProfile } from '@/types/pan';
 import { isValidPan } from '@/services/duplicateEnforcer';
+import { IpoLogo } from '@/components/ui/IpoLogo';
 import {
   ExternalLink,
   Search,
@@ -647,10 +648,13 @@ export const AllotmentChecker: React.FC = () => {
                       : 'bg-slate-950/70 border-slate-800/80 hover:border-slate-700 text-slate-300 hover:bg-slate-900/80'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="font-mono font-bold text-xs text-white truncate">{ipo.symbol}</span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <IpoLogo symbol={ipo.symbol} companyName={ipo.companyName} size="sm" />
+                      <p className="text-xs font-bold text-white line-clamp-2 leading-snug">{ipo.companyName || ipo.symbol}</p>
+                    </div>
                     <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                      className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold shrink-0 ${
                         ipo.series === 'SME'
                           ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                           : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
@@ -659,8 +663,6 @@ export const AllotmentChecker: React.FC = () => {
                       {ipo.series}
                     </span>
                   </div>
-
-                  <p className="text-[11px] text-slate-400 truncate font-medium">{ipo.companyName}</p>
 
                   <div className="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-white/5">
                     <span className="text-cyan-300/90 font-medium truncate">

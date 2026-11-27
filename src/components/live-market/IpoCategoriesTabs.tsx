@@ -11,6 +11,7 @@ import {
   isFalseOrDemoSymbol,
 } from '@/lib/utils/ipoDeduplication';
 import { predictGmpForIpo } from '@/services/mlListingGainModel';
+import { IpoLogo } from '@/components/ui/IpoLogo';
 import {
   Search,
   Filter,
@@ -514,11 +515,14 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                 <div>
                   {/* Card Top: Badges & Watchlist */}
                   <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-base text-white">{ipo.symbol}</span>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <IpoLogo symbol={ipo.symbol} companyName={ipo.companyName} size="md" />
+                      <div className="space-y-1 min-w-0">
+                        <h4 className="text-sm font-bold text-white leading-snug line-clamp-2 group-hover:text-cyan-300 transition">
+                          {ipo.companyName || ipo.symbol}
+                        </h4>
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
                             ipo.series === 'DEBT'
                               ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                               : ipo.series === 'SME'
@@ -529,9 +533,6 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           {ipo.series}
                         </span>
                       </div>
-                      <h4 className="text-xs text-slate-300 font-medium line-clamp-1 group-hover:text-cyan-300 transition">
-                        {ipo.companyName}
-                      </h4>
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -926,23 +927,25 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-white text-sm">{ipo.symbol}</span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[10px] font-semibold ${
-                              ipo.series === 'DEBT'
-                                ? 'bg-amber-500/15 text-amber-300'
-                                : ipo.series === 'SME'
-                                ? 'bg-purple-500/15 text-purple-300'
-                                : 'bg-white/5 text-slate-300'
-                            }`}
-                          >
-                            {ipo.series}
-                          </span>
+                        <div className="flex items-center gap-2.5">
+                          <IpoLogo symbol={ipo.symbol} companyName={ipo.companyName} size="sm" />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-white text-xs sm:text-sm line-clamp-1 max-w-[240px]">
+                              {ipo.companyName || ipo.symbol}
+                            </p>
+                            <span
+                              className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] font-semibold ${
+                                ipo.series === 'DEBT'
+                                  ? 'bg-amber-500/15 text-amber-300'
+                                  : ipo.series === 'SME'
+                                  ? 'bg-purple-500/15 text-purple-300'
+                                  : 'bg-white/5 text-slate-300'
+                              }`}
+                            >
+                              {ipo.series}
+                            </span>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 line-clamp-1 max-w-[200px]">
-                          {ipo.companyName}
-                        </p>
                       </td>
 
                       {activeTab === 'listed' ? (
