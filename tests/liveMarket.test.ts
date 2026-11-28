@@ -251,29 +251,28 @@ describe('Live Market Feature Test Suite', () => {
       const nseProvider = new NSEIPOProvider();
       const all = await nseProvider.getAllIpos();
 
-      const hdfp = all.find((i) => i.symbol === 'HDFP');
-      expect(hdfp).toBeDefined();
-      expect(hdfp?.status).toBe('Closed');
-      expect(hdfp?.remainingTime).toBe('Bidding Closed');
-
       const upcoming = await nseProvider.getUpcomingIpos();
       const open = await nseProvider.getOpenIpos();
       const closed = await nseProvider.getClosedIpos();
 
-      // HDFP must NOT be in upcoming or open
-      expect(upcoming.some((i) => i.symbol === 'HDFP')).toBe(false);
-      expect(open.some((i) => i.symbol === 'HDFP')).toBe(false);
-      // HDFP must be in closed
-      expect(closed.some((i) => i.symbol === 'HDFP')).toBe(true);
-
       // Verify for ALL IPOs: if bidding is closed, status must be Closed or Listed
+      // and it must never appear in Upcoming or Open
       for (const ipo of all) {
-        if (ipo.remainingTime === 'Bidding Closed') {
+        if (ipo.remainingTime === 'Bidding Closed' || ipo.status === 'Closed') {
           expect(['Closed', 'Listed']).toContain(ipo.status);
           expect(upcoming.some((u) => u.symbol === ipo.symbol)).toBe(false);
           expect(open.some((o) => o.symbol === ipo.symbol)).toBe(false);
+          if (ipo.status === 'Closed') {
+            expect(closed.some((c) => c.symbol === ipo.symbol)).toBe(true);
+          }
         }
       }
+
+      // Deterministic cutoff verification independent of live feed contents
+      const { isBiddingClosed, resolveIpoLifecycleStatus } = await import('../src/lib/utils/ipoDateUtils');
+      expect(isBiddingClosed('15-Oct-2020')).toBe(true);
+      expect(resolveIpoLifecycleStatus('13-Oct-2020', '15-Oct-2020', false)).toBe('Closed');
+      expect(resolveIpoLifecycleStatus('13-Oct-2020', '15-Oct-2020', true, '21-Oct-2020')).toBe('Listed');
     });
 
     it('should accurately resolve effective status in IpoCategoriesTabs helper', async () => {
