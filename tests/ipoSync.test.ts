@@ -9,7 +9,7 @@ import { recordSyncRun, readSyncHealth } from '@/lib/ingestion/sync-health';
 import { IpoRepository } from '@/lib/repositories/ipo.repository';
 import { UpstreamError } from '@/lib/ingestion/http';
 import { createSession } from '@/lib/security/session';
-import { POST as syncPost } from '@/app/api/scraper/sync/route';
+import { POST as syncPost, GET as syncGet } from '@/app/api/scraper/sync/route';
 import { createTestDatabase } from './helpers/testDb';
 
 const fx = (f: string) => fs.readFileSync(path.join(__dirname, 'fixtures/ingestion', f), 'utf8');
@@ -171,6 +171,13 @@ describe('Sync endpoint and health', () => {
     expect((await syncPost(post({ mode: 'live' }, { authorization: 'Bearer wrong' }))).status).toBe(403);
     const { token } = await createSession('usr_ret_02', false);
     expect((await syncPost(post({ mode: 'live' }, { cookie: `ipolens_session=${token}` }))).status).toBe(403);
+  });
+
+  it('GET is a read-only status without the cron secret', async () => {
+    process.env.CRON_SECRET = 'test-cron-secret-value';
+    const res = await syncGet(new Request('http://localhost/api/scraper/sync', { headers: { authorization: 'Bearer wrong' } }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).store).toBe('supabase');
   });
 
   it('rejects an unknown mode for an authorised caller', async () => {

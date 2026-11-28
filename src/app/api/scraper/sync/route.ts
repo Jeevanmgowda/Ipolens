@@ -17,6 +17,7 @@ import { clearSupabaseIpoCache } from '@/services/supabaseIpoProvider';
  * IPO data sync into Supabase.
  *
  * GET  — public status: counts per lifecycle stage straight from the database and the last run.
+ *        With the CRON_SECRET bearer (Vercel Cron) it runs a live sync instead.
  * POST — CRON_SECRET bearer or a signed-in admin. Body `{ mode }`:
  *   "live"        (default) InvestorGain live report + details, cross-checked with BSE
  *   "backfill"    one bounded batch of the 12-month backfill; pass `fromId` = previous `nextId`
@@ -40,7 +41,17 @@ const intIn = (v: unknown, min: number, max: number): number | undefined => {
   return Number.isInteger(n) ? Math.min(max, Math.max(min, n)) : undefined;
 };
 
-export async function GET() {
+export async function GET(req?: Request) {
+  // Vercel Cron calls GET with `Authorization: Bearer $CRON_SECRET`: run the live sync.
+  if (req && bearerMatches(req.headers.get('authorization') || '', process.env.CRON_SECRET)) {
+    return POST(
+      new Request(req.url, {
+        method: 'POST',
+        headers: { authorization: req.headers.get('authorization') || '', 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'live' }),
+      })
+    );
+  }
   if (!isDatabaseConfigured()) {
     return NextResponse.json({ exists: false, error: 'Database is not configured (DATABASE_URL).' }, { status: 503 });
   }
