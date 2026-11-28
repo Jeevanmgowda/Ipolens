@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getClientIp, checkRateLimit, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
+import { getClientIp, checkRateLimitDistributed, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
+import { checkBodySize } from '@/lib/security/bodyLimits';
 import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight } from '@/lib/security/cors';
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const origin = request.headers.get('origin');
   const clientIp = getClientIp(request);
@@ -24,6 +25,18 @@ export function proxy(request: NextRequest) {
     );
   }
 
+  // 2b. Request body size limits (before any handler reads the body)
+  const bodyProblem = checkBodySize(pathname, request.method, request.headers);
+  if (bodyProblem) {
+    return setCorsHeaders(
+      new NextResponse(JSON.stringify({ success: false, error: bodyProblem.error }), {
+        status: bodyProblem.status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      origin
+    );
+  }
+
   // 3. Rate Limiting across API Endpoints
   if (pathname.startsWith('/api/')) {
     let tier: RateLimitTier = 'api';
@@ -35,7 +48,7 @@ export function proxy(request: NextRequest) {
       tier = 'mutating';
     }
 
-    const rateLimit = checkRateLimit(clientIp, tier);
+    const rateLimit = await checkRateLimitDistributed(clientIp, tier);
     if (!rateLimit.allowed) {
       const resp = new NextResponse(
         JSON.stringify({

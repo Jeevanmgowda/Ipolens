@@ -26,7 +26,7 @@ describe('Auth Service & Validation', () => {
         password: 'password123',
       });
       expect(result.valid).toBe(false);
-      expect(result.error).toContain('No account found');
+      expect(result.error).toBe('Invalid email or password.');
     });
 
     it('rejects wrong password', () => {
@@ -35,7 +35,7 @@ describe('Auth Service & Validation', () => {
         password: 'WrongPassword!',
       });
       expect(result.valid).toBe(false);
-      expect(result.error).toContain('Incorrect password');
+      expect(result.error).toBe('Invalid email or password.');
     });
 
     it('authenticates demo user with valid credentials', () => {
@@ -58,7 +58,7 @@ describe('Auth Service & Validation', () => {
       const result = validateAndRegisterUser({
         name: 'A',
         email: 'valid@example.com',
-        password: 'Password123!',
+        password: 'Kestrel-Harbour-42',
         investorCategory: 'Retail',
         termsAccepted: true,
       });
@@ -70,7 +70,7 @@ describe('Auth Service & Validation', () => {
       const result = validateAndRegisterUser({
         name: 'John Doe',
         email: 'invalid-email',
-        password: 'Password123!',
+        password: 'Kestrel-Harbour-42',
         investorCategory: 'Retail',
         termsAccepted: true,
       });
@@ -78,7 +78,7 @@ describe('Auth Service & Validation', () => {
       expect(result.error).toContain('valid email address');
     });
 
-    it('rejects passwords shorter than 6 characters', () => {
+    it('rejects passwords shorter than 10 characters', () => {
       const result = validateAndRegisterUser({
         name: 'John Doe',
         email: 'valid@example.com',
@@ -87,14 +87,14 @@ describe('Auth Service & Validation', () => {
         termsAccepted: true,
       });
       expect(result.valid).toBe(false);
-      expect(result.error).toContain('Password must be at least 6 characters');
+      expect(result.error).toContain('Password must be at least 10 characters');
     });
 
     it('rejects when terms are not accepted', () => {
       const result = validateAndRegisterUser({
         name: 'John Doe',
         email: 'valid@example.com',
-        password: 'Password123!',
+        password: 'Kestrel-Harbour-42',
         investorCategory: 'Retail',
         termsAccepted: false,
       });
@@ -106,7 +106,7 @@ describe('Auth Service & Validation', () => {
       const result = validateAndRegisterUser({
         name: 'John Doe',
         email: 'valid@example.com',
-        password: 'Password123!',
+        password: 'Kestrel-Harbour-42',
         investorCategory: 'Retail',
         primaryPan: 'INVALID_PAN',
         termsAccepted: true,

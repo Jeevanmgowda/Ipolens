@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateIpoInsight } from '@/lib/services/prospectus-analyzer.service';
+import { apiErrorResponse } from '@/lib/security/apiError';
+import { requireAiAccess } from '@/lib/security/aiGuard';
+import { CompanyNameSchema, firstIssue } from '@/lib/security/schemas';
+import { z } from 'zod';
+
+const AnalyzeDrhpBodySchema = z.object({
+  companyName: CompanyNameSchema.min(1, 'companyName is required'),
+  drhpSummary: z.string().max(30_000).optional(),
+});
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { companyName, drhpSummary } = body;
+    const access = await requireAiAccess(req);
+    if ('response' in access) return access.response;
 
-    if (!companyName) {
-      return NextResponse.json({ error: 'companyName is required' }, { status: 400 });
+    const parsed = AnalyzeDrhpBodySchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const { companyName, drhpSummary } = parsed.data;
 
     const context = drhpSummary || `Draft Red Herring Prospectus for ${companyName} (IPO Offering).`;
     const insight = await generateIpoInsight(companyName, context);
@@ -19,6 +30,6 @@ export async function POST(req: NextRequest) {
       insight,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/market/analyze-drhp');
   }
 }

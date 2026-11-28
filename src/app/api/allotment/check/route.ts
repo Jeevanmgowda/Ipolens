@@ -1,25 +1,13 @@
 import { NextResponse } from 'next/server';
 import { AllotmentService } from '@/lib/services/allotment/allotment.service';
 import { TrustedIpoRegistry } from '@/lib/services/allotment/trustedIpoRegistry';
+import { getClientIp } from '@/lib/security/rateLimiter';
 
 export const dynamic = 'force-dynamic';
 
 const MAX_PAYLOAD_BYTES = 8192; // 8 KB payload guard
 
-/**
- * Helper to securely extract client IP for rate limiting
- */
-function getClientIp(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
-  }
-  return '127.0.0.1';
-}
+// Client IP comes from the shared trusted-proxy-aware helper (audit H7).
 
 /**
  * GET /api/allotment/check

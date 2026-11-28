@@ -1,0 +1,9 @@
+{
+  "name": "ipolens-workers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Background workers kept out of the web app's dependency tree. smartapi-javascript pulls in axios 0.20 and mocha (see docs/security/BASELINE_AUDIT.md, H6), so it is isolated here and only installed where the Angel One feed worker runs.",
+  "dependencies": {
+    "smartapi-javascript": "1.0.27"
+  }
+}

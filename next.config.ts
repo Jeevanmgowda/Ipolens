@@ -53,6 +53,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  experimental: {
+    // The proxy buffers request bodies (10 MB by default). Allow the 25 MB DRHP upload plus
+    // multipart overhead; per-route limits are enforced in src/lib/security/bodyLimits.ts.
+    proxyClientMaxBodySize: '28mb',
+  },
   async headers() {
     return [
       {

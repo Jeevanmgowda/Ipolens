@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { isValidEmail } from '@/lib/security/sanitize';
 import { InvestorCategory, GoogleAuthPayload } from '@/types/auth';
 import { GoogleAuthModal } from '@/components/auth/GoogleAuthModal';
 import {
@@ -82,13 +83,13 @@ export default function SignUpPage() {
       return;
     }
 
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    if (!email.trim() || !isValidEmail(email.trim())) {
       setError('Please enter a valid email address.');
       return;
     }
 
-    if (!password || password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (!password || password.length < 10) {
+      setError('Password must be at least 10 characters long.');
       return;
     }
 
@@ -338,7 +339,7 @@ export default function SignUpPage() {
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
-                      placeholder="Min 6 characters"
+                      placeholder="Min 10 characters"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full pl-9 pr-10 py-2 bg-slate-900/90 border border-white/10 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition font-mono"
