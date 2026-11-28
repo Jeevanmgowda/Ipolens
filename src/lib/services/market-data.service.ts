@@ -1,7 +1,7 @@
 import { gunzipSync } from 'node:zlib';
 import YahooFinance from 'yahoo-finance2';
 import { getRedisClient } from '@/lib/redis';
-import { cleanSymbol, getLiveQuote as getChartMetaQuote } from '@/lib/market/ipoMarketData';
+import { cleanSymbol, getLiveQuotes as getYahooQuotes } from '@/lib/market/ipoMarketData';
 
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
 
@@ -261,16 +261,36 @@ export class MarketDataService {
     quotes: Record<string, LiveQuoteResult>;
     provider: MarketProviderName;
   }> {
-    const unique = [...new Set(symbols.map(cleanSymbol).filter(Boolean))].slice(0, 50);
+    const unique = [...new Set(symbols.map(cleanSymbol).filter(Boolean))].slice(0, 60);
     const quotes: Record<string, LiveQuoteResult> = {};
     let primaryProvider: MarketProviderName = 'yahoo';
+
+    const uncached: string[] = [];
+    for (const sym of unique) {
+      const hit = await cacheGet(`quote:${sym}`);
+      if (hit) {
+        try {
+          const parsed = JSON.parse(hit) as LiveQuoteResult;
+          quotes[sym] = parsed;
+          if (parsed.provider === 'upstox') primaryProvider = 'upstox';
+          continue;
+        } catch {
+          // Ignore malformed cache entry
+        }
+      }
+      uncached.push(sym);
+    }
+
+    if (uncached.length === 0) {
+      return { quotes, provider: primaryProvider };
+    }
 
     const token = getUpstoxToken();
     const missingForYahoo: string[] = [];
 
-    if (token && unique.length > 0) {
+    if (token && uncached.length > 0) {
       const keyEntries: Array<{ symbol: string; key: string }> = [];
-      for (const sym of unique) {
+      for (const sym of uncached) {
         const key = await resolveInstrumentKey(sym);
         if (key) keyEntries.push({ symbol: sym, key });
         else missingForYahoo.push(sym);
@@ -299,7 +319,7 @@ export class MarketDataService {
                 const prev = Number(ohlc.close || ltp);
                 const change = Number((ltp - prev).toFixed(2));
                 const changePercent = prev > 0 ? Number(((change / prev) * 100).toFixed(2)) : 0;
-                quotes[symbol] = {
+                const quote: LiveQuoteResult = {
                   symbol,
                   ltp,
                   open: Number(ohlc.open || ltp),
@@ -312,6 +332,8 @@ export class MarketDataService {
                   timestamp: String(q.timestamp || new Date().toISOString()),
                   provider: 'upstox',
                 };
+                quotes[symbol] = quote;
+                void cacheSet(`quote:${symbol}`, JSON.stringify(quote), 60);
                 primaryProvider = 'upstox';
               } else {
                 missingForYahoo.push(symbol);
@@ -325,43 +347,15 @@ export class MarketDataService {
         }
       }
     } else {
-      missingForYahoo.push(...unique);
+      missingForYahoo.push(...uncached);
     }
 
-    for (const sym of missingForYahoo) {
-      let resolved = false;
-      for (const ticker of [`${sym}.NS`, `${sym}-SM.NS`, `${sym}.BO`]) {
-        try {
-          const q = await yf.quote(ticker);
-          if (q && typeof q.regularMarketPrice === 'number') {
-            const ltp = q.regularMarketPrice;
-            const prev = q.regularMarketPreviousClose ?? ltp;
-            const change = Number((ltp - prev).toFixed(2));
-            const changePercent = prev > 0 ? Number(((change / prev) * 100).toFixed(2)) : 0;
-            quotes[sym] = {
-              symbol: sym,
-              ltp: Math.round(ltp * 100) / 100,
-              open: Math.round((q.regularMarketOpen ?? ltp) * 100) / 100,
-              high: Math.round((q.regularMarketDayHigh ?? ltp) * 100) / 100,
-              low: Math.round((q.regularMarketDayLow ?? ltp) * 100) / 100,
-              previousClose: Math.round(prev * 100) / 100,
-              change,
-              changePercent,
-              volume: Math.max(0, Math.round(q.regularMarketVolume ?? 0)),
-              timestamp: q.regularMarketTime ? new Date(q.regularMarketTime).toISOString() : new Date().toISOString(),
-              provider: 'yahoo',
-            };
-            resolved = true;
-            break;
-          }
-        } catch {
-          // Try next suffix
-        }
-      }
-      if (!resolved) {
-        const fallback = await getChartMetaQuote(sym).catch(() => null);
+    if (missingForYahoo.length > 0) {
+      const yahooMap = await getYahooQuotes(missingForYahoo).catch(() => ({} as Record<string, LiveQuoteResult>));
+      for (const sym of missingForYahoo) {
+        const fallback = yahooMap[sym];
         if (fallback) {
-          quotes[sym] = {
+          const quote: LiveQuoteResult = {
             symbol: sym,
             ltp: fallback.ltp,
             open: fallback.open,
@@ -374,6 +368,8 @@ export class MarketDataService {
             timestamp: fallback.timestamp,
             provider: 'yahoo',
           };
+          quotes[sym] = quote;
+          void cacheSet(`quote:${sym}`, JSON.stringify(quote), 60);
         }
       }
     }
