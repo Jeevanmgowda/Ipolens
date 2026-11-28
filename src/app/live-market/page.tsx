@@ -123,7 +123,7 @@ export default function LiveMarketPage() {
 
         const rawPrices = String(item.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
         const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
-        const parsedMin = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[0]) : parsedMax;
+        const parsedMin = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[0]) : 0;
         const pHigh = item.priceHigh || item.issuePrice || item.priceLow || (rawPrices ? parsedMax : 0);
         const pLow = item.priceLow || parsedMin || pHigh;
 

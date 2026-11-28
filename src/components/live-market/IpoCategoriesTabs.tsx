@@ -37,15 +37,19 @@ import {
 const istTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
 
+function isQuoteFresh(ipo: LiveMarketIpoItem): boolean {
+  return Boolean(ipo.quoteUpdatedAt && Date.now() - new Date(ipo.quoteUpdatedAt).getTime() < 30 * 60_000);
+}
+
 /** Card footer: where the numbers come from and how fresh they are. */
 function freshnessFor(ipo: LiveMarketIpoItem): { label: string; title: string; live: boolean } {
-  const listed = ipo.status === 'Listed' || ipo.isListed;
+  const listed = getEffectiveIpoStatus(ipo) === 'listed';
   if (listed) {
     if (ipo.quoteUpdatedAt) {
       return {
         label: `NSE/BSE price · ${istTime(ipo.quoteUpdatedAt)}`,
         title: 'Exchange price via Yahoo Finance, delayed up to 15 minutes',
-        live: Date.now() - new Date(ipo.quoteUpdatedAt).getTime() < 30 * 60_000,
+        live: isQuoteFresh(ipo),
       };
     }
     return { label: 'Awaiting exchange price', title: 'No exchange quote received yet', live: false };
@@ -610,7 +614,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
                       <span className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
                         <span>{isListed ? 'Current Price (LTP)' : 'Price Band'}</span>
-                        {isListed && typeof ipo.currentPrice === 'number' && (
+                        {isListed && typeof ipo.currentPrice === 'number' && isQuoteFresh(ipo) && (
                           <span
                             className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold"
                             title={ipo.quoteUpdatedAt ? `Exchange price as of ${new Date(ipo.quoteUpdatedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} IST (delayed up to 15 min)` : 'Delayed up to 15 min'}
@@ -637,12 +641,12 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
 
                     {(() => {
                       const rawPrices = String(ipo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
-                      const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
-                      const effectivePrice = Math.max(1, ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 100);
+                      const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 0;
+                      const effectivePrice = ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 0;
 
                       const displayLot = ipo.series === 'DEBT' ? 1 : (ipo.lotSize && ipo.lotSize > 0 ? ipo.lotSize : 0); // 0 = unknown, shown as —
 
-                      const displayMinInv = ipo.minInvestment || (displayLot && effectivePrice ? effectivePrice * displayLot : 0);
+                      const displayMinInv = ipo.minInvestment || (displayLot > 0 && effectivePrice > 0 ? effectivePrice * displayLot : 0);
 
                       return (
                         <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
@@ -958,7 +962,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <>
                           <td className="py-3.5 px-4 font-mono font-extrabold text-emerald-400 text-sm">
                             <div className="flex items-center gap-1.5">
-                              {typeof ipo.currentPrice === 'number' && (
+                              {typeof ipo.currentPrice === 'number' && isQuoteFresh(ipo) && (
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                               )}
                               <span>

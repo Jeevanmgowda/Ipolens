@@ -1,6 +1,7 @@
 import { CandleData } from '@/types/ipo';
 import { getRedisClient } from '@/lib/redis';
 import { LISTED_IPOS_REGISTRY } from '@/services/listedIpoService';
+import { getCandles } from '@/lib/market/ipoMarketData';
 
 const INSTRUMENT_KEYS: Record<string, string> = {
   SWIGGY: 'NSE_EQ|INE00H001014',
@@ -110,7 +111,7 @@ export class UpstoxChartService {
 
     // If token not available, fetch live exchange candles directly from real market feed
     if (!token) {
-      const realCandles = await this.fetchRealExchangeCandles(resolvedKey, interval);
+      const realCandles = await this.fetchRealExchangeCandles(instrumentKey, interval);
       if (realCandles.length > 0) {
         this.memoryCache.set(cacheKey, { data: realCandles, expiry: Date.now() + 60000 });
       }
@@ -156,7 +157,7 @@ export class UpstoxChartService {
         }
 
         console.warn(`[UpstoxChartService] HTTP ${res.status} from ${url}. Fetching live exchange candles.`);
-        const realCandles = await this.fetchRealExchangeCandles(resolvedKey, interval);
+        const realCandles = await this.fetchRealExchangeCandles(instrumentKey, interval);
         return realCandles;
       }
 
@@ -164,7 +165,7 @@ export class UpstoxChartService {
       const rawCandles = json.data?.candles || [];
 
       if (!Array.isArray(rawCandles) || rawCandles.length === 0) {
-        return await this.fetchRealExchangeCandles(resolvedKey, interval);
+        return await this.fetchRealExchangeCandles(instrumentKey, interval);
       }
 
       const candles = this.parseRawCandles(rawCandles, interval);
@@ -181,7 +182,7 @@ export class UpstoxChartService {
       return candles;
     } catch (err: any) {
       console.warn(`[UpstoxChartService] Error fetching candles: ${err.message}. Fetching live exchange candles.`);
-      return await this.fetchRealExchangeCandles(resolvedKey, interval);
+      return await this.fetchRealExchangeCandles(instrumentKey, interval);
     }
   }
 
@@ -226,94 +227,37 @@ export class UpstoxChartService {
       .replace(/^NSE:/, '')
       .trim();
 
-    // Check listed IPO registry for official ticker if available
     const registeredMeta = LISTED_IPOS_REGISTRY.find(
       (m) => m.symbol.toUpperCase() === symbol.toUpperCase()
     );
-    let ticker = registeredMeta ? registeredMeta.ticker : `${symbol.toUpperCase()}.NS`;
-
-    if (symbol.toUpperCase() === 'NIFTY' || symbol.toUpperCase() === 'NIFTY 50') {
-      ticker = '^NSEI';
-    } else if (symbol.toUpperCase() === 'WAAREE') {
-      ticker = 'WAAREEENER.NS';
-    }
-
-    let yInterval = '1d';
-    let yRange = '6mo';
-    if (interval === '1minute') {
-      yInterval = '1m';
-      yRange = '5d'; // 5-day range ensures available intraday bars even after market close
-    } else if (interval === '30minute') {
-      yInterval = '30m';
-      yRange = '1mo';
-    } else if (interval === 'day') {
-      yInterval = '1d';
-      yRange = '1y';
-    }
+    const upper = symbol.toUpperCase();
+    const lookupSymbol =
+      upper === 'WAAREE'
+        ? 'WAAREEENER'
+        : upper === 'JIOPLAT'
+          ? 'JPL'
+          : registeredMeta
+            ? registeredMeta.symbol
+            : upper;
+    const tf = interval === '1minute' ? '5m' : interval === '30minute' ? '30m' : '1D';
 
     try {
-      const res = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${yInterval}&range=${yRange}`,
-        {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-          },
-          signal: AbortSignal.timeout(3000),
-          cache: 'no-store',
-        }
-      );
-
-      if (!res.ok) {
-        console.warn(`[UpstoxChartService] Yahoo Finance returned HTTP ${res.status} for ${ticker}`);
-        return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
-          ? this.buildFallbackCandles(symbol, interval)
-          : [];
+      const candles = await getCandles(lookupSymbol, tf);
+      if (candles.length > 0) {
+        return candles.map(({ time, open, high, low, close, volume }) => ({
+          time,
+          open,
+          high,
+          low,
+          close,
+          volume,
+        }));
       }
-
-      const json = await res.json();
-      const result = json.chart?.result?.[0];
-      const timestamps: number[] = result?.timestamp || [];
-      const quotes = result?.indicators?.quote?.[0] || {};
-      const opens = quotes.open || [];
-      const highs = quotes.high || [];
-      const lows = quotes.low || [];
-      const closes = quotes.close || [];
-      const volumes = quotes.volume || [];
-
-      const candles: CandleData[] = [];
-      const isIntraday = interval === '1minute' || interval === '30minute';
-
-      for (let i = 0; i < timestamps.length; i++) {
-        if (closes[i] === null || closes[i] === undefined || isNaN(closes[i])) continue;
-        const d = new Date(timestamps[i] * 1000);
-        const timeLabel = isIntraday
-          ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
-          : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-
-        const closeVal = Number(closes[i].toFixed(2));
-        const openVal = Number((opens[i] != null && !isNaN(opens[i]) ? opens[i] : closeVal).toFixed(2));
-        const highVal = Number((highs[i] != null && !isNaN(highs[i]) ? highs[i] : Math.max(openVal, closeVal)).toFixed(2));
-        const lowVal = Number((lows[i] != null && !isNaN(lows[i]) ? lows[i] : Math.min(openVal, closeVal)).toFixed(2));
-        const volVal = Number(volumes[i] || 0);
-
-        candles.push({
-          time: timeLabel,
-          open: openVal,
-          high: highVal,
-          low: lowVal,
-          close: closeVal,
-          volume: volVal,
-        });
-      }
-
-      if (candles.length > 0) return candles;
       return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
         ? this.buildFallbackCandles(symbol, interval)
         : [];
     } catch (err: any) {
-      console.warn(`[UpstoxChartService] Yahoo Finance candle fetch error for ${ticker}:`, err.message);
+      console.warn(`[UpstoxChartService] Live exchange candle fetch error for ${lookupSymbol}:`, err.message);
       return (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_MARKET_DATA === 'true')
         ? this.buildFallbackCandles(symbol, interval)
         : [];

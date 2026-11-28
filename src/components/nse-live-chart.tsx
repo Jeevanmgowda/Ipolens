@@ -20,6 +20,7 @@ import {
   ArrowDownRight,
   Zap,
   Sparkles,
+  Activity,
 } from 'lucide-react';
 import { CandleData } from '@/types/ipo';
 import { TradingViewChart } from './radar/TradingViewChart';
@@ -48,10 +49,20 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
   initialPrice,
   height = 420,
 }) => {
-  const displaySymbol = (symbol || instrumentKey || 'NSE').toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').replace(/^NSE_EQ\|/, '');
+  const initialDisplaySymbol = (symbol || instrumentKey || 'NSE').toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').replace(/^NSE_EQ\|/, '');
+  const [activeInstrumentKey, setActiveInstrumentKey] = useState<string>(instrumentKey);
+  const [activeDisplaySymbol, setActiveDisplaySymbol] = useState<string>(initialDisplaySymbol);
+  const displaySymbol = activeDisplaySymbol;
   const [selectedTf, setSelectedTf] = useState<string>('1D');
   const [chartMode, setChartMode] = useState<'candle' | 'line' | 'tradingview'>('candle');
   const [candles, setCandles] = useState<CandleData[]>([]);
+
+  useEffect(() => {
+    setActiveInstrumentKey(instrumentKey);
+    setActiveDisplaySymbol(
+      (symbol || instrumentKey || 'NSE').toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').replace(/^NSE_EQ\|/, '')
+    );
+  }, [instrumentKey, symbol]);
   const [loading, setLoading] = useState<boolean>(true);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
@@ -133,7 +144,7 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
       }
 
       const res = await fetch(
-        `/api/ipos/charts?instrumentKey=${encodeURIComponent(instrumentKey)}&interval=${tfObj.interval}&from=${fromDate}&to=${today}`
+        `/api/ipos/charts?instrumentKey=${encodeURIComponent(activeInstrumentKey)}&interval=${tfObj.interval}&from=${fromDate}&to=${today}`
       );
       const json = await res.json();
 
@@ -150,7 +161,7 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
 
   useEffect(() => {
     fetchCandles(selectedTf);
-  }, [instrumentKey, selectedTf]);
+  }, [activeInstrumentKey, selectedTf]);
 
   // Computed latest price and change
   const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
@@ -372,8 +383,34 @@ export const NseLiveChart: React.FC<NseLiveChartProps> = ({
             </div>
           </div>
         ) : candles.length === 0 ? (
-          <div className="h-80 flex flex-col items-center justify-center text-slate-500 text-xs font-mono">
-            <span>No candlestick data returned for {displaySymbol}</span>
+          <div className="h-80 flex flex-col items-center justify-center text-center px-6 space-y-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400">
+              <Activity className="w-5 h-5" />
+            </div>
+            <div className="space-y-1 max-w-md">
+              <p className="text-sm font-semibold text-white">
+                Exchange candlesticks unavailable for {displaySymbol}
+              </p>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {`${displaySymbol} is not yet listed on NSE/BSE or has no published exchange candles for this timeframe.`}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setChartMode('tradingview')}
+                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-semibold transition cursor-pointer"
+              >
+                Switch to TradingView Live
+              </button>
+              <button
+                type="button"
+                onClick={() => fetchCandles(selectedTf)}
+                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         ) : chartMode === 'candle' ? (
           /* Real-Time SVG Candlestick View */

@@ -518,25 +518,27 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
 
   // Keep the headline price current while the chart is open (delayed exchange quote, every 30s).
   useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
     const id = setInterval(async () => {
       try {
-        const res = await fetch(`/api/market/${encodeURIComponent(cleanSymbol)}/quote`);
+        const res = await fetch(`/api/market/${encodeURIComponent(cleanSymbol)}/quote`, {
+          signal: controller.signal,
+        });
         const json = await res.json();
-        if (json.success && json.data) {
+        if (!cancelled && json.success && json.data) {
           setQuote(json.data);
           setLastTickTime(new Date().toLocaleTimeString('en-IN'));
-          const ltp = Number(json.data.ltp);
-          setCandles((prev) => {
-            if (!prev.length || !Number.isFinite(ltp)) return prev;
-            const last = prev[prev.length - 1];
-            return [...prev.slice(0, -1), { ...last, close: ltp, high: Math.max(last.high, ltp), low: Math.min(last.low, ltp) }];
-          });
         }
       } catch {
-        // next tick retries
+        // next tick retries (or aborted on symbol change/unmount)
       }
     }, 30_000);
-    return () => clearInterval(id);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(id);
+    };
   }, [cleanSymbol]);
 
   // 2. Real-Time WebSocket / SSE Streaming

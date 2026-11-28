@@ -57,8 +57,13 @@ const tickerCache = new Map<string, { tickers: string[]; record: IpoRecord | nul
 const chartCache = new Map<string, { data: ChartFetch | null; expiry: number }>();
 const workingTicker = new Map<string, string>();
 
+const SYMBOL_ALIASES: Record<string, string> = {
+  JIOPLAT: 'JPL',
+};
+
 export function cleanSymbol(symbol: string): string {
-  return symbol.toUpperCase().replace(/\.(NS|BO)$/, '').replace(/^(NSE|BSE):/, '').trim();
+  const cleaned = symbol.toUpperCase().replace(/\.(NS|BO)$/, '').replace(/^(NSE|BSE):/, '').trim();
+  return SYMBOL_ALIASES[cleaned] || cleaned;
 }
 
 async function resolve(symbol: string): Promise<{ tickers: string[]; record: IpoRecord | null }> {
@@ -79,6 +84,43 @@ async function resolve(symbol: string): Promise<{ tickers: string[]; record: Ipo
   return value;
 }
 
+function cleanCompanySearchQuery(name: string): string {
+  return name
+    .replace(/\b(limited|ltd\.?|private|pvt\.?|ipo)\b/gi, ' ')
+    .replace(/\./g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function searchYahooIndiaTicker(companyName: string): Promise<string[]> {
+  const query = cleanCompanySearchQuery(companyName);
+  if (!query) return [];
+  try {
+    const json = await fetchJson<{
+      quotes?: Array<{ symbol?: string; quoteType?: string; shortname?: string; longname?: string }>;
+    }>(
+      SOURCE,
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}`,
+      { timeoutMs: 5000, retries: 0 }
+    );
+    const tokens = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
+    return (json.quotes || [])
+      .filter((q) => {
+        if (!q.symbol || !/\.(NS|BO)$/i.test(q.symbol)) return false;
+        if (q.quoteType && q.quoteType !== 'EQUITY') return false;
+        const candidateName = `${q.shortname || ''} ${q.longname || ''}`.toLowerCase().replace(/\./g, ' ');
+        return tokens.length === 0 || tokens.some((t) => candidateName.includes(t));
+      })
+      .map((q) => q.symbol as string)
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
+
 /** Fetches a Yahoo chart for the first ticker candidate that has data. Cached per range. */
 export async function fetchChart(symbol: string, interval: string, range: string, ttlMs = 30_000): Promise<ChartFetch | null> {
   const sym = cleanSymbol(symbol);
@@ -86,21 +128,32 @@ export async function fetchChart(symbol: string, interval: string, range: string
   const cached = chartCache.get(key);
   if (cached && Date.now() < cached.expiry) return cached.data;
 
-  const { tickers } = await resolve(sym);
+  const { tickers, record } = await resolve(sym);
   let found: ChartFetch | null = null;
-  for (const ticker of tickers) {
-    const json = await fetchJson<{ chart?: { result?: YahooChartResult[] } }>(
-      SOURCE,
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${interval}&range=${range}`,
-      { timeoutMs: 6000, retries: 0 }
-    ).catch(() => null);
-    const result = json?.chart?.result?.[0];
-    if (result?.meta && typeof result.meta.regularMarketPrice === 'number') {
-      found = { ticker, result };
-      workingTicker.set(sym, ticker);
-      break;
+  const tryTickers = async (candidates: string[]) => {
+    for (const ticker of candidates) {
+      const json = await fetchJson<{ chart?: { result?: YahooChartResult[] } }>(
+        SOURCE,
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${interval}&range=${range}`,
+        { timeoutMs: 6000, retries: 0 }
+      ).catch(() => null);
+      const result = json?.chart?.result?.[0];
+      if (result?.meta && typeof result.meta.regularMarketPrice === 'number') {
+        workingTicker.set(sym, ticker);
+        return { ticker, result };
+      }
+    }
+    return null;
+  };
+
+  found = await tryTickers(tickers);
+  if (!found && record?.companyName) {
+    const searched = (await searchYahooIndiaTicker(record.companyName)).filter((t) => !tickers.includes(t));
+    if (searched.length > 0) {
+      found = await tryTickers(searched);
     }
   }
+
   // Remember misses for longer so unknown symbols do not hammer the upstream.
   chartCache.set(key, { data: found, expiry: Date.now() + (found ? ttlMs : 5 * 60_000) });
   return found;
@@ -114,16 +167,20 @@ function series(result: YahooChartResult) {
   const rows: Array<{ t: number; open: number; high: number; low: number; close: number; volume: number }> = [];
   ts.forEach((t, i) => {
     const close = q.close?.[i];
-    if (typeof close !== 'number' || !Number.isFinite(close)) return;
-    const open = q.open?.[i] ?? close;
-    rows.push({
-      t,
-      open: typeof open === 'number' ? open : close,
-      high: typeof q.high?.[i] === 'number' ? (q.high[i] as number) : close,
-      low: typeof q.low?.[i] === 'number' ? (q.low[i] as number) : close,
-      close,
-      volume: typeof q.volume?.[i] === 'number' ? (q.volume[i] as number) : 0,
-    });
+    const open = q.open?.[i];
+    const high = q.high?.[i];
+    const low = q.low?.[i];
+    const volume = q.volume?.[i];
+    if (
+      typeof close !== 'number' || !Number.isFinite(close) ||
+      typeof open !== 'number' || !Number.isFinite(open) ||
+      typeof high !== 'number' || !Number.isFinite(high) ||
+      typeof low !== 'number' || !Number.isFinite(low) ||
+      typeof volume !== 'number' || !Number.isFinite(volume)
+    ) {
+      return;
+    }
+    rows.push({ t, open, high, low, close, volume });
   });
   return rows;
 }
@@ -179,7 +236,7 @@ async function persistQuote(q: MarketQuoteData): Promise<void> {
       volume: Math.min(2_147_483_647, q.volume),
       change: q.change.toFixed(2),
       changePercent: q.changePercent.toFixed(2),
-      timestamp: new Date(),
+      timestamp: new Date(q.timestamp),
     };
     await getDb()
       .insert(schema.marketQuotesTable)
@@ -220,10 +277,23 @@ const TIMEFRAMES: Record<string, { interval: string; range: string }> = {
 
 export async function getCandles(symbol: string, timeframe = '1D'): Promise<MarketOhlcCandle[]> {
   const tf = TIMEFRAMES[timeframe] ?? TIMEFRAMES['1D'];
-  const chart = await fetchChart(symbol, tf.interval, tf.range, tf.interval.endsWith('m') ? 30_000 : 5 * 60_000);
-  if (!chart) return [];
-  const intraday = /m$/.test(tf.interval);
-  return series(chart.result).map((r) => {
+  let chart = await fetchChart(symbol, tf.interval, tf.range, tf.interval.endsWith('m') ? 30_000 : 5 * 60_000);
+  let rows = chart ? series(chart.result) : [];
+  let intraday = /m$/.test(tf.interval);
+
+  // Newly listed IPOs or weekend/holiday intraday queries may have < 2 bars; fall back to 15m/5d.
+  if ((timeframe === '1D' || intraday) && rows.length < 2) {
+    const intraChart = await fetchChart(symbol, '15m', '5d', 30_000);
+    const intraRows = intraChart ? series(intraChart.result) : [];
+    if (intraRows.length > rows.length) {
+      chart = intraChart;
+      rows = intraRows;
+      intraday = true;
+    }
+  }
+
+  if (!chart || !rows.length) return [];
+  return rows.map((r) => {
     const d = new Date(r.t * 1000);
     return {
       time: intraday

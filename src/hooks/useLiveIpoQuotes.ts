@@ -81,31 +81,36 @@ export function useLiveIpoQuotes(
   // Active issues (open, opening soon, closed awaiting listing): subscription, GMP, dates.
   const activeKey = useMemo(
     () =>
-      ipos
-        .filter((i) => i.status !== 'Listed' && !i.isListed)
-        .map((i) => i.symbol)
-        .slice(0, 60)
-        .join(','),
+      [...new Set(ipos.filter((i) => i.status !== 'Listed' && !i.isListed).map((i) => i.symbol))].join(','),
     [ipos]
   );
 
   useEffect(() => {
     if (!activeKey) return;
+    const symbols = activeKey.split(',').filter(Boolean);
+    const batches: string[][] = [];
+    for (let idx = 0; idx < symbols.length; idx += 60) {
+      batches.push(symbols.slice(idx, idx + 60));
+    }
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
-      try {
-        const res = await fetch(`/api/ipos/live-updates?symbols=${encodeURIComponent(activeKey)}`);
-        const json = await res.json();
-        if (!cancelled && json.success && json.updates) {
-          const updates = json.updates as Record<string, Partial<LiveMarketIpoItem>>;
-          const syncedAt = json.fetchedAt as string;
-          setIpos((prev) =>
-            prev.map((i) => (updates[i.symbol] ? { ...i, ...updates[i.symbol], liveCheckedAt: syncedAt } : i))
-          );
+      for (const batch of batches) {
+        if (cancelled) break;
+        try {
+          const res = await fetch(`/api/ipos/live-updates?symbols=${encodeURIComponent(batch.join(','))}`);
+          const json = await res.json();
+          if (!cancelled && json.success && json.updates) {
+            const updates = json.updates as Record<string, Partial<LiveMarketIpoItem>>;
+            const syncedAt = json.fetchedAt as string;
+            setIpos((prev) =>
+              prev.map((i) => (updates[i.symbol] ? { ...i, ...updates[i.symbol], liveCheckedAt: syncedAt } : i))
+            );
+          }
+        } catch {
+          // Keep the last values; the next tick retries.
         }
-      } catch {
-        // Keep the last values; the next tick retries.
       }
       if (!cancelled) timer = setTimeout(tick, nseOpenNow() ? 60_000 : 5 * 60_000);
     };

@@ -377,7 +377,11 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
                   <h3 className="text-base font-bold text-white leading-tight">
                     {selectedIpoForStockChart.companyName} ({selectedIpoForStockChart.symbol})
                   </h3>
-                  <p className="text-xs text-slate-400">Live Listed Market Feed • Real-Time NSE Exchange Feed</p>
+                  <p className="text-xs text-slate-400">
+                    {selectedIpoForStockChart.isListed || selectedIpoForStockChart.status === 'Listed'
+                      ? 'Live Listed Market Feed • Real-Time NSE Exchange Feed'
+                      : 'Pre-Listing IPO • Exchange Candlesticks Begin on Listing Day'}
+                  </p>
                 </div>
               </div>
               <button
