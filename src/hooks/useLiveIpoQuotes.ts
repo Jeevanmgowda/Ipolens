@@ -36,39 +36,54 @@ export function useLiveIpoQuotes(
       .filter((i) => i.status === 'Listed' || i.isListed)
       .sort((a, b) => String(b.listingDate).localeCompare(String(a.listingDate)));
     const watched = listed.filter((i) => watchlist.includes(i.symbol));
-    return [...new Set([...watched, ...listed].map((i) => i.symbol))].slice(0, 60).join(',');
+    return [...new Set([...watched, ...listed].map((i) => i.symbol))].join(',');
   }, [ipos, watchlist]);
 
   useEffect(() => {
     if (!key) return;
+    const symbols = key.split(',').filter(Boolean);
+    const batches: string[][] = [];
+    for (let idx = 0; idx < symbols.length; idx += 50) {
+      batches.push(symbols.slice(idx, idx + 50));
+    }
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
-      try {
-        const res = await fetch(`/api/ipos/quotes?symbols=${encodeURIComponent(key)}`);
-        const json = await res.json();
-        if (!cancelled && json.success && json.quotes) {
-          const quotes = json.quotes as Record<string, LiveQuote>;
-          setIpos((prev) =>
-            prev.map((i) => {
-              const q = quotes[i.symbol];
-              return q
-                ? {
-                    ...i,
-                    currentPrice: q.ltp,
-                    previousClose: q.previousClose,
-                    dayChange: q.change,
-                    dayChangePercent: q.changePercent,
-                    volume: q.volume,
-                    quoteUpdatedAt: q.timestamp,
-                  }
-                : i;
-            })
-          );
-        }
-      } catch {
-        // Keep the last prices; the next tick retries.
-      }
+      let nextIdx = 0;
+      const workerCount = Math.min(3, batches.length);
+      await Promise.all(
+        Array.from({ length: workerCount }, async () => {
+          while (nextIdx < batches.length && !cancelled) {
+            const batch = batches[nextIdx++];
+            try {
+              const res = await fetch(`/api/ipos/quotes?symbols=${encodeURIComponent(batch.join(','))}`);
+              const json = await res.json();
+              if (!cancelled && json.success && json.quotes) {
+                const quotes = json.quotes as Record<string, LiveQuote>;
+                setIpos((prev) =>
+                  prev.map((i) => {
+                    const q = quotes[i.symbol];
+                    return q
+                      ? {
+                          ...i,
+                          currentPrice: q.ltp,
+                          previousClose: q.previousClose,
+                          dayChange: q.change,
+                          dayChangePercent: q.changePercent,
+                          volume: q.volume,
+                          quoteUpdatedAt: q.timestamp,
+                        }
+                      : i;
+                  })
+                );
+              }
+            } catch {
+              // Keep the last prices; the next tick retries.
+            }
+          }
+        })
+      );
       if (!cancelled) timer = setTimeout(tick, nseOpenNow() ? 30_000 : 5 * 60_000);
     };
     tick();
@@ -89,8 +104,8 @@ export function useLiveIpoQuotes(
     if (!activeKey) return;
     const symbols = activeKey.split(',').filter(Boolean);
     const batches: string[][] = [];
-    for (let idx = 0; idx < symbols.length; idx += 60) {
-      batches.push(symbols.slice(idx, idx + 60));
+    for (let idx = 0; idx < symbols.length; idx += 50) {
+      batches.push(symbols.slice(idx, idx + 50));
     }
 
     let cancelled = false;
