@@ -35,7 +35,7 @@ export class DbRepositoryService {
   // 1. Family PAN Profiles (with AES-256-GCM Encryption & Masking)
   // ==========================================
 
-  static async getPans(userId: string = 'default_user'): Promise<FamilyPanProfile[]> {
+  static async getPans(userId: string): Promise<FamilyPanProfile[]> {
     if (this.isDatabaseActive() && db) {
       try {
         const rows = await db
@@ -59,12 +59,12 @@ export class DbRepositoryService {
       }
     }
 
-    return getUserPansStore();
+    return getUserPansStore().filter((p) => p.userId === userId);
   }
 
   static async savePan(
     profile: FamilyPanProfile,
-    userId: string = 'default_user',
+    userId: string,
     rawPan?: string
   ): Promise<FamilyPanProfile> {
     const rawToEncrypt = rawPan || profile.pan;
@@ -97,11 +97,12 @@ export class DbRepositoryService {
 
     // Always keep memory store synchronized
     const memoryStore = getUserPansStore();
+    const ownedProfile = { ...secureProfile, userId };
     const existingIdx = memoryStore.findIndex((p) => p.id === secureProfile.id);
     if (existingIdx === -1) {
-      memoryStore.push(secureProfile);
-    } else {
-      memoryStore[existingIdx] = secureProfile;
+      memoryStore.push(ownedProfile);
+    } else if (memoryStore[existingIdx].userId === userId) {
+      memoryStore[existingIdx] = ownedProfile;
     }
 
     return secureProfile;
@@ -123,7 +124,7 @@ export class DbRepositoryService {
     }
 
     const memoryStore = getUserPansStore();
-    const idx = memoryStore.findIndex((p) => p.id === id);
+    const idx = memoryStore.findIndex((p) => p.id === id && (!userId || p.userId === userId));
     if (idx !== -1) {
       memoryStore.splice(idx, 1);
       return true;
@@ -135,7 +136,7 @@ export class DbRepositoryService {
   // 2. IPO Applications
   // ==========================================
 
-  static async getApplications(symbol?: string, userId: string = 'default_user'): Promise<IpoApplication[]> {
+  static async getApplications(symbol: string | undefined, userId: string): Promise<IpoApplication[]> {
     if (this.isDatabaseActive() && db) {
       try {
         const query = db
@@ -174,14 +175,14 @@ export class DbRepositoryService {
       }
     }
 
-    let list = getApplicationsStore();
+    let list = getApplicationsStore().filter((a) => a.userId === userId);
     if (symbol) {
       list = list.filter((a) => a.ipoSymbol.toUpperCase() === symbol.toUpperCase());
     }
     return list;
   }
 
-  static async saveApplication(app: IpoApplication, userId: string = 'default_user'): Promise<IpoApplication> {
+  static async saveApplication(app: IpoApplication, userId: string): Promise<IpoApplication> {
     if (this.isDatabaseActive() && db) {
       try {
         await db.insert(schema.ipoApplicationsTable).values({
@@ -208,11 +209,12 @@ export class DbRepositoryService {
     }
 
     const memoryStore = getApplicationsStore();
+    const ownedApp = { ...app, userId };
     const existingIdx = memoryStore.findIndex((a) => a.id === app.id);
     if (existingIdx === -1) {
-      memoryStore.unshift(app);
-    } else {
-      memoryStore[existingIdx] = app;
+      memoryStore.unshift(ownedApp);
+    } else if (memoryStore[existingIdx].userId === userId) {
+      memoryStore[existingIdx] = ownedApp;
     }
 
     return app;
@@ -220,32 +222,37 @@ export class DbRepositoryService {
 
   static async updateApplicationStatus(
     id: string,
+    userId: string,
     status: IpoApplication['status'],
     allottedShares?: number
   ): Promise<boolean> {
+    let dbUpdated = false;
     if (this.isDatabaseActive() && db) {
       try {
-        await db
+        const rows = await db
           .update(schema.ipoApplicationsTable)
           .set({
             status,
             allottedShares: allottedShares !== undefined ? allottedShares : 0,
           })
-          .where(eq(schema.ipoApplicationsTable.id, id));
+          .where(and(eq(schema.ipoApplicationsTable.id, id), eq(schema.ipoApplicationsTable.userId, userId)))
+          .returning({ id: schema.ipoApplicationsTable.id });
+        dbUpdated = rows.length > 0;
       } catch (err) {
         handleDbError('updating ipo_application status', err);
       }
     }
 
-    // Update memory store
-    return updateMemoryAppStatus(id, status, allottedShares);
+    // Update memory store (owner-scoped)
+    const memoryUpdated = updateMemoryAppStatus(id, status, allottedShares, userId);
+    return dbUpdated || memoryUpdated;
   }
 
   // ==========================================
   // 3. Demat Portfolio Holdings (PostgreSQL Persistence & User Isolation)
   // ==========================================
 
-  static async getHoldings(userId: string = 'default_user'): Promise<HoldingItem[]> {
+  static async getHoldings(userId: string): Promise<HoldingItem[]> {
     if (this.isDatabaseActive() && db) {
       try {
         const rows = await db
@@ -290,7 +297,7 @@ export class DbRepositoryService {
     return inMemoryHoldings.get(userId) || [];
   }
 
-  static async saveHoldings(holdings: HoldingItem[], userId: string = 'default_user'): Promise<HoldingItem[]> {
+  static async saveHoldings(holdings: HoldingItem[], userId: string): Promise<HoldingItem[]> {
     if (this.isDatabaseActive() && db && holdings.length > 0) {
       try {
         for (const h of holdings) {
@@ -335,7 +342,7 @@ export class DbRepositoryService {
     return updated;
   }
 
-  static async deleteHolding(id: string, userId: string = 'default_user'): Promise<boolean> {
+  static async deleteHolding(id: string, userId: string): Promise<boolean> {
     if (this.isDatabaseActive() && db) {
       try {
         await db
@@ -361,7 +368,7 @@ export class DbRepositoryService {
     return false;
   }
 
-  static async clearHoldings(userId: string = 'default_user'): Promise<boolean> {
+  static async clearHoldings(userId: string): Promise<boolean> {
     if (this.isDatabaseActive() && db) {
       try {
         await db
@@ -579,7 +586,7 @@ export class DbRepositoryService {
   // 5. User Watchlist with User Isolation
   // ==========================================
 
-  static async getWatchlist(userId: string = 'default_user'): Promise<string[]> {
+  static async getWatchlist(userId: string): Promise<string[]> {
     if (this.isDatabaseActive() && db) {
       try {
         const rows = await db
@@ -602,7 +609,7 @@ export class DbRepositoryService {
   }
 
   static async toggleWatchlist(
-    userId: string = 'default_user',
+    userId: string,
     symbol: string,
     companyName?: string
   ): Promise<{ watchlisted: boolean; symbol: string }> {
@@ -669,7 +676,7 @@ export class DbRepositoryService {
   // 6. Notification Center
   // ==========================================
 
-  static async getNotifications(userId: string = 'default_user') {
+  static async getNotifications(userId: string) {
     if (this.isDatabaseActive() && db) {
       try {
         return await db
@@ -751,7 +758,7 @@ export class DbRepositoryService {
     return notif;
   }
 
-  static async markNotificationRead(id: string, userId: string = 'default_user') {
+  static async markNotificationRead(id: string, userId: string) {
     if (this.isDatabaseActive() && db) {
       try {
         await db
@@ -792,6 +799,16 @@ export class DbRepositoryService {
     inMemoryWatchlist.delete(userId);
     inMemoryNotifications.delete(userId);
     inMemoryHoldings.delete(userId);
+
+    // In-memory PAN and application stores are shared arrays keyed by userId per record.
+    const pans = getUserPansStore();
+    for (let i = pans.length - 1; i >= 0; i--) {
+      if (pans[i].userId === userId) pans.splice(i, 1);
+    }
+    const apps = getApplicationsStore();
+    for (let i = apps.length - 1; i >= 0; i--) {
+      if (apps[i].userId === userId) apps.splice(i, 1);
+    }
     return true;
   }
 }

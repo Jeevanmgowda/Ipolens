@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { parseBrokerCsv } from '@/services/brokerParser';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 
 export async function POST(request: Request) {
   try {
     const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    if (!authUser) return unauthorizedResponse();
+    const userId = authUser.id;
 
     const contentType = request.headers.get('content-type') || '';
     let csvText = '';

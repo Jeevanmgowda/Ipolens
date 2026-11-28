@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { IpoApplication } from '@/types/pan';
 import { checkDuplicatePanBid, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
 
 // Server-side store for applications (clean slate)
@@ -15,9 +15,10 @@ export function getApplicationsStore(): IpoApplication[] {
 export function updateApplicationStatus(
   id: string,
   status: IpoApplication['status'],
-  allottedShares?: number
+  allottedShares: number | undefined,
+  userId: string
 ): boolean {
-  const index = applicationsStore.findIndex((a) => a.id === id);
+  const index = applicationsStore.findIndex((a) => a.id === id && a.userId === userId);
   if (index === -1) return false;
   applicationsStore[index].status = status;
   if (allottedShares !== undefined) {
@@ -28,7 +29,8 @@ export function updateApplicationStatus(
 
 export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
-  const userId = user ? user.id : 'default_user';
+  if (!user) return unauthorizedResponse();
+  const userId = user.id;
 
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol');
@@ -47,7 +49,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const userId = user ? user.id : 'default_user';
+    if (!user) return unauthorizedResponse();
+    const userId = user.id;
 
     const body = await request.json();
     const {
@@ -132,6 +135,9 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
+
     const body = await request.json();
     const { id, status, allottedShares } = body;
 
@@ -139,8 +145,14 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: false, error: 'Application ID is required' }, { status: 400 });
     }
 
+    const owned = (await DbRepositoryService.getApplications(undefined, user.id)).some((a) => a.id === id);
+    if (!owned) {
+      return NextResponse.json({ success: false, error: 'Application not found' }, { status: 404 });
+    }
+
     const updated = await DbRepositoryService.updateApplicationStatus(
       id,
+      user.id,
       status,
       allottedShares !== undefined ? Number(allottedShares) : undefined
     );
@@ -149,7 +161,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: false, error: 'Application not found' }, { status: 404 });
     }
 
-    const app = (await DbRepositoryService.getApplications()).find((a) => a.id === id);
+    const app = (await DbRepositoryService.getApplications(undefined, user.id)).find((a) => a.id === id);
 
     return NextResponse.json({
       success: true,
@@ -163,6 +175,9 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -170,7 +185,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, error: 'ID is required' }, { status: 400 });
     }
 
-    applicationsStore = applicationsStore.filter((a) => a.id !== id);
+    applicationsStore = applicationsStore.filter((a) => !(a.id === id && a.userId === user.id));
 
     return NextResponse.json({
       success: true,

@@ -148,8 +148,19 @@ export function extractTokenFromRequest(request: Request): string | null {
 }
 
 /**
+ * Standard 401 response for routes that require a signed-in user.
+ */
+export function unauthorizedResponse(): Response {
+  return new Response(
+    JSON.stringify({ success: false, error: 'Authentication required. Please sign in.' }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } }
+  );
+}
+
+/**
  * Resolves the authenticated user from the incoming request.
- * Falls back to demo user if no valid session is present, ensuring zero crashes.
+ * Returns null when no valid session is present. Routes holding per-user data
+ * must reject null with unauthorizedResponse() rather than use a shared bucket.
  */
 export async function getAuthenticatedUser(request: Request): Promise<User | null> {
   const token = extractTokenFromRequest(request);

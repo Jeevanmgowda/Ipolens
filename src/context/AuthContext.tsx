@@ -133,9 +133,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Demo profiles must obtain a real server session; a client-only localStorage
+  // "login" left the API treating the visitor as anonymous. The server allows the
+  // credential-less demo path only outside production, so this fails cleanly there.
   const loginWithDemo = async (type: 'institutional' | 'retail'): Promise<void> => {
     const demoUser = DEMO_USERS[type];
-    saveUserSession(demoUser);
+    const result = await authenticateWithGoogle({
+      email: demoUser.email,
+      name: demoUser.name,
+      investorCategory: demoUser.investorCategory,
+    });
+    if (!result.success) {
+      throw new Error(result.error || 'Demo login is unavailable.');
+    }
   };
 
   const signOut = () => {

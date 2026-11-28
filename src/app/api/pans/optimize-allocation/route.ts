@@ -4,7 +4,8 @@ import {
   OptimizationStrategy,
 } from '@/lib/services/allocation-optimizer.service';
 import { ExchangeIngestionService } from '@/lib/services/exchange-ingestion.service';
-import { getUserPansStore } from '../route';
+import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { FamilyPanProfile } from '@/types/pan';
 import { sanitizeString } from '@/lib/security/sanitize';
 
@@ -12,6 +13,9 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    const user = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
+
     const body = await request.json();
     const cleanPrice = Number(body.price) || 500;
     const defaultLot = Math.max(1, Math.floor(15000 / cleanPrice));
@@ -30,17 +34,17 @@ export async function POST(request: Request) {
     // 1. Fetch live subscription telemetry
     const subscription = await ExchangeIngestionService.syncLiveSubscription(sanitizeString(symbol));
 
-    // 2. Resolve family PAN profiles
-    let profiles: FamilyPanProfile[] = [];
-    if (Array.isArray(clientPans) && clientPans.length > 0) {
-      profiles = clientPans;
-    } else {
-      profiles = getUserPansStore();
-    }
+    // 2. Resolve family PAN profiles: only the caller's own, loaded server-side.
+    //    Client-sent profiles are never trusted; their IDs only narrow the selection.
+    let profiles: FamilyPanProfile[] = await DbRepositoryService.getPans(user.id);
 
-    // Filter by selectedPanIds if specified
-    if (Array.isArray(selectedPanIds) && selectedPanIds.length > 0) {
-      profiles = profiles.filter((p) => selectedPanIds.includes(p.id));
+    const requestedIds: string[] = Array.isArray(selectedPanIds) && selectedPanIds.length > 0
+      ? selectedPanIds
+      : Array.isArray(clientPans)
+        ? clientPans.map((p: { id?: unknown }) => p?.id).filter((id: unknown): id is string => typeof id === 'string')
+        : [];
+    if (requestedIds.length > 0) {
+      profiles = profiles.filter((p) => requestedIds.includes(p.id));
     }
 
     // 3. Execute mathematical allocation optimization
