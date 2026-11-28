@@ -1,26 +1,42 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getClientIp, checkRateLimit, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
-import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight } from '@/lib/security/cors';
+import { getClientIp, checkRateLimitDistributed, applyRateLimitHeaders, RateLimitTier } from '@/lib/security/rateLimiter';
+import { checkBodySize } from '@/lib/security/bodyLimits';
+import { buildPageCsp, generateNonce } from '@/lib/security/csp';
+import { isAllowedOrigin, setCorsHeaders, handleCorsPreflight, getRequestHost } from '@/lib/security/cors';
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const origin = request.headers.get('origin');
+  const requestHost = getRequestHost(request);
   const clientIp = getClientIp(request);
 
   // 1. CORS Preflight Handling for API
   if (request.method === 'OPTIONS' && pathname.startsWith('/api/')) {
-    return handleCorsPreflight(origin);
+    return handleCorsPreflight(origin, requestHost);
   }
 
   // 2. Untrusted Cross-Origin Request Protection
-  if (origin && pathname.startsWith('/api/') && !isAllowedOrigin(origin)) {
+  if (origin && pathname.startsWith('/api/') && !isAllowedOrigin(origin, requestHost)) {
     return new NextResponse(
       JSON.stringify({ success: false, error: 'Cross-origin request blocked by CORS policy' }),
       {
         status: 403,
         headers: { 'Content-Type': 'application/json' },
       }
+    );
+  }
+
+  // 2b. Request body size limits (before any handler reads the body)
+  const bodyProblem = checkBodySize(pathname, request.method, request.headers);
+  if (bodyProblem) {
+    return setCorsHeaders(
+      new NextResponse(JSON.stringify({ success: false, error: bodyProblem.error }), {
+        status: bodyProblem.status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      origin,
+      requestHost
     );
   }
 
@@ -31,11 +47,13 @@ export function proxy(request: NextRequest) {
       tier = 'auth';
     } else if (pathname.startsWith('/api/scraper/')) {
       tier = 'scraper';
+    } else if (pathname === '/api/ipo-logo') {
+      tier = 'assets';
     } else if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method)) {
       tier = 'mutating';
     }
 
-    const rateLimit = checkRateLimit(clientIp, tier);
+    const rateLimit = await checkRateLimitDistributed(clientIp, tier);
     if (!rateLimit.allowed) {
       const resp = new NextResponse(
         JSON.stringify({
@@ -48,16 +66,15 @@ export function proxy(request: NextRequest) {
         }
       );
       applyRateLimitHeaders(resp.headers, rateLimit);
-      return setCorsHeaders(resp, origin);
+      return setCorsHeaders(resp, origin, requestHost);
     }
   }
 
-  // 4. Admin UI and Admin API Route Protection (RBAC)
+  // 4. Admin paths: cheap pre-filter only (no session cookie -> sign in). This is NOT
+  //    authorization: every admin page/route must call requireAdmin() from
+  //    src/lib/security/adminGuard.ts, which validates the session and role (audit L3).
   if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin/')) {
-    const sessionToken =
-      request.cookies.get('ipolens_session')?.value ||
-      request.cookies.get('ipolens_token')?.value ||
-      request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+    const sessionToken = request.cookies.get('ipolens_session')?.value;
 
     if (!sessionToken) {
       if (pathname.startsWith('/api/')) {
@@ -72,31 +89,22 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // 5. Scraper Sync API Protection
-  if (pathname === '/api/scraper/sync' && request.method === 'POST') {
-    const authHeader = request.headers.get('authorization') || '';
-    const cronSecret = process.env.CRON_SECRET;
-    const sessionToken =
-      request.cookies.get('ipolens_session')?.value ||
-      request.cookies.get('ipolens_token')?.value;
+  // 5. /api/scraper/sync enforces admin role or CRON_SECRET itself (constant-time check).
 
-    const hasValidBearer = cronSecret && authHeader === `Bearer ${cronSecret}`;
-    const hasSession = !!sessionToken;
-
-    if (!hasValidBearer && !hasSession) {
-      return new NextResponse(
-        JSON.stringify({
-          success: false,
-          error: 'Unauthorized: Scraper synchronization requires administrative privileges or valid CRON_SECRET.',
-        }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
+  // 6. Pages: per-request nonce-based CSP (audit M3). Next.js reads the nonce from the
+  //    request's CSP header and applies it to its own scripts during rendering.
+  if (!pathname.startsWith('/api/')) {
+    const csp = buildPageCsp(generateNonce(), process.env.NODE_ENV === 'development');
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('Content-Security-Policy', csp);
+    const pageResponse = NextResponse.next({ request: { headers: requestHeaders } });
+    pageResponse.headers.set('Content-Security-Policy', csp);
+    return pageResponse;
   }
 
-  // 6. Proceed and attach CORS and Security Headers
+  // 7. API: proceed and attach CORS headers (the API CSP comes from next.config.ts)
   const response = NextResponse.next();
-  return setCorsHeaders(response, origin);
+  return setCorsHeaders(response, origin, requestHost);
 }
 
 export default proxy;

@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { drhpRagService } from '@/lib/services/drhp-rag.service';
+import { requireAiAccess } from '@/lib/security/aiGuard';
+import { DrhpTextSchema, QuestionSchema, SymbolSchema, firstIssue } from '@/lib/security/schemas';
+import { z } from 'zod';
+import { apiErrorResponse } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
+
+const DrhpRagBodySchema = z.object({
+  symbol: SymbolSchema,
+  question: QuestionSchema,
+  customText: DrhpTextSchema.optional(),
+});
 
 export async function GET(req: NextRequest) {
   try {
@@ -42,30 +52,29 @@ export async function GET(req: NextRequest) {
       sections,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/market/drhp-rag');
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { symbol, question, customText } = body;
+    const access = await requireAiAccess(req);
+    if ('response' in access) return access.response;
 
-    if (!symbol) {
-      return NextResponse.json({ success: false, error: 'Symbol is required' }, { status: 400 });
+    const parsed = DrhpRagBodySchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
-    if (!question) {
-      return NextResponse.json({ success: false, error: 'Question is required' }, { status: 400 });
-    }
+    const { symbol, question, customText } = parsed.data;
 
-    const ragResult = await drhpRagService.queryRag(symbol, question, customText);
+    // customText is indexed into the caller's private slot, never the shared index (H1).
+    const ragResult = await drhpRagService.queryRag(symbol, question, customText, access.user.id);
 
     return NextResponse.json({
       success: true,
       data: ragResult,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return apiErrorResponse(err, '/api/market/drhp-rag');
   }
 }
-

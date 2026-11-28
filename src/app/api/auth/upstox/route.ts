@@ -1,14 +1,12 @@
-import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/security/session';
-import { isAdmin, escapeHtml } from '@/lib/security/guards';
+import crypto from 'crypto';
+import { escapeHtml } from '@/lib/security/sanitize';
+import { UPSTOX_STATE_COOKIE, UPSTOX_STATE_MAX_AGE_SECONDS } from '@/lib/security/upstoxOAuth';
+import { requireAdminInProduction } from '@/lib/security/adminGuard';
 
 export async function GET(req: NextRequest) {
-  // Connecting the server-wide Upstox account is an administrator action.
-  const user = await getAuthenticatedUser(req);
-  if (!isAdmin(user)) {
-    return NextResponse.json({ success: false, error: 'Administrator sign-in required.' }, { status: 403 });
-  }
+  const denied = await requireAdminInProduction(req);
+  if (denied) return denied;
   const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
   const url = new URL(req.url);
   const redirectUri = (process.env.UPSTOX_REDIRECT_URI || `${url.origin}/api/auth/callback/upstox`).trim();
@@ -55,17 +53,16 @@ export async function GET(req: NextRequest) {
   }
 
   // Construct Upstox OAuth authorization dialog URL
-  // OAuth `state` binds the callback to this browser (login-CSRF protection).
   const state = crypto.randomBytes(24).toString('hex');
   const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
 
   const response = NextResponse.redirect(authUrl);
-  response.cookies.set('upstox_oauth_state', state, {
+  response.cookies.set(UPSTOX_STATE_COOKIE, state, {
+    path: '/api/auth',
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
-    path: '/api/auth',
-    maxAge: 600,
+    maxAge: UPSTOX_STATE_MAX_AGE_SECONDS,
   });
   return response;
 }

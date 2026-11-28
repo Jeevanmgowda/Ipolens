@@ -5,25 +5,58 @@ import { NextResponse } from 'next/server';
  * Restricts cross-origin requests strictly to authorized client domains.
  */
 
-const DEFAULT_ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  process.env.CLIENT_URL,
-].filter(Boolean) as string[];
+/**
+ * Exact origins allowed to call the API cross-origin, besides the app's own
+ * origin (see isAllowedOrigin). Read at call time so configuration changes and
+ * tests apply. No wildcard subdomains (docs/security/AUDIT_2026-11-27.md, L1).
+ */
+function allowedOrigins(): string[] {
+  const extra = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return ['http://localhost:3000', 'http://127.0.0.1:3000', process.env.CLIENT_URL, ...extra].filter(Boolean) as string[];
+}
+
+/**
+ * Host the request was addressed to (first x-forwarded-host entry when behind a
+ * reverse proxy / load balancer, otherwise the Host header).
+ */
+export function getRequestHost(request: Request): string | null {
+  const forwarded = request.headers.get('x-forwarded-host');
+  const host = (forwarded ? forwarded.split(',')[0] : request.headers.get('host')) || '';
+  return host.trim().toLowerCase() || null;
+}
 
 /**
  * Validates if the given origin is authorized to interact with the backend API.
+ * Allowed: no Origin (non-browser / same-origin GET), the configured CLIENT_URL
+ * and localhost defaults, CORS_ALLOWED_ORIGINS, and same-origin requests — the page's
+ * Origin host equals the host the request was sent to. Browsers set Origin
+ * themselves, so a third-party page cannot pass the same-origin check.
  */
-export function isAllowedOrigin(origin: string | null): boolean {
+export function isAllowedOrigin(origin: string | null, requestHost?: string | null): boolean {
   if (!origin) return true; // Same-origin or non-browser server request
-  return DEFAULT_ALLOWED_ORIGINS.some((allowed) => allowed === origin || origin.endsWith('.ipolens.in'));
+  if (allowedOrigins().includes(origin)) {
+    return true;
+  }
+  if (!requestHost) return false;
+  try {
+    return new URL(origin).host.toLowerCase() === requestHost.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Applies strict CORS headers to an outgoing NextResponse.
  */
-export function setCorsHeaders(response: NextResponse, origin: string | null): NextResponse {
-  if (origin && isAllowedOrigin(origin)) {
+export function setCorsHeaders(
+  response: NextResponse,
+  origin: string | null,
+  requestHost?: string | null
+): NextResponse {
+  if (origin && isAllowedOrigin(origin, requestHost)) {
     response.headers.set('Access-Control-Allow-Origin', origin);
     response.headers.set('Access-Control-Allow-Credentials', 'true');
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
@@ -39,7 +72,7 @@ export function setCorsHeaders(response: NextResponse, origin: string | null): N
 /**
  * Returns a 204 No Content preflight response for OPTIONS requests.
  */
-export function handleCorsPreflight(origin: string | null): NextResponse {
+export function handleCorsPreflight(origin: string | null, requestHost?: string | null): NextResponse {
   const response = new NextResponse(null, { status: 204 });
-  return setCorsHeaders(response, origin);
+  return setCorsHeaders(response, origin, requestHost);
 }

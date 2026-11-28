@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { IpoService } from '@/services/ipoService';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,7 @@ export async function GET(
   } catch (error: any) {
     console.error('API Error in /api/ipos/[symbol]/gmp:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch GMP quote', message: error.message },
+      { success: false, error: 'Failed to fetch GMP quote', ...errorDetail(error) },
       { status: 500 }
     );
   }

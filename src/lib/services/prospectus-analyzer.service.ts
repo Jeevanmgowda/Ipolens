@@ -1,4 +1,14 @@
 import { GoogleGenAI } from '@google/genai';
+import { z } from 'zod';
+import { MAX_PROMPT_DOCUMENT_CHARS, UNTRUSTED_DATA_RULE, wrapUntrusted } from '@/lib/security/promptSafety';
+
+const IpoInsightSchema = z.object({
+  verdict: z.enum(['SUBSCRIBE', 'AVOID', 'NEUTRAL']),
+  confidenceScore: z.number().min(0).max(100),
+  topStrengths: z.array(z.string().max(400)).max(10),
+  topRisks: z.array(z.string().max(400)).max(10),
+  anchorQuality: z.string().max(400).optional(),
+});
 
 export interface IpoInsightResponse {
   verdict: 'SUBSCRIBE' | 'AVOID' | 'NEUTRAL';
@@ -33,11 +43,12 @@ export async function generateIpoInsight(
     try {
       const ai = new GoogleGenAI({ apiKey });
 
-      const prompt = `Analyze the following DRHP prospectus for ${companyName}.
+      const prompt = `Analyze the following DRHP prospectus excerpt for ${companyName.slice(0, 150)}.
+${UNTRUSTED_DATA_RULE}
 Generate a structured analysis strictly conforming to the required schema.
 
 Prospectus Context:
-${drhpSummary}`;
+${wrapUntrusted('untrusted_document', drhpSummary, MAX_PROMPT_DOCUMENT_CHARS)}`;
 
       const response = await withTimeout(
         ai.models.generateContent({
@@ -61,9 +72,10 @@ ${drhpSummary}`;
         7000
       );
 
-      const parsed = JSON.parse(response.text || '{}');
-      if (parsed.verdict && parsed.confidenceScore !== undefined) {
-        return parsed as IpoInsightResponse;
+      // Model output is untrusted: only accept it if it matches the schema.
+      const validated = IpoInsightSchema.safeParse(JSON.parse(response.text || '{}'));
+      if (validated.success) {
+        return { anchorQuality: 'Not assessed', ...validated.data } as IpoInsightResponse;
       }
     } catch (aiErr: any) {
       console.warn('[ProspectusAnalyzer] Gemini Flash DRHP analysis notice, using deterministic fallback:', aiErr?.message || 'offline');

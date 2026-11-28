@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { MarketService } from '@/services/marketService';
 import { MarketDataUnavailableError } from '@/services/marketDataProvider';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +29,7 @@ export async function GET(
     }
     console.error('API Error in /api/market/[symbol]/quote:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch live market quote', message: error.message },
+      { success: false, error: 'Failed to fetch live market quote', ...errorDetail(error) },
       { status: 500 }
     );
   }

@@ -1,9 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { demoAccountsEnabled, escapeHtml } from '@/lib/security/guards';
 import { createSession } from '@/lib/security/session';
 import { POST as optimizeAllocation } from '@/app/api/pans/optimize-allocation/route';
-import { POST as multiScan } from '@/app/api/allotment/multi-scan/route';
 import { GET as upstoxStart } from '@/app/api/auth/upstox/route';
 import { GET as upstoxCallback } from '@/app/api/auth/callback/upstox/route';
 
@@ -36,9 +35,9 @@ describe('Hotfix: PAN-returning routes require sign-in and ignore client-supplie
     expect(res.status).toBe(401);
   });
 
-  it('multi-scan rejects anonymous callers', async () => {
-    const res = await multiScan(json('/api/allotment/multi-scan', { symbol: 'X' }));
-    expect(res.status).toBe(401);
+  it('the global multi-scan route has been removed', async () => {
+    const fs = await import('fs');
+    expect(fs.existsSync('src/app/api/allotment/multi-scan/route.ts')).toBe(false);
   });
 
   it('optimize-allocation does not echo PANs the client sends', async () => {
@@ -56,9 +55,12 @@ describe('Hotfix: PAN-returning routes require sign-in and ignore client-supplie
   });
 });
 
-describe('Hotfix: Upstox OAuth is admin-only, state-bound and escaped', () => {
-  it('rejects non-admins on start and callback', async () => {
-    expect((await upstoxStart(get('/api/auth/upstox'))).status).toBe(403);
+describe('Hotfix: Upstox OAuth is admin-only in production, state-bound and escaped', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('rejects anonymous callers and non-admins in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    expect((await upstoxStart(get('/api/auth/upstox'))).status).toBe(401);
     const retail = await cookieFor('usr_ret_02');
     expect((await upstoxStart(get('/api/auth/upstox', retail))).status).toBe(403);
     expect((await upstoxCallback(get('/api/auth/callback/upstox?code=abc', retail))).status).toBe(403);
@@ -76,9 +78,10 @@ describe('Hotfix: Upstox OAuth is admin-only, state-bound and escaped', () => {
 
     // Wrong / missing state is refused before any token exchange.
     const bad = await upstoxCallback(get('/api/auth/callback/upstox?code=abc&state=forged', admin));
-    expect(bad.status).toBe(403);
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toContain('state mismatch');
     const missing = await upstoxCallback(get(`/api/auth/callback/upstox?code=abc&state=${state}`, admin));
-    expect(missing.status).toBe(403);
+    expect(missing.status).toBe(400);
   });
 
   it('escapes reflected error text (no script injection)', async () => {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getAuthenticatedUser } from '@/lib/security/session';
@@ -29,11 +29,12 @@ export const maxDuration = 300;
 
 const SNAPSHOT_FILE = path.resolve(process.cwd(), 'data', 'ipos.json');
 
+/** Constant-time check of `Authorization: Bearer <CRON_SECRET>`; hashing hides the secret's length. */
 function bearerMatches(header: string, secret: string | undefined): boolean {
   if (!secret) return false;
-  const expected = Buffer.from(`Bearer ${secret}`);
-  const given = Buffer.from(header);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  const given = createHash('sha256').update(header).digest();
+  const expected = createHash('sha256').update(`Bearer ${secret}`).digest();
+  return timingSafeEqual(given, expected);
 }
 
 const intIn = (v: unknown, min: number, max: number): number | undefined => {

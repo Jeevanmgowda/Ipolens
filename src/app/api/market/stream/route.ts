@@ -1,13 +1,68 @@
 import { NextRequest } from 'next/server';
-import { getRedisClient } from '@/lib/redis';
+import { getRedisSubscriber } from '@/lib/redis';
 import { MarketService } from '@/services/marketService';
+import { getClientIp } from '@/lib/security/rateLimiter';
 
 export const dynamic = 'force-dynamic';
+
+// Stream limits (docs/security/AUDIT_2026-11-27.md, M4). Counters are per server
+// instance; the per-IP limit relies on getClientIp's trusted-proxy handling.
+const MAX_SYMBOLS = 20;
+const SYMBOL_PATTERN = /^[A-Z0-9&._|:-]{1,30}$/;
+// One page can open up to three streams (radar, ticker, chart), and NAT puts many users
+// behind one IP, so allow a few tabs per client.
+const MAX_STREAMS_PER_IP = 8;
+const MAX_STREAMS_TOTAL = 500;
+const MAX_STREAM_LIFETIME_MS = 30 * 60 * 1000;
+
+const openStreamsByIp = new Map<string, number>();
+let openStreamsTotal = 0;
+
+function jsonError(status: number, error: string): Response {
+  return new Response(JSON.stringify({ success: false, error }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 export async function GET(req: NextRequest) {
   const encoder = new TextEncoder();
   const url = new URL(req.url);
-  const requestedSymbols = url.searchParams.get('symbols')?.toUpperCase().split(',').map((s) => s.trim()).filter(Boolean) || [];
+  const requestedSymbols = Array.from(
+    new Set(
+      (url.searchParams.get('symbols') || '')
+        .toUpperCase()
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+  if (requestedSymbols.length > MAX_SYMBOLS) {
+    return jsonError(400, `At most ${MAX_SYMBOLS} symbols per stream.`);
+  }
+  if (requestedSymbols.some((s) => !SYMBOL_PATTERN.test(s))) {
+    return jsonError(400, 'Invalid symbol in symbols parameter.');
+  }
+
+  const ip = getClientIp(req);
+  if (openStreamsTotal >= MAX_STREAMS_TOTAL) {
+    return jsonError(503, 'Live stream capacity reached. Please retry shortly.');
+  }
+  if ((openStreamsByIp.get(ip) || 0) >= MAX_STREAMS_PER_IP) {
+    return jsonError(429, `Too many open live streams (max ${MAX_STREAMS_PER_IP} per client).`);
+  }
+  openStreamsByIp.set(ip, (openStreamsByIp.get(ip) || 0) + 1);
+  openStreamsTotal++;
+
+  let released = false;
+  const releaseSlot = () => {
+    if (released) return;
+    released = true;
+    openStreamsTotal = Math.max(0, openStreamsTotal - 1);
+    const left = (openStreamsByIp.get(ip) || 1) - 1;
+    if (left <= 0) openStreamsByIp.delete(ip);
+    else openStreamsByIp.set(ip, left);
+  };
 
   const stream = new ReadableStream({
     start(controller) {
@@ -38,7 +93,7 @@ export async function GET(req: NextRequest) {
       };
 
       try {
-        redisClient = getRedisClient();
+        redisClient = getRedisSubscriber();
         redisClient.subscribe('market-ticks', () => {});
         redisClient.on('message', messageHandler);
       } catch {
@@ -103,19 +158,38 @@ export async function GET(req: NextRequest) {
         }
       }, 12000);
 
-      req.signal.addEventListener('abort', () => {
+      const shutdown = () => {
+        if (isAborted && released) return;
         isAborted = true;
         clearInterval(tickInterval);
         clearInterval(pingInterval);
+        clearTimeout(lifetimeTimer);
         if (redisClient) {
           try {
+            // Only detach this stream's listener. The Redis client is shared by every
+            // open stream, so unsubscribing here would silence all the others.
             redisClient.removeListener('message', messageHandler);
-            redisClient.unsubscribe('market-ticks');
           } catch {
             // cleanup
           }
         }
-      });
+        releaseSlot();
+      };
+
+      // Cap connection lifetime; EventSource clients reconnect automatically.
+      const lifetimeTimer = setTimeout(() => {
+        shutdown();
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      }, MAX_STREAM_LIFETIME_MS);
+
+      req.signal.addEventListener('abort', shutdown);
+    },
+    cancel() {
+      releaseSlot();
     },
   });
 

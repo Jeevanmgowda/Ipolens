@@ -19,6 +19,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "workers:build": "tsc --noEmit -p tsconfig.json",
+    "workers:install": "npm --prefix workers install",
     "workers:start": "node workers/market-feed-worker.js",
     "workers:refresh": "node src/lib/scheduler.js",
     "build:workers": "tsc --noEmit -p tsconfig.json",
@@ -37,8 +38,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.10.1",
-    "smartapi-javascript": "^1.0.27",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.6.0",

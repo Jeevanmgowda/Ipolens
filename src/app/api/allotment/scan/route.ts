@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { scanRegistrarText, OFFICIAL_REGISTRARS } from '@/services/allotmentScanner';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function GET() {
   return NextResponse.json({
@@ -30,6 +31,6 @@ export async function POST(request: Request) {
         : 'Could not confidently determine allotment status. Please ensure full registrar output is pasted.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }

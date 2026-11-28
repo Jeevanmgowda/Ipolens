@@ -119,3 +119,14 @@ describe('Live market data for stored IPOs', () => {
     expect((await getLiveQuotes([])).constructor).toBe(Object);
   });
 });
+
+describe('Logo lookups stay on public hosts (SSRF)', () => {
+  it('accepts company domains and rejects IPs, localhost and internal names', async () => {
+    const { isSafePublicHost } = await import('@/lib/security/publicHost');
+    expect(isSafePublicHost('example.co.in')).toBe(true);
+    expect(isSafePublicHost('www.tatamotors.com')).toBe(true);
+    for (const bad of ['127.0.0.1', '169.254.169.254', '10.0.0.5', 'localhost', 'db.internal', 'printer.local', '[::1]', 'metadata', '']) {
+      expect(isSafePublicHost(bad), bad).toBe(false);
+    }
+  });
+});

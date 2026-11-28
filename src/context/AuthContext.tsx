@@ -50,27 +50,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Hydrate from localStorage on client mount
+  // Hydrate from the server session (HttpOnly cookie) on client mount. The profile is
+  // no longer cached in localStorage, where any script could read it (audit M8).
   useEffect(() => {
+    let cancelled = false;
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setUser(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error('Failed to parse auth session from localStorage:', e);
-    } finally {
-      setIsLoading(false);
+      localStorage.removeItem(STORAGE_KEY); // clear profiles cached by older versions
+    } catch {
+      // storage unavailable
     }
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.success && data.user) setUser(data.user);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const saveUserSession = (userProfile: User) => {
     setUser(userProfile);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(userProfile));
-    } catch (e) {
-      console.error('Failed to save auth session:', e);
-    }
   };
 
   const signIn = async (creds: SignInCredentials): Promise<{ success: boolean; error?: string }> => {
@@ -133,9 +137,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Demo profiles must obtain a real server session; a client-only localStorage
+  // "login" left the API treating the visitor as anonymous. The server allows the
+  // credential-less demo path only outside production, so this fails cleanly there.
   const loginWithDemo = async (type: 'institutional' | 'retail'): Promise<void> => {
     const demoUser = DEMO_USERS[type];
-    saveUserSession(demoUser);
+    const result = await authenticateWithGoogle({
+      email: demoUser.email,
+      name: demoUser.name,
+      investorCategory: demoUser.investorCategory,
+    });
+    if (!result.success) {
+      throw new Error(result.error || 'Demo login is unavailable.');
+    }
   };
 
   const signOut = () => {

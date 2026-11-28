@@ -5,6 +5,7 @@ import { LiveIpoDetail } from '@/types/ipo';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { isDatabaseConfigured } from '@/db';
 import { toLiveIpoDetail } from '@/services/supabaseIpoProvider';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,7 +109,7 @@ export async function GET(
   } catch (error: any) {
     console.error('API Error in /api/ipos/[symbol]:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch live IPO detail', message: error.message },
+      { success: false, error: 'Failed to fetch live IPO detail', ...errorDetail(error) },
       { status: 500 }
     );
   }

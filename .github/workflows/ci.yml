@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Puppeteer is only used locally; skip its Chromium download in CI.
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Blocks on high/critical advisories in production dependencies
+      # (docs/security/AUDIT_2026-11-27.md, R18).
+      - name: Dependency audit (production)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Worker dependency audit (informational)
+        continue-on-error: true
+        run: npm --prefix workers ci && npm --prefix workers audit --omit=dev --audit-level=high
+
+      - name: Type check
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Security regression tests
+        run: npx vitest run tests/securityRemediation.test.ts tests/securityRemediationHigh.test.ts tests/securityRemediationEnv.test.ts tests/routeAccessMatrix.test.ts tests/authHardening.test.ts tests/securityHardening.test.ts
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Lint has pre-existing debt (mostly `any` types); reported but not yet blocking.
+      - name: Lint (non-blocking)
+        continue-on-error: true
+        run: npm run lint

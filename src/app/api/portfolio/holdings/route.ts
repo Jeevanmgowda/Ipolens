@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
-import { getAuthenticatedUser } from '@/lib/security/session';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { PortfolioSummary } from '@/types/portfolio';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function GET(request: Request) {
   try {
     const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    if (!authUser) return unauthorizedResponse();
+    const userId = authUser.id;
 
     const holdings = await DbRepositoryService.getHoldings(userId);
 
@@ -45,14 +47,15 @@ export async function GET(request: Request) {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request) {
   try {
     const authUser = await getAuthenticatedUser(request);
-    const userId = authUser ? authUser.id : 'default_user';
+    if (!authUser) return unauthorizedResponse();
+    const userId = authUser.id;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -71,6 +74,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: false, error: 'Holding not found' }, { status: 404 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }

@@ -1,30 +1,22 @@
-import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/security/session';
-import { isAdmin, escapeHtml } from '@/lib/security/guards';
 import fs from 'fs';
 import path from 'path';
+import { escapeHtml } from '@/lib/security/sanitize';
+import { UPSTOX_STATE_COOKIE } from '@/lib/security/upstoxOAuth';
+import { requireAdminInProduction } from '@/lib/security/adminGuard';
 
 export async function GET(req: NextRequest) {
+  const denied = await requireAdminInProduction(req);
+  if (denied) return denied;
   const url = new URL(req.url);
-
-  // Only an administrator who started the flow from this browser may complete it.
-  const user = await getAuthenticatedUser(req);
-  if (!isAdmin(user)) {
-    return NextResponse.json({ success: false, error: 'Administrator sign-in required.' }, { status: 403 });
-  }
-  const expectedState = req.cookies.get('upstox_oauth_state')?.value || '';
-  const returnedState = url.searchParams.get('state') || '';
-  const stateOk =
-    expectedState.length > 0 &&
-    expectedState.length === returnedState.length &&
-    crypto.timingSafeEqual(Buffer.from(expectedState), Buffer.from(returnedState));
-  if (!stateOk) {
-    return NextResponse.json({ success: false, error: 'Invalid or expired OAuth state. Start the Upstox connection again.' }, { status: 403 });
-  }
-
   const code = url.searchParams.get('code');
-  const error = url.searchParams.get('error') || url.searchParams.get('error_description');
+  const returnedState = url.searchParams.get('state');
+  const expectedState = req.cookies.get(UPSTOX_STATE_COOKIE)?.value;
+  const stateMismatch = Boolean(code) && (!expectedState || !returnedState || returnedState !== expectedState);
+  const error =
+    url.searchParams.get('error') ||
+    url.searchParams.get('error_description') ||
+    (stateMismatch ? 'OAuth state mismatch. Please start the Upstox login again from /api/auth/upstox.' : null);
 
   if (error || !code) {
     const errorHtml = `
@@ -53,10 +45,12 @@ export async function GET(req: NextRequest) {
       </body>
       </html>
     `;
-    return new NextResponse(errorHtml, {
+    const response = new NextResponse(errorHtml, {
       status: 400,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
+    response.cookies.set(UPSTOX_STATE_COOKIE, '', { path: '/api/auth', maxAge: 0 });
+    return response;
   }
 
   const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.UPSTOX_API_KEY || '').trim();
@@ -94,6 +88,7 @@ export async function GET(req: NextRequest) {
     let envSaved = false;
     try {
       const envPath = path.resolve(process.cwd(), '.env.local');
+      // Never rewrite server files from a request in production (audit M7).
       if (process.env.NODE_ENV !== 'production' && fs.existsSync(envPath) && accessToken) {
         let envContent = fs.readFileSync(envPath, 'utf8');
         if (envContent.includes('UPSTOX_ACCESS_TOKEN=')) {
@@ -156,7 +151,7 @@ export async function GET(req: NextRequest) {
           <div class="meta-box">
             <div class="meta-row">
               <span class="meta-label">User / Account:</span>
-              <span class="meta-val">${escapeHtml(userName)} (${escapeHtml(userId)})</span>
+              <span class="meta-val">${escapeHtml(String(userName))} (${escapeHtml(String(userId))})</span>
             </div>
             <div class="meta-row">
               <span class="meta-label">Auto-Updated .env.local:</span>
@@ -192,11 +187,14 @@ export async function GET(req: NextRequest) {
       </html>
     `;
 
-    return new NextResponse(successHtml, {
+    const response = new NextResponse(successHtml, {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
+    response.cookies.set(UPSTOX_STATE_COOKIE, '', { path: '/api/auth', maxAge: 0 });
+    return response;
   } catch (err: any) {
+    console.error('[Upstox OAuth] Token exchange failed:', err);
     const errorHtml = `
       <!DOCTYPE html>
       <html lang="en">
@@ -216,7 +214,7 @@ export async function GET(req: NextRequest) {
         <div class="card">
           <h1>❌ Token Exchange Failed</h1>
           <p>Failed to exchange authorization code with Upstox server:</p>
-          <pre>${escapeHtml(err.message)}</pre>
+          <pre>${escapeHtml(process.env.NODE_ENV === 'production' ? 'Token exchange with Upstox failed. Check the server logs for details.' : String(err?.message || err))}</pre>
           <a href="/api/auth/upstox" class="btn">Try Again</a>
           <a href="/" class="btn" style="background: #334155; margin-left: 8px;">Back to Dashboard</a>
         </div>
@@ -224,9 +222,11 @@ export async function GET(req: NextRequest) {
       </html>
     `;
 
-    return new NextResponse(errorHtml, {
+    const response = new NextResponse(errorHtml, {
       status: 500,
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
+    response.cookies.set(UPSTOX_STATE_COOKIE, '', { path: '/api/auth', maxAge: 0 });
+    return response;
   }
 }
