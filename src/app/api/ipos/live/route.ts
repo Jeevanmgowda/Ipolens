@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { fetchLiveNseIpos } from '@/services/nseIpoService';
+import { isDatabaseConfigured } from '@/db';
+import { IpoService } from '@/services/ipoService';
+import { toLiveIpoSummary } from '@/services/supabaseIpoProvider';
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +14,8 @@ export async function GET(request: Request) {
     const series = searchParams.get('series');     // 'EQ' | 'SME'
     const q = searchParams.get('q');               // Search query
 
-    const allIpos = await fetchLiveNseIpos();
+    const fromSupabase = isDatabaseConfigured();
+    const allIpos = fromSupabase ? (await IpoService.getAllIpos()).map(toLiveIpoSummary) : await fetchLiveNseIpos();
 
     // Compute category counts across all issues
     const counts = {
@@ -55,7 +59,7 @@ export async function GET(request: Request) {
       counts,
       data: filtered,
       timestamp: new Date().toISOString(),
-      source: 'National Stock Exchange of India (NSE)',
+      source: fromSupabase ? 'Supabase (InvestorGain + BSE sync)' : 'National Stock Exchange of India (NSE)',
     });
   } catch (error: any) {
     console.error('API Error in /api/ipos/live:', error);

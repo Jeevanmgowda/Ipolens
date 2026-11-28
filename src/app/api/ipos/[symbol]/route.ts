@@ -3,6 +3,8 @@ import { fetchLiveIpoDetail } from '@/services/nseIpoService';
 import { IpoService } from '@/services/ipoService';
 import { LiveIpoDetail } from '@/types/ipo';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
+import { isDatabaseConfigured } from '@/db';
+import { toLiveIpoDetail } from '@/services/supabaseIpoProvider';
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +19,19 @@ export async function GET(
 
     if (!symbol) {
       return NextResponse.json({ success: false, error: 'Symbol parameter is required' }, { status: 400 });
+    }
+
+    // Supabase is the store for every IPO; nothing below is consulted when it is configured.
+    if (isDatabaseConfigured()) {
+      const ipo = await IpoService.getIpoDetails(symbol);
+      if (!ipo) {
+        return NextResponse.json({ success: false, error: `IPO "${symbol}" was not found.` }, { status: 404 });
+      }
+      return NextResponse.json({
+        success: true,
+        data: { ...toLiveIpoDetail(ipo), rhpUrl: ipo.rhpUrl, drhpUrl: ipo.drhpUrl, dataSource: ipo.dataSource, lastUpdated: ipo.lastUpdated },
+        source: ipo.dataSource || 'Supabase',
+      });
     }
 
     // 1. Check Unified IPO pipeline first (Upstox + Hybrid GMP)

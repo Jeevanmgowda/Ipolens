@@ -28,7 +28,9 @@ const MATRIX: Record<string, Access> = {
   'GET /api/ipos/live': 'public',
   'GET /api/ipos/open': 'public',
   'GET /api/ipos/upcoming': 'public',
-  'GET /api/ipo-logo': 'public',
+  'GET /api/ipos/quotes': 'public', // prices for IPOs listed in Supabase only, max 60, cached
+  'GET /api/ipos/live-updates': 'public', // stored card fields; bounded, de-duplicated refresh of active IPOs
+  'GET /api/ipo-logo': 'public', // company logos; public hosts only, no redirects, bounded cache
   'GET /api/live-market': 'public',
   'GET /api/market/[symbol]/ohlc': 'public',
   'GET /api/market/[symbol]/quote': 'public',

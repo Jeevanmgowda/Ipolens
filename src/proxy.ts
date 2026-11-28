@@ -47,6 +47,8 @@ export async function proxy(request: NextRequest) {
       tier = 'auth';
     } else if (pathname.startsWith('/api/scraper/')) {
       tier = 'scraper';
+    } else if (pathname === '/api/ipo-logo') {
+      tier = 'assets';
     } else if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method)) {
       tier = 'mutating';
     }

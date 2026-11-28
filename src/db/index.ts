@@ -1,3 +1,4 @@
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
@@ -93,3 +94,33 @@ if (isPostgresConfigured) {
 
 export const db = dbClient;
 export { schema };
+
+// ---------------------------------------------------------------------------
+// Strict accessor for Supabase-backed features (IPO ingestion, DRHP, allotment).
+// Unlike `db`, it throws instead of silently falling back to in-memory data.
+// ---------------------------------------------------------------------------
+export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
+
+export class DatabaseUnavailableError extends Error {
+  constructor(message = 'Database is not reachable. Check DATABASE_URL (Supabase Postgres).') {
+    super(message);
+    this.name = 'DatabaseUnavailableError';
+  }
+}
+
+let testOverride: Database | null = null;
+
+export function getDb(): Database {
+  if (testOverride) return testOverride;
+  if (!dbClient || !isDatabaseActive()) throw new DatabaseUnavailableError();
+  return dbClient as unknown as Database;
+}
+
+export function isDatabaseConfigured(): boolean {
+  return Boolean(testOverride) || isPostgresConfigured;
+}
+
+/** Test-only: route getDb() to the given database (e.g. PGlite). */
+export function setDatabaseForTesting(database: Database | null): void {
+  testOverride = database;
+}

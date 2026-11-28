@@ -1,6 +1,28 @@
 import { MarketQuoteData, MarketOhlcCandle } from '@/types/liveMarket';
 import { LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { findMarketMetadata } from './nseIpoService';
+import { getLiveQuote, getCandles } from '@/lib/market/ipoMarketData';
+
+/** Raised when no exchange data exists for a symbol (instead of returning a made-up price). */
+export class MarketDataUnavailableError extends Error {
+  constructor(symbol: string) {
+    super(`No live market data for ${symbol}`);
+    this.name = 'MarketDataUnavailableError';
+  }
+}
+
+/** Real exchange data (Yahoo Finance, exchange-aware tickers from Supabase). Never synthesises. */
+export class ExchangeDataProvider implements MarketDataProvider {
+  name = 'NSE/BSE via Yahoo Finance (delayed)';
+  async getQuote(symbol: string): Promise<MarketQuoteData> {
+    const q = await getLiveQuote(symbol);
+    if (!q) throw new MarketDataUnavailableError(symbol);
+    return q;
+  }
+  async getOhlc(symbol: string, timeframe: string = '1D'): Promise<MarketOhlcCandle[]> {
+    return getCandles(symbol, timeframe);
+  }
+}
 
 export interface MarketDataProvider {
   name: string;
@@ -19,7 +41,7 @@ export class UpstoxProvider implements MarketDataProvider {
   private clientSecret: string;
   private accessToken: string;
   private baseUrl = 'https://api.upstox.com/v2';
-  private yahooFallback = new YahooFinanceProvider();
+  private yahooFallback = new ExchangeDataProvider();
   private mockFallback = new MockMarketProvider();
 
   private static upstox429CooldownUntil = 0;

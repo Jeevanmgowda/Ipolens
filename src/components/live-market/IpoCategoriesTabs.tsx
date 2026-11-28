@@ -33,6 +33,34 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
+
+const istTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+
+/** Card footer: where the numbers come from and how fresh they are. */
+function freshnessFor(ipo: LiveMarketIpoItem): { label: string; title: string; live: boolean } {
+  const listed = ipo.status === 'Listed' || ipo.isListed;
+  if (listed) {
+    if (ipo.quoteUpdatedAt) {
+      return {
+        label: `NSE/BSE price · ${istTime(ipo.quoteUpdatedAt)}`,
+        title: 'Exchange price via Yahoo Finance, delayed up to 15 minutes',
+        live: Date.now() - new Date(ipo.quoteUpdatedAt).getTime() < 30 * 60_000,
+      };
+    }
+    return { label: 'Awaiting exchange price', title: 'No exchange quote received yet', live: false };
+  }
+  const stamps = [ipo.subscriptionUpdatedAt, ipo.gmpUpdatedAt, ipo.lastUpdated].filter((t): t is string => Boolean(t));
+  const latest = stamps.sort().pop();
+  const recentCheck = ipo.liveCheckedAt ? Date.now() - new Date(ipo.liveCheckedAt).getTime() < 6 * 60_000 : false;
+  if (!latest) return { label: ipo.dataSource || 'Source pending', title: 'No update time recorded', live: false };
+  return {
+    label: `${ipo.gmpSource || ipo.dataSource || 'InvestorGain'} · ${istTime(latest)}`,
+    title: `Subscription ${ipo.subscriptionUpdatedAt ? istTime(ipo.subscriptionUpdatedAt) : '—'}, GMP ${ipo.gmpUpdatedAt ? istTime(ipo.gmpUpdatedAt) : '—'} (IST)`,
+    live: recentCheck,
+  };
+}
+
 interface IpoCategoriesTabsProps {
   ipos: LiveMarketIpoItem[];
   watchlist: string[];
@@ -194,22 +222,12 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
       const rawPrices = String(rawIpo.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
       const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
       const parsedMin = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[0]) : parsedMax;
-      const pHigh = rawIpo.priceHigh || rawIpo.issuePrice || rawIpo.priceLow || parsedMax || 100;
+      const pHigh = rawIpo.priceHigh || rawIpo.issuePrice || rawIpo.priceLow || (rawPrices ? parsedMax : 0);
       const pLow = rawIpo.priceLow || parsedMin || pHigh;
 
       const series: 'EQ' | 'SME' | 'DEBT' = rawIpo.series === 'DEBT' ? 'DEBT' : (rawIpo.series === 'SME' ? 'SME' : 'EQ');
-      const lot = series === 'DEBT'
-        ? 1
-        : series === 'SME'
-        ? (rawIpo.lotSize && rawIpo.lotSize >= 600 ? rawIpo.lotSize : 1200)
-        : (rawIpo.lotSize && rawIpo.lotSize > 0 && !(rawIpo.lotSize === 14 && pHigh < 700) && (rawIpo.lotSize * pHigh >= 10000))
-        ? rawIpo.lotSize
-        : Math.max(1, Math.floor(15000 / pHigh));
-      const minInv = series === 'DEBT'
-        ? (pHigh * lot)
-        : series === 'SME'
-        ? (rawIpo.minInvestment && rawIpo.minInvestment >= 90000 ? rawIpo.minInvestment : (pHigh * lot))
-        : (rawIpo.minInvestment && rawIpo.minInvestment >= 10000 ? rawIpo.minInvestment : (pHigh * lot));
+      const lot = series === 'DEBT' ? 1 : (rawIpo.lotSize && rawIpo.lotSize > 0 ? rawIpo.lotSize : 0); // 0 = unknown, shown as —
+      const minInv = rawIpo.minInvestment || (lot && pHigh ? pHigh * lot : 0);
 
       const sanitized: LiveMarketIpoItem = {
         ...rawIpo,
@@ -228,8 +246,8 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
         const existing = result[isDupIdx];
         const isMergedListed = getEffectiveIpoStatus(existing) === 'listed' || getEffectiveIpoStatus(sanitized) === 'listed';
         const chosenSeries: 'EQ' | 'SME' | 'DEBT' = (existing.series === 'SME' || sanitized.series === 'SME') ? 'SME' : (existing.series === 'DEBT' || sanitized.series === 'DEBT' ? 'DEBT' : 'EQ');
-        const chosenLot = chosenSeries === 'DEBT' ? 1 : chosenSeries === 'SME' ? (existing.lotSize >= 600 ? existing.lotSize : (sanitized.lotSize >= 600 ? sanitized.lotSize : 1200)) : (existing.lotSize > 0 ? existing.lotSize : sanitized.lotSize);
-        const chosenMinInv = chosenSeries === 'DEBT' ? (existing.priceHigh * chosenLot) : chosenSeries === 'SME' ? Math.max(90000, existing.priceHigh * chosenLot) : Math.max(10000, existing.priceHigh * chosenLot);
+        const chosenLot = chosenSeries === 'DEBT' ? 1 : (existing.lotSize > 0 ? existing.lotSize : sanitized.lotSize);
+        const chosenMinInv = existing.minInvestment || sanitized.minInvestment || existing.priceHigh * chosenLot;
 
         result[isDupIdx] = {
           ...existing,
@@ -251,8 +269,8 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
     // Pass 2: Predict GMP for any Open or Upcoming IPO with flat 0 or missing GMP!
     return result.map((item) => {
       const eff = getEffectiveIpoStatus(item);
-      if (eff !== 'listed' && item.series !== 'DEBT' && (!item.gmp || item.gmp <= 0)) {
-        const pHigh = item.priceHigh || item.priceLow || item.issuePrice || 100;
+      if (eff !== 'listed' && item.series !== 'DEBT' && !item.hasGmpData && !item.isAiPredictedGmp && (!item.gmp || item.gmp <= 0) && item.priceHigh > 0) {
+        const pHigh = item.priceHigh || item.priceLow || item.issuePrice || 0;
         const ml = predictGmpForIpo({
           symbol: item.symbol,
           companyName: item.companyName,
@@ -592,8 +610,11 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
                       <span className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
                         <span>{isListed ? 'Current Price (LTP)' : 'Price Band'}</span>
-                        {isListed && (
-                          <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
+                        {isListed && typeof ipo.currentPrice === 'number' && (
+                          <span
+                            className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold"
+                            title={ipo.quoteUpdatedAt ? `Exchange price as of ${new Date(ipo.quoteUpdatedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} IST (delayed up to 15 min)` : 'Delayed up to 15 min'}
+                          >
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                             LIVE
                           </span>
@@ -604,9 +625,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           ipo.currentPrice !== undefined && ipo.currentPrice !== null ? (
                             `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           ) : ipo.listingPrice ? (
-                            `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            `Listed ₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           ) : (
-                            ipo.priceBand || '—'
+                            '—'
                           )
                         ) : (
                           ipo.priceBand || '—'
@@ -619,19 +640,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                       const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
                       const effectivePrice = Math.max(1, ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 100);
 
-                      const displayLot = ipo.series === 'DEBT'
-                        ? 1
-                        : ipo.series === 'SME'
-                        ? (ipo.lotSize && ipo.lotSize >= 600 ? ipo.lotSize : 1200)
-                        : (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && effectivePrice < 700) && (ipo.lotSize * effectivePrice >= 10000))
-                        ? ipo.lotSize
-                        : Math.max(1, Math.floor(15000 / effectivePrice));
+                      const displayLot = ipo.series === 'DEBT' ? 1 : (ipo.lotSize && ipo.lotSize > 0 ? ipo.lotSize : 0); // 0 = unknown, shown as —
 
-                      const displayMinInv = ipo.series === 'DEBT'
-                        ? (effectivePrice * displayLot)
-                        : ipo.series === 'SME'
-                        ? (ipo.minInvestment && ipo.minInvestment >= 90000 ? ipo.minInvestment : (effectivePrice * displayLot))
-                        : (ipo.minInvestment && ipo.minInvestment >= 10000 ? ipo.minInvestment : (effectivePrice * displayLot));
+                      const displayMinInv = ipo.minInvestment || (displayLot && effectivePrice ? effectivePrice * displayLot : 0);
 
                       return (
                         <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
@@ -639,17 +650,17 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             {isListed
                               ? "Today's Change (vs Last Close)"
                               : ipo.series === 'DEBT'
-                              ? `Min Lot (${displayLot} ${displayLot === 1 ? 'unit' : 'units'})`
-                              : `Lot Size (${displayLot} shares)`}
+                              ? `Min Lot (${displayLot || '—'} ${displayLot === 1 ? 'unit' : 'units'})`
+                              : `Lot Size (${displayLot ? `${displayLot} shares` : '—'})`}
                           </span>
                           {isListed ? (
                             (() => {
-                              const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
-                              const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
-                              const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
-                                ? ipo.dayChange
-                                : Number((cur - prev).toFixed(2));
-                              const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
+                              if (typeof ipo.currentPrice !== 'number' || typeof ipo.previousClose !== 'number') {
+                                return <span className="font-mono text-xs text-slate-500 mt-0.5 block">— (no quote yet)</span>;
+                              }
+                              const prev = ipo.previousClose;
+                              const diff = typeof ipo.dayChange === 'number' ? ipo.dayChange : Number((ipo.currentPrice - prev).toFixed(2));
+                              const pct = typeof ipo.dayChangePercent === 'number'
                                 ? ipo.dayChangePercent
                                 : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
 
@@ -677,7 +688,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             })()
                           ) : (
                             <span className="font-mono text-sm font-bold text-cyan-300 mt-0.5 block">
-                              ₹{displayMinInv.toLocaleString('en-IN')}
+                              {displayMinInv ? `₹${displayMinInv.toLocaleString('en-IN')}` : '—'}
                             </span>
                           )}
                         </div>
@@ -709,11 +720,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <div>
                           <span className="text-slate-400 block text-[10px]">Listing Price</span>
                           <span className="font-mono font-bold text-slate-200">
-                            {ipo.listingPrice
-                              ? `₹${ipo.listingPrice.toLocaleString('en-IN')}`
-                              : ipo.currentPrice
-                              ? `₹${ipo.currentPrice.toLocaleString('en-IN')}`
-                              : '—'}
+                            {ipo.listingPrice ? `₹${ipo.listingPrice.toLocaleString('en-IN')}` : '—'}
                           </span>
                         </div>
                       </div>
@@ -785,16 +792,16 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           <span className="font-mono text-xs text-slate-400">
                             N/A (Debt Instrument)
                           </span>
-                        ) : ipo.gmp > 0 ? (
+                        ) : ipo.gmp > 0 || (ipo.hasGmpData && ipo.gmp < 0) ? (
                           <div className={`flex items-center gap-1 font-mono font-bold ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
-                            <span>+₹{ipo.gmp}</span>
+                            <span>{ipo.gmp < 0 ? '-' : '+'}₹{Math.abs(ipo.gmp)}</span>
                             <span className={`text-[10px] px-1.5 py-0.2 rounded ${ipo.isAiPredictedGmp ? 'bg-cyan-500/15 border border-cyan-500/25 text-cyan-300' : 'bg-purple-500/15 border border-purple-500/25'}`}>
-                              +{ipo.gmpPercent}%
+                              {ipo.gmpPercent < 0 ? '' : '+'}{ipo.gmpPercent}%
                             </span>
                           </div>
                         ) : (
                           <span className="font-mono text-xs text-slate-400">
-                            ₹0 (Flat)
+                            {ipo.hasGmpData === false ? '—' : '₹0 (Flat)'}
                           </span>
                         )}
                       </div>
@@ -804,16 +811,15 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
 
                 {/* Data Source & Freshness Reconciliation Tag */}
                 <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-2 pt-2 border-t border-white/5">
-                  <span className="flex items-center gap-1.5 text-slate-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>
-                      {ipo.series === 'SME'
-                        ? 'NSE / BSE SME'
-                        : ipo.series === 'DEBT'
-                        ? 'NSE Debt'
-                        : 'NSE Exchange'} Verified
-                    </span>
-                  </span>
+                  {(() => {
+                    const fresh = freshnessFor(ipo);
+                    return (
+                      <span className="flex items-center gap-1.5 text-slate-400 min-w-0" title={fresh.title}>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${fresh.live ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                        <span className="truncate">{fresh.label}</span>
+                      </span>
+                    );
+                  })()}
                   <span className="text-slate-400">
                     {ipo.remainingTime || 'Live Feed'}
                   </span>
@@ -952,24 +958,26 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <>
                           <td className="py-3.5 px-4 font-mono font-extrabold text-emerald-400 text-sm">
                             <div className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                              {typeof ipo.currentPrice === 'number' && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                              )}
                               <span>
                                 {ipo.currentPrice !== undefined && ipo.currentPrice !== null
                                   ? `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : ipo.listingPrice
-                                  ? `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  ? `Listed ₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : '—'}
                               </span>
                             </div>
                           </td>
                           <td className="py-3.5 px-4">
                             {(() => {
-                              const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
-                              const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
-                              const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
-                                ? ipo.dayChange
-                                : Number((cur - prev).toFixed(2));
-                              const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
+                              if (typeof ipo.currentPrice !== 'number' || typeof ipo.previousClose !== 'number') {
+                                return <span className="font-mono text-xs text-slate-500 mt-0.5 block">— (no quote yet)</span>;
+                              }
+                              const prev = ipo.previousClose;
+                              const diff = typeof ipo.dayChange === 'number' ? ipo.dayChange : Number((ipo.currentPrice - prev).toFixed(2));
+                              const pct = typeof ipo.dayChangePercent === 'number'
                                 ? ipo.dayChangePercent
                                 : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
 
@@ -1016,7 +1024,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                             {ipo.priceBand}
                           </td>
                           <td className="py-3.5 px-4">
-                            <span className="font-mono text-cyan-300 font-bold block">{ipo.currentSubscription}x</span>
+                            <span className="font-mono text-cyan-300 font-bold block">{ipo.hasSubscriptionData === false ? '—' : `${ipo.currentSubscription}x`}</span>
                             {ipo.series !== 'DEBT' && ipo.qibSubscription > 0 && (
                               <span className="text-[10px] text-slate-400 block font-mono">QIB: {ipo.qibSubscription}x</span>
                             )}
@@ -1024,9 +1032,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           <td className="py-3.5 px-4">
                             {ipo.series === 'DEBT' ? (
                               <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
-                            ) : ipo.gmp > 0 ? (
+                            ) : ipo.gmp > 0 || (ipo.hasGmpData && ipo.gmp < 0) ? (
                               <div className={`font-mono font-bold flex items-center gap-1.5 ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
-                                <span>+₹{ipo.gmp} ({ipo.gmpPercent}%)</span>
+                                <span>{ipo.gmp < 0 ? '-' : '+'}₹{Math.abs(ipo.gmp)} ({ipo.gmpPercent}%)</span>
                                 {ipo.isAiPredictedGmp && (
                                   <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                                     AI
@@ -1034,7 +1042,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                                 )}
                               </div>
                             ) : (
-                              <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>
+                              <span className="font-mono text-xs text-slate-400">{ipo.hasGmpData === false ? '—' : '₹0 (Flat)'}</span>
                             )}
                           </td>
                           <td className="py-3.5 px-4 font-mono text-slate-300 text-[11px]">
@@ -1064,9 +1072,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           <td className="py-3.5 px-4">
                             {ipo.series === 'DEBT' ? (
                               <span className="font-mono text-xs text-slate-400">N/A (Debt)</span>
-                            ) : ipo.gmp > 0 ? (
+                            ) : ipo.gmp > 0 || (ipo.hasGmpData && ipo.gmp < 0) ? (
                               <div className={`font-mono font-bold flex items-center gap-1.5 ${ipo.isAiPredictedGmp ? 'text-cyan-300' : 'text-purple-300'}`}>
-                                <span>+₹{ipo.gmp} ({ipo.gmpPercent}%)</span>
+                                <span>{ipo.gmp < 0 ? '-' : '+'}₹{Math.abs(ipo.gmp)} ({ipo.gmpPercent}%)</span>
                                 {ipo.isAiPredictedGmp && (
                                   <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                                     AI
@@ -1074,7 +1082,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                                 )}
                               </div>
                             ) : (
-                              <span className="font-mono text-xs text-slate-400">₹0 (Flat)</span>
+                              <span className="font-mono text-xs text-slate-400">{ipo.hasGmpData === false ? '—' : '₹0 (Flat)'}</span>
                             )}
                           </td>
                           <td className="py-3.5 px-4 text-slate-300">
@@ -1083,18 +1091,12 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                               const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
                               const effectivePrice = Math.max(1, ipo.priceHigh || ipo.issuePrice || ipo.priceLow || parsedMax || 100);
 
-                              const tblLot = ipo.series === 'DEBT'
-                                ? 1
-                                : ipo.series === 'SME'
-                                ? (ipo.lotSize && ipo.lotSize >= 600 ? ipo.lotSize : 1200)
-                                : (ipo.lotSize && ipo.lotSize > 0 && !(ipo.lotSize === 14 && effectivePrice < 700) && (ipo.lotSize * effectivePrice >= 10000))
-                                ? ipo.lotSize
-                                : Math.max(1, Math.floor(15000 / effectivePrice));
+                              const tblLot = ipo.series === 'DEBT' ? 1 : (ipo.lotSize && ipo.lotSize > 0 ? ipo.lotSize : 0); // 0 = unknown, shown as —
                               return (
                                 <span className="font-mono font-medium block">
                                   {ipo.series === 'DEBT'
                                     ? `${tblLot} ${tblLot === 1 ? 'unit' : 'units'}`
-                                    : `${tblLot} shares`}
+                                    : tblLot ? `${tblLot} shares` : '—'}
                                 </span>
                               );
                             })()}

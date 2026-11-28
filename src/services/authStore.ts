@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { demoAccountsEnabled } from '../lib/security/guards';
 import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '../types/auth';
 import { isValidEmail } from '../lib/security/sanitize';
 import { isValidPan } from './duplicateEnforcer';
@@ -58,7 +59,8 @@ export function getPrimaryPanHash(userId: string): string | undefined {
  * production deployment (audit H11). Production admins are not seeded from code.
  */
 export function isDemoAccountsEnabled(): boolean {
-  return process.env.NODE_ENV !== 'production';
+  // Off in production; ALLOW_DEMO_ACCOUNTS=false also turns them off in development.
+  return demoAccountsEnabled();
 }
 
 // Demo accounts (cryptographically hashed with PBKDF2-SHA512)

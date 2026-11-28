@@ -1,154 +1,151 @@
 import { NextResponse } from 'next/server';
+import { createHash, timingSafeEqual } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { getAuthenticatedUser } from '@/lib/security/session';
-import { publicErrorMessage } from '@/lib/security/apiError';
+import { isAdmin } from '@/lib/security/guards';
+import { DatabaseUnavailableError, isDatabaseConfigured } from '@/db';
+import { IpoRepository } from '@/lib/repositories/ipo.repository';
+import { runIpoIngestion } from '@/lib/ingestion/ipo-ingestion.service';
+import { runBackfill } from '@/lib/ingestion/backfill';
+import { importSnapshot, type SnapshotFile } from '@/lib/ingestion/json-import';
+import { recordSyncRun, readSyncHealth } from '@/lib/ingestion/sync-health';
+import { refreshListedQuotes } from '@/lib/ingestion/quotes';
+import { clearSupabaseIpoCache } from '@/services/supabaseIpoProvider';
 
-const execFileAsync = promisify(execFile);
+/**
+ * IPO data sync into Supabase.
+ *
+ * GET  — public status: counts per lifecycle stage straight from the database and the last run.
+ *        With the CRON_SECRET bearer (Vercel Cron) it runs a live sync instead.
+ * POST — CRON_SECRET bearer or a signed-in admin. Body `{ mode }`:
+ *   "live"        (default) InvestorGain live report + details, cross-checked with BSE
+ *   "backfill"    one bounded batch of the 12-month backfill; pass `fromId` = previous `nextId`
+ *   "import-json" one-time import of the data/ipos.json snapshot
+ */
 
-/** Constant-time comparison of the Authorization header with `Bearer <CRON_SECRET>` (audit L2). */
-function isValidCronAuth(authHeader: string, cronSecret: string | undefined): boolean {
-  if (!cronSecret) return false;
-  const given = crypto.createHash('sha256').update(authHeader).digest();
-  const expected = crypto.createHash('sha256').update(`Bearer ${cronSecret}`).digest();
-  return crypto.timingSafeEqual(given, expected);
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
+
+const SNAPSHOT_FILE = path.resolve(process.cwd(), 'data', 'ipos.json');
+
+/** Constant-time check of `Authorization: Bearer <CRON_SECRET>`; hashing hides the secret's length. */
+function bearerMatches(header: string, secret: string | undefined): boolean {
+  if (!secret) return false;
+  const given = createHash('sha256').update(header).digest();
+  const expected = createHash('sha256').update(`Bearer ${secret}`).digest();
+  return timingSafeEqual(given, expected);
 }
 
-const ROOT_DATA_FILE = path.resolve(process.cwd(), 'data', 'ipos.json');
-const SCRIPTS_DATA_FILE = path.resolve(process.cwd(), 'scripts', 'data', 'ipos.json');
+const intIn = (v: unknown, min: number, max: number): number | undefined => {
+  const n = Number(v);
+  return Number.isInteger(n) ? Math.min(max, Math.max(min, n)) : undefined;
+};
 
-function getAvailableDataFile(): string | null {
-  if (fs.existsSync(ROOT_DATA_FILE)) return ROOT_DATA_FILE;
-  if (fs.existsSync(SCRIPTS_DATA_FILE)) return SCRIPTS_DATA_FILE;
-  return null;
-}
-
-export async function GET() {
+export async function GET(req?: Request) {
+  // Vercel Cron calls GET with `Authorization: Bearer $CRON_SECRET`: run the live sync.
+  if (req && bearerMatches(req.headers.get('authorization') || '', process.env.CRON_SECRET)) {
+    return POST(
+      new Request(req.url, {
+        method: 'POST',
+        headers: { authorization: req.headers.get('authorization') || '', 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'live' }),
+      })
+    );
+  }
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ exists: false, error: 'Database is not configured (DATABASE_URL).' }, { status: 503 });
+  }
   try {
-    const dataFile = getAvailableDataFile();
-
-    if (!dataFile) {
-      return NextResponse.json({
-        exists: false,
-        message: 'No scraped data feed found at data/ipos.json. Run "npm run scrape" to generate it.',
-        totalCount: 0,
-        summary: { open: 0, upcoming: 0, closed: 0, listed: 0 },
-        generatedAt: null,
-        ageMinutes: null,
-      });
-    }
-
-    const raw = fs.readFileSync(dataFile, 'utf-8');
-    const parsed = JSON.parse(raw);
-    const ipos = Array.isArray(parsed.ipos) ? parsed.ipos : [];
-
-    let ageMinutes: number | null = null;
-    if (parsed.generatedAt) {
-      const genTime = new Date(parsed.generatedAt).getTime();
-      if (!isNaN(genTime)) {
-        ageMinutes = Math.round((Date.now() - genTime) / (1000 * 60));
-      }
-    }
-
-    const summary = parsed.summary || {
-      open: ipos.filter((r: any) => r.status === 'open' || r.status === 'Active').length,
-      upcoming: ipos.filter((r: any) => r.status === 'upcoming' || r.status === 'Forthcoming').length,
-      closed: ipos.filter((r: any) => r.status === 'closed' || r.status === 'Closed').length,
-      listed: ipos.filter((r: any) => r.status === 'listed' || r.status === 'Listed').length,
-    };
-
+    const counts = await IpoRepository.countBy();
+    const totalCount = Object.values(counts).reduce((a, b) => a + b, 0);
+    const health = await readSyncHealth();
     return NextResponse.json({
-      exists: true,
-      path: path.relative(process.cwd(), dataFile),
-      generatedAt: parsed.generatedAt || null,
-      ageMinutes,
-      totalCount: ipos.length,
-      summary,
-      sources: ['NSE India (Official Exchange)', 'BSE India (Official Exchange)', 'InvestorGain GMP (Market Intel)'],
-      sampleSymbols: ipos.slice(0, 5).map((r: any) => r.symbol),
+      exists: totalCount > 0,
+      store: 'supabase',
+      totalCount,
+      summary: { open: counts.Open, upcoming: counts.Upcoming, closed: counts.Closed, listed: counts.Listed },
+      lastRun: health.lastRun,
+      lastSuccessAt: health.lastSuccessAt,
+      generatedAt: health.lastSuccessAt,
+      ageMinutes: health.lastSuccessAt
+        ? Math.round((Date.now() - new Date(health.lastSuccessAt).getTime()) / 60000)
+        : null,
+      sources: ['InvestorGain (GMP, subscription, issue details)', 'BSE India (official public issues)'],
     });
-  } catch (error: any) {
+  } catch (error) {
+    const unavailable = error instanceof DatabaseUnavailableError;
     return NextResponse.json(
-      { exists: false, error: publicErrorMessage(error, 'Failed to inspect scraper feed status') },
-      { status: 500 }
+      { exists: false, error: unavailable ? 'Database is not reachable.' : 'Failed to read sync status.' },
+      { status: unavailable ? 503 : 500 }
     );
   }
 }
 
 export async function POST(req: Request) {
-  try {
-    // 1. Enforce RBAC or CRON_SECRET authentication
-    const authHeader = req.headers.get('authorization') || '';
-    const cronSecret = process.env.CRON_SECRET;
-    const isCronAuthorized = isValidCronAuth(authHeader, cronSecret);
-
+  const isCron = bearerMatches(req.headers.get('authorization') || '', process.env.CRON_SECRET);
+  if (!isCron) {
     const user = await getAuthenticatedUser(req);
-    const isAdminUser = user && user.role === 'admin';
-
-    if (!isCronAuthorized && !isAdminUser) {
+    if (!isAdmin(user)) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Access denied: Administrative privileges or a valid CRON_SECRET is required.',
-        },
+        { success: false, error: 'Access denied: an admin session or a valid CRON_SECRET is required.' },
         { status: 403 }
       );
     }
+  }
 
-    const body = await req.json().catch(() => ({}));
-    // Strictly validate and clamp monthsBack (integer between 1 and 12)
-    const rawMonths = Number(body.months);
-    const monthsBack = Number.isInteger(rawMonths) ? Math.min(12, Math.max(1, rawMonths)) : 1;
-    const scriptPath = path.resolve(process.cwd(), 'scripts', 'scraper', 'merge.py');
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ success: false, error: 'Database is not configured (DATABASE_URL).' }, { status: 503 });
+  }
 
-    if (!fs.existsSync(scriptPath)) {
-      return NextResponse.json(
-        { success: false, error: 'Scraper script scripts/scraper/merge.py not found.' },
-        { status: 404 }
-      );
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const mode = typeof body.mode === 'string' ? body.mode : 'live';
+  const startedAt = new Date().toISOString();
+
+  try {
+    if (mode === 'live') {
+      const ingestion = await runIpoIngestion();
+      const quotes = await refreshListedQuotes().catch((err) => ({ error: (err as Error).message }));
+      const report = { ...ingestion, quotes };
+      const ok = ingestion.upserted > 0 || ingestion.errors.length === 0;
+      await recordSyncRun({ mode, startedAt, ok, summary: report });
+      clearSupabaseIpoCache();
+      return NextResponse.json({ success: ok, mode, report }, { status: ok ? 200 : 502 });
     }
 
-    // Execute python scripts/scraper/merge.py safely
-    // execFile with an argument array: no shell, so nothing can be injected (audit L2).
-    const { stdout, stderr } = await execFileAsync('python', [scriptPath, '--months', String(monthsBack)], {
-      timeout: 45000,
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
-    });
+    if (mode === 'backfill') {
+      const report = await runBackfill({
+        fromId: intIn(body.fromId, 1, 10_000_000),
+        maxRequests: intIn(body.maxRequests, 1, 120),
+        months: intIn(body.months, 1, 24),
+      });
+      await recordSyncRun({ mode, startedAt, ok: true, summary: report });
+      clearSupabaseIpoCache();
+      return NextResponse.json({ success: true, mode, report });
+    }
 
-    const dataFile = getAvailableDataFile();
-    let resultPayload: any = null;
-    if (dataFile && fs.existsSync(dataFile)) {
-      try {
-        resultPayload = JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
-      } catch {
-        // optional parse
+    if (mode === 'import-json') {
+      if (!fs.existsSync(SNAPSHOT_FILE)) {
+        return NextResponse.json({ success: false, error: 'data/ipos.json not found.' }, { status: 404 });
       }
+      const file = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf-8')) as SnapshotFile;
+      const report = await importSnapshot(file);
+      await recordSyncRun({ mode, startedAt, ok: report.errors.length === 0, summary: report });
+      clearSupabaseIpoCache();
+      return NextResponse.json({ success: true, mode, report });
     }
 
-    const isProd = process.env.NODE_ENV === 'production';
-
-    return NextResponse.json({
-      success: true,
-      message: 'Scraper completed successfully.',
-      stdout: isProd ? 'Execution completed.' : stdout.trim(),
-      stderr: isProd ? undefined : (stderr.trim() || undefined),
-      generatedAt: resultPayload?.generatedAt,
-      totalCount: resultPayload?.totalCount || (resultPayload?.ipos?.length ?? 0),
-      summary: resultPayload?.summary,
-    });
-  } catch (error: any) {
-    const isProd = process.env.NODE_ENV === 'production';
     return NextResponse.json(
-      {
-        success: false,
-        error: isProd ? 'Internal server error executing scraper' : (error.message || 'Failed to execute scraper worker'),
-        stderr: isProd ? undefined : (error.stderr?.toString() || undefined),
-      },
-      { status: 500 }
+      { success: false, error: 'mode must be one of "live", "backfill", "import-json".' },
+      { status: 400 }
+    );
+  } catch (error) {
+    const unavailable = error instanceof DatabaseUnavailableError;
+    console.error('[scraper/sync]', mode, (error as Error)?.message);
+    await recordSyncRun({ mode, startedAt, ok: false, summary: { error: (error as Error)?.message } }).catch(() => {});
+    return NextResponse.json(
+      { success: false, error: unavailable ? 'Database is not reachable.' : 'Sync failed. See server logs.' },
+      { status: unavailable ? 503 : 500 }
     );
   }
 }
-

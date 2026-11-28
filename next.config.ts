@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 import { API_CSP } from "./src/lib/security/csp";
 
 
@@ -30,6 +31,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Pin the workspace root to this project so a parent folder's lockfile/node_modules
+  // (e.g. git worktrees nested inside the repo) is never used for module resolution.
+  turbopack: { root: path.resolve(__dirname) },
+  outputFileTracingRoot: path.resolve(__dirname),
   poweredByHeader: false,
   reactStrictMode: true,
   experimental: {

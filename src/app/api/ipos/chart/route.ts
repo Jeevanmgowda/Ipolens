@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchIpoLiveChart } from '@/services/listedIpoService';
+import { getIpoChart } from '@/lib/market/ipoMarketData';
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const chartData = await fetchIpoLiveChart(symbol, range);
+    const mock = process.env.USE_MOCK_MARKET_DATA === 'true';
+    const chartData = mock ? await fetchIpoLiveChart(symbol, range) : await getIpoChart(symbol, range);
 
     if (!chartData) {
       return NextResponse.json(
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       data: chartData,
-      source: 'NSE Live Intraday & Daily Ticker Gateway',
+      source: chartData && 'source' in chartData ? `${chartData.source} (${chartData.ticker}, delayed up to 15 min)` : 'Demo data',
     });
   } catch (error: any) {
     console.error('API Error in /api/ipos/chart:', error);
