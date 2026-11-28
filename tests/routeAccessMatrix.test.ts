@@ -28,6 +28,7 @@ const MATRIX: Record<string, Access> = {
   'GET /api/ipos/live': 'public',
   'GET /api/ipos/open': 'public',
   'GET /api/ipos/upcoming': 'public',
+  'GET /api/ipo-logo': 'public',
   'GET /api/live-market': 'public',
   'GET /api/market/[symbol]/ohlc': 'public',
   'GET /api/market/[symbol]/quote': 'public',
