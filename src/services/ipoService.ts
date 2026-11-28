@@ -12,6 +12,7 @@ import { SubscriptionService } from './subscriptionService';
 import { SupabaseIpoProvider } from './supabaseIpoProvider';
 import { IpoRepository } from '@/lib/repositories/ipo.repository';
 import { isDatabaseConfigured } from '@/db';
+import { readSyncHealth } from '@/lib/ingestion/sync-health';
 
 export class IpoService {
   private static nseProvider = new NSEIPOProvider();
@@ -72,7 +73,7 @@ export class IpoService {
       marketStatus: MarketService.getMarketStatus(),
       connectionStatus: this.isMockMode() ? 'DEMO' : 'LIVE',
       isMock: this.isMockMode(),
-      lastUpdated: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      lastUpdated: await this.dataAsOf(),
       overview: {
         upcomingCount: upcoming.length,
         openCount: open.length,
@@ -84,6 +85,15 @@ export class IpoService {
       topSubscribed,
       topGmp,
     };
+  }
+
+  /** "As of" time for the dashboard: the last successful sync into Supabase, in IST. */
+  private static async dataAsOf(): Promise<string> {
+    const fmt = (d: Date) =>
+      d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    if (this.getProvider() !== this.supabaseProvider) return fmt(new Date());
+    const health = await readSyncHealth().catch(() => null);
+    return health?.lastSuccessAt ? fmt(new Date(health.lastSuccessAt)) : 'not synced yet';
   }
 
   static async getAllIpos(): Promise<LiveMarketIpoItem[]> {

@@ -69,6 +69,7 @@ export function detailToUpsert(detail: IgIpoDetail, row?: IgReportRow): IpoUpser
       creditDate: detail.creditDate,
       leadManagers: detail.leadManagers,
       registrarWebsite: detail.registrarWebsite,
+      bseScripCode: detail.bseCode && /^\d{6}$/.test(detail.bseCode) ? Number(detail.bseCode) : null,
     },
   };
 }

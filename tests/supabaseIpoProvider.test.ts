@@ -6,7 +6,7 @@ import { ingestIgDetail } from '@/lib/ingestion/ipo-ingestion.service';
 import { IpoRepository } from '@/lib/repositories/ipo.repository';
 import { SupabaseIpoProvider, clearSupabaseIpoCache, remainingTimeFor, toLiveIpoDetail } from '@/services/supabaseIpoProvider';
 import { IpoService } from '@/services/ipoService';
-import { parseYahooQuote, yahooTicker } from '@/lib/ingestion/quotes';
+import { parseYahooQuote, yahooTicker, yahooTickers } from '@/lib/ingestion/quotes';
 import { createTestDatabase } from './helpers/testDb';
 
 const fx = (f: string) => fs.readFileSync(path.join(__dirname, 'fixtures/ingestion', f), 'utf8');
@@ -114,6 +114,9 @@ describe('Lifecycle labels and quotes', () => {
     expect(yahooTicker('FOODLINK')).toBe('FOODLINK.NS');
     expect(yahooTicker('BSE544321')).toBe('544321.BO');
     expect(yahooTicker('bad symbol!')).toBeNull();
+    expect(yahooTickers({ symbol: 'VPFL', exchange: 'NSE SME' })).toEqual(['VPFL-SM.NS', 'VPFL.NS']);
+    expect(yahooTickers({ symbol: 'ANTALA', exchange: 'BSE SME', extra: { bseScripCode: 544999 } })).toEqual(['544999.BO', 'ANTALA.BO']);
+    expect(yahooTickers({ symbol: 'MKSONS', exchange: 'BSE, NSE' })).toEqual(['MKSONS.NS', 'MKSONS.BO']);
     const q = parseYahooQuote({
       chart: {
         result: [

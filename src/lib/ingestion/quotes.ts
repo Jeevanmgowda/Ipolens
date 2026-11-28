@@ -41,6 +41,25 @@ export function yahooTicker(symbol: string): string | null {
   return `${symbol}.NS`;
 }
 
+/**
+ * Yahoo ticker candidates in the order to try: NSE Emerge (SME) issues trade as SYMBOL-SM.NS,
+ * BSE SME issues as SYMBOL.BO or <scrip code>.BO, mainboard issues as SYMBOL.NS / SYMBOL.BO.
+ */
+export function yahooTickers(r: { symbol: string; exchange: string | null; extra?: { bseScripCode?: number | null } }): string[] {
+  const base = yahooTicker(r.symbol);
+  if (!base) return [];
+  if (base.endsWith('.BO') && /^\d/.test(base)) return [base];
+  const sym = r.symbol;
+  const ex = (r.exchange || '').toUpperCase();
+  const code = r.extra?.bseScripCode ? `${r.extra.bseScripCode}.BO` : null;
+  const list = ex.includes('NSE SME')
+    ? [`${sym}-SM.NS`, `${sym}.NS`]
+    : ex.includes('BSE SME')
+      ? [code, `${sym}.BO`]
+      : [`${sym}.NS`, code, `${sym}.BO`];
+  return [...new Set(list.filter((t): t is string => Boolean(t)))];
+}
+
 export function parseYahooQuote(json: YahooChart) {
   const r = json.chart?.result?.[0];
   const m = r?.meta;
@@ -83,7 +102,7 @@ export async function refreshListedQuotes(options: { now?: Date; limit?: number 
   const db = getDb();
   const yearAgo = new Date(now.getTime() - 365 * 86_400_000).toISOString().slice(0, 10);
   const listed = (await IpoRepository.listAll()).filter(
-    (r) => r.status === 'Listed' && (r.listingDate ?? r.openDate ?? '') >= yearAgo && yahooTicker(r.symbol)
+    (r) => r.status === 'Listed' && (r.listingDate ?? r.openDate ?? '') >= yearAgo && yahooTickers(r).length > 0
   );
   if (!listed.length) return { candidates: 0, refreshed: 0, failed: 0 };
 
@@ -102,13 +121,16 @@ export async function refreshListedQuotes(options: { now?: Date; limit?: number 
       while (next < stale.length) {
         const rec = stale[next++];
         try {
-          const ticker = yahooTicker(rec.symbol)!;
-          const json = await fetchJson<YahooChart>(
-            SOURCE,
-            `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`,
-            { timeoutMs: 8000, retries: 1 }
-          );
-          const q = parseYahooQuote(json);
+          let q: ReturnType<typeof parseYahooQuote> = null;
+          for (const ticker of yahooTickers(rec)) {
+            const json = await fetchJson<YahooChart>(
+              SOURCE,
+              `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`,
+              { timeoutMs: 8000, retries: 1 }
+            ).catch(() => null);
+            q = json ? parseYahooQuote(json) : null;
+            if (q) break;
+          }
           if (!q) throw new Error('no quote');
           const values = {
             symbol: rec.symbol,

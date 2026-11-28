@@ -99,7 +99,7 @@ export const LiveMarketHeader: React.FC<LiveMarketHeaderProps> = ({
           {/* Last Update Timestamp */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/60 border border-white/5 text-xs font-mono text-slate-400">
             <Clock className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Last updated:</span>
+            <span>Data as of:</span>
             <span className="text-slate-200 font-bold">{lastUpdated || 'Just now'}</span>
           </div>
 
