@@ -28,14 +28,13 @@ const MATRIX: Record<string, Access> = {
   'GET /api/ipos/live': 'public',
   'GET /api/ipos/open': 'public',
   'GET /api/ipos/upcoming': 'public',
-  'GET /api/ipo-logo': 'public',
+  'GET /api/ipo-logo': 'public', // company logo images (proxied third-party fetch; see audit follow-up)
   'GET /api/live-market': 'public',
   'GET /api/market/[symbol]/ohlc': 'public',
   'GET /api/market/[symbol]/quote': 'public',
   'GET /api/market/charts/[symbol]': 'public',
   'GET /api/market/stream': 'public', // capped per IP and in total (R14)
   'GET /api/health': 'public', // booleans only, no configuration values
-  'GET /api/ipo-logo': 'public', // company logo images (proxied third-party fetch; see audit follow-up)
   'GET /api/market/drhp-rag': 'public', // read-only shared index sections
   'GET /api/analysis/ml-prediction': 'public', // local model maths, no paid API
   'POST /api/analysis/ml-prediction': 'public',
