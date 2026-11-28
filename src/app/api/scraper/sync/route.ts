@@ -10,6 +10,8 @@ import { runIpoIngestion } from '@/lib/ingestion/ipo-ingestion.service';
 import { runBackfill } from '@/lib/ingestion/backfill';
 import { importSnapshot, type SnapshotFile } from '@/lib/ingestion/json-import';
 import { recordSyncRun, readSyncHealth } from '@/lib/ingestion/sync-health';
+import { refreshListedQuotes } from '@/lib/ingestion/quotes';
+import { clearSupabaseIpoCache } from '@/services/supabaseIpoProvider';
 
 /**
  * IPO data sync into Supabase.
@@ -90,9 +92,12 @@ export async function POST(req: Request) {
 
   try {
     if (mode === 'live') {
-      const report = await runIpoIngestion();
-      const ok = report.upserted > 0 || report.errors.length === 0;
+      const ingestion = await runIpoIngestion();
+      const quotes = await refreshListedQuotes().catch((err) => ({ error: (err as Error).message }));
+      const report = { ...ingestion, quotes };
+      const ok = ingestion.upserted > 0 || ingestion.errors.length === 0;
       await recordSyncRun({ mode, startedAt, ok, summary: report });
+      clearSupabaseIpoCache();
       return NextResponse.json({ success: ok, mode, report }, { status: ok ? 200 : 502 });
     }
 
@@ -103,6 +108,7 @@ export async function POST(req: Request) {
         months: intIn(body.months, 1, 24),
       });
       await recordSyncRun({ mode, startedAt, ok: true, summary: report });
+      clearSupabaseIpoCache();
       return NextResponse.json({ success: true, mode, report });
     }
 
@@ -113,6 +119,7 @@ export async function POST(req: Request) {
       const file = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf-8')) as SnapshotFile;
       const report = await importSnapshot(file);
       await recordSyncRun({ mode, startedAt, ok: report.errors.length === 0, summary: report });
+      clearSupabaseIpoCache();
       return NextResponse.json({ success: true, mode, report });
     }
 

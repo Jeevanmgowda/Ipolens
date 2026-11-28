@@ -2,14 +2,14 @@ import { fetchIpoDetail, type IgIpoDetail } from './investorgain';
 import { UpstreamError } from './http';
 import { ingestIgDetail } from './ipo-ingestion.service';
 import { IpoRepository, todayIst } from '@/lib/repositories/ipo.repository';
+import { lastBackfillCursor } from './sync-health';
 
 /**
  * 12-month InvestorGain backfill. InvestorGain numbers IPO detail pages with increasing ids, so
  * the backfill walks ids downward from the newest one stored, one request per second.
  *
- * It is resumable without extra state: ids already stored from InvestorGain are skipped without
- * a request, so calling it again with the returned `nextId` (or with no cursor) continues where
- * it stopped. Each call does a bounded batch so it fits inside a request timeout.
+ * It is resumable: with no cursor it continues from the `nextId` of the last unfinished run (kept
+ * in the sync run log), and ids already stored are skipped without a request. Each call does a bounded batch so it fits inside a request timeout.
  *
  * Ids are assigned when a DRHP is first listed, so they are not strictly ordered by open date.
  * The walk therefore stops only after `stopAfterOld` consecutive IPOs older than the window.
@@ -22,6 +22,8 @@ export interface BackfillOptions {
   delayMs?: number;
   stopAfterOld?: number;
   stopAfterMisses?: number;
+  /** Start from the newest stored id instead of resuming an unfinished run. */
+  restart?: boolean;
   /** Test seam. */
   fetchDetail?: (id: number) => Promise<IgIpoDetail>;
 }
@@ -52,7 +54,7 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<Backfi
   const maxRequests = Math.min(120, Math.max(1, options.maxRequests ?? 45));
   const delayMs = options.delayMs ?? 1000;
   const stopAfterOld = options.stopAfterOld ?? 30;
-  const stopAfterMisses = options.stopAfterMisses ?? 40;
+  const stopAfterMisses = options.stopAfterMisses ?? 100;
   const fetchDetail = options.fetchDetail ?? fetchIpoDetail;
   const cutoffDate = cutoffFor(months);
 
@@ -60,7 +62,8 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<Backfi
   const knownIds = new Set(
     stored.map((r) => r.extra?.igId).filter((n): n is number => typeof n === 'number' && n > 0)
   );
-  const fromId = options.fromId ?? (knownIds.size ? Math.max(...knownIds) : 0);
+  const resumeAt = options.fromId === undefined && !options.restart ? await lastBackfillCursor() : null;
+  const fromId = options.fromId ?? resumeAt ?? (knownIds.size ? Math.max(...knownIds) : 0);
   if (!fromId) {
     return {
       fromId: 0,

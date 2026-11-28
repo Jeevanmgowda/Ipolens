@@ -3,7 +3,7 @@
  * Drives the IPO sync endpoint (POST /api/scraper/sync) with CRON_SECRET from .env.local.
  *
  *   node scripts/ingest.mjs live          one live sync (InvestorGain + BSE)
- *   node scripts/ingest.mjs backfill      12-month backfill, batch after batch until done
+ *   node scripts/ingest.mjs backfill [id] 12-month backfill, batch after batch until done (optional start id)
  *   node scripts/ingest.mjs import-json   one-time import of data/ipos.json
  *   node scripts/ingest.mjs all           live, then backfill, then import-json (first load)
  *   node scripts/ingest.mjs watch         live sync every 15 min in market hours (IST), hourly otherwise
@@ -48,12 +48,13 @@ async function live() {
   console.log(
     `[${stamp()}] live ${success ? 'ok' : 'PARTIAL'}: ${report.upserted}/${report.detailsFetched} IPOs, ` +
       `+${report.gmpPointsAdded} GMP points, BSE-only ${report.bseOnlyAdded}` +
+      (report.quotes && 'refreshed' in report.quotes ? `, quotes ${report.quotes.refreshed}/${report.quotes.candidates}` : '') +
       (report.errors.length ? `, ${report.errors.length} errors: ${report.errors.slice(0, 3).join(' | ')}` : '')
   );
 }
 
 async function backfill() {
-  let fromId;
+  let fromId = process.argv[3] ? Number(process.argv[3]) : undefined;
   let total = 0;
   for (let batch = 1; batch <= 200; batch++) {
     const { report } = await sync({ mode: 'backfill', fromId, maxRequests: 45 });

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { IpoFetchService } from '@/services/ipoFetchService';
 import { GET } from '@/app/api/scraper/sync/route';
+import { createTestDatabase } from './helpers/testDb';
 
 describe('Python Scraper Integration Pipeline', () => {
   it('should verify that all Python scraper scripts exist in scripts/scraper/', () => {
@@ -100,15 +101,23 @@ describe('Python Scraper Integration Pipeline', () => {
     }
   });
 
-  it('should respond with scraper status from /api/scraper/sync route', async () => {
-    const res = await GET();
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json).toBeDefined();
-    expect(typeof json.exists).toBe('boolean');
-    expect(Array.isArray(json.sources)).toBe(true);
-    expect(json.sources).toContain('NSE India (Official Exchange)');
-    expect(json.sources).toContain('BSE India (Official Exchange)');
+  it('reports sync status from Supabase (503 when no database is configured)', async () => {
+    const offline = await GET();
+    expect(offline.status).toBe(503);
+
+    const { close } = await createTestDatabase();
+    try {
+      const res = await GET();
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.store).toBe('supabase');
+      expect(json.exists).toBe(false);
+      expect(json.summary).toEqual({ open: 0, upcoming: 0, closed: 0, listed: 0 });
+      expect(json.sources.join(' ')).toContain('InvestorGain');
+      expect(json.sources.join(' ')).toContain('BSE');
+    } finally {
+      await close();
+    }
   });
 });
 

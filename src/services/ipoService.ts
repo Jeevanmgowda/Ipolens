@@ -9,10 +9,14 @@ import { IPODataProvider, NSEIPOProvider, MockIPOProvider, isIpoListed } from '.
 import { MarketService } from './marketService';
 import { GmpService } from './gmpService';
 import { SubscriptionService } from './subscriptionService';
+import { SupabaseIpoProvider } from './supabaseIpoProvider';
+import { IpoRepository } from '@/lib/repositories/ipo.repository';
+import { isDatabaseConfigured } from '@/db';
 
 export class IpoService {
   private static nseProvider = new NSEIPOProvider();
   private static mockProvider = new MockIPOProvider();
+  private static supabaseProvider = new SupabaseIpoProvider();
   private static latestIposCache: LiveMarketIpoItem[] = [];
 
   /**
@@ -22,8 +26,13 @@ export class IpoService {
     return process.env.USE_MOCK_MARKET_DATA === 'true';
   }
 
+  /**
+   * Supabase is the store for every IPO shown (kept fresh by /api/scraper/sync). The legacy
+   * scraping provider is only used when no database is configured at all.
+   */
   static getProvider(): IPODataProvider {
-    return this.isMockMode() ? this.mockProvider : this.nseProvider;
+    if (this.isMockMode()) return this.mockProvider;
+    return isDatabaseConfigured() ? this.supabaseProvider : this.nseProvider;
   }
 
   /**
@@ -105,6 +114,22 @@ export class IpoService {
     const ipo = await this.getIpoDetails(idOrSymbol);
     if (!ipo) return null;
 
+    if (this.getProvider() === this.supabaseProvider) {
+      if (!ipo.hasSubscriptionData) return null;
+      return {
+        symbol: ipo.symbol,
+        companyName: ipo.companyName,
+        retail: ipo.retailSubscription,
+        nii: ipo.niiSubscription,
+        qib: ipo.qibSubscription,
+        employee: ipo.employeeSubscription,
+        total: ipo.currentSubscription,
+        allotmentDate: ipo.allotmentDate,
+        listingDate: ipo.listingDate,
+        recordedAt: ipo.subscriptionUpdatedAt || ipo.lastUpdated || new Date().toISOString(),
+      };
+    }
+
     return SubscriptionService.getSubscriptionDetails(
       ipo.symbol,
       ipo.companyName,
@@ -135,6 +160,10 @@ export class IpoService {
     const ipo = await this.getIpoDetails(idOrSymbol);
     if (!ipo) return null;
 
+    if (this.getProvider() === this.supabaseProvider) {
+      return this.getStoredGmpHistory(ipo, timeframe);
+    }
+
     return GmpService.getGmpHistory(
       ipo.symbol,
       ipo.companyName,
@@ -142,6 +171,52 @@ export class IpoService {
       ipo.priceHigh || ipo.priceLow || 100,
       timeframe
     );
+  }
+
+  /** Real recorded GMP points (InvestorGain daily history + sync readings). No synthetic curve. */
+  private static async getStoredGmpHistory(
+    ipo: LiveMarketIpoItem,
+    timeframe: '1D' | '7D' | '1M' | 'All'
+  ): Promise<GmpTrendResponse> {
+    const all = await IpoRepository.gmpHistory(ipo.symbol);
+    const days = timeframe === '1D' ? 1 : timeframe === '7D' ? 7 : timeframe === '1M' ? 31 : Infinity;
+    const cutoff = Number.isFinite(days) ? Date.now() - days * 86_400_000 : -Infinity;
+    // Keep at least the latest point so a quiet week still shows the last known GMP.
+    let rows = all.filter((p) => new Date(`${p.date}T12:00:00+05:30`).getTime() >= cutoff);
+    if (!rows.length && all.length) rows = all.slice(-1);
+    const price = ipo.priceHigh || 0;
+    const points = rows.map((p) => {
+      const ts = new Date(`${p.date}T12:00:00+05:30`).getTime();
+      return {
+        date: p.date,
+        timestamp: ts,
+        gmp: p.gmp,
+        gmpPercent: p.gmpPercent ?? (price ? Math.round((p.gmp / price) * 10000) / 100 : undefined),
+        estimatedListingPrice: price ? price + p.gmp : undefined,
+      };
+    });
+    const values = points.map((p) => p.gmp);
+    const latest = all[all.length - 1];
+    const sources = [...new Set(rows.map((r) => r.source))].map((name) => {
+      const last = [...rows].reverse().find((r) => r.source === name)!;
+      return { sourceName: name, gmp: last.gmp, lastUpdated: last.fetchedAt, reliability: 'UNOFFICIAL' as const };
+    });
+    return {
+      symbol: ipo.symbol,
+      companyName: ipo.companyName,
+      currentGmp: latest ? latest.gmp : 0,
+      gmpChange: values.length > 1 ? values[values.length - 1] - values[0] : 0,
+      highestGmp: values.length ? Math.max(...values) : 0,
+      lowestGmp: values.length ? Math.min(...values) : 0,
+      timeframe,
+      points,
+      history: points,
+      sources,
+      disclaimer: all.length
+        ? 'Grey Market Premium is an unofficial, unregulated indication recorded from InvestorGain. It is not an exchange price.'
+        : 'No GMP has been recorded for this IPO yet.',
+      freshnessLabel: latest ? `As of ${latest.date}` : 'No data',
+    };
   }
 
   /**

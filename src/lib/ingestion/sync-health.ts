@@ -54,3 +54,20 @@ export async function readSyncHealth(): Promise<SyncHealth> {
     lastSuccessAt: lastSuccess ? (lastSuccess.finishedAt ?? lastSuccess.startedAt) : null,
   };
 }
+
+/** Where an unfinished backfill stopped (the `nextId` of the latest backfill run), if any. */
+export async function lastBackfillCursor(): Promise<number | null> {
+  const rows = await getDb()
+    .select({ data: schema.exchangeSnapshotsTable.data })
+    .from(schema.exchangeSnapshotsTable)
+    .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, TYPE)))
+    .orderBy(desc(schema.exchangeSnapshotsTable.createdAt))
+    .limit(50);
+  for (const r of rows) {
+    const run = r.data as SyncRun;
+    if (run.mode !== 'backfill' || !run.ok) continue;
+    const s = run.summary as { done?: boolean; nextId?: number } | null;
+    return s && !s.done && typeof s.nextId === 'number' && s.nextId > 0 ? s.nextId : null;
+  }
+  return null;
+}

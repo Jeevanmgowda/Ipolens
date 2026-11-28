@@ -123,22 +123,12 @@ export default function LiveMarketPage() {
         const rawPrices = String(item.priceBand || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g);
         const parsedMax = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[rawPrices.length - 1]) : 100;
         const parsedMin = rawPrices && rawPrices.length > 0 ? parseFloat(rawPrices[0]) : parsedMax;
-        const pHigh = item.priceHigh || item.issuePrice || item.priceLow || parsedMax || 100;
+        const pHigh = item.priceHigh || item.issuePrice || item.priceLow || (rawPrices ? parsedMax : 0);
         const pLow = item.priceLow || parsedMin || pHigh;
 
         const series = item.series === 'DEBT' ? 'DEBT' : (item.series === 'SME' ? 'SME' : 'EQ');
-        const lot = series === 'DEBT'
-          ? 1
-          : series === 'SME'
-          ? (item.lotSize && item.lotSize >= 600 ? item.lotSize : 1200)
-          : (item.lotSize && item.lotSize > 0 && !(item.lotSize === 14 && pHigh < 700) && (item.lotSize * pHigh >= 10000))
-          ? item.lotSize
-          : Math.max(1, Math.floor(15000 / pHigh));
-        const minInv = series === 'DEBT'
-          ? (pHigh * lot)
-          : series === 'SME'
-          ? (item.minInvestment && item.minInvestment >= 90000 ? item.minInvestment : (pHigh * lot))
-          : (item.minInvestment && item.minInvestment >= 10000 ? item.minInvestment : (pHigh * lot));
+        const lot = series === 'DEBT' ? 1 : (item.lotSize && item.lotSize > 0 ? item.lotSize : 0); // 0 = unknown, shown as —
+        const minInv = item.minInvestment || (lot && pHigh ? pHigh * lot : 0);
 
         const sanitizedItem: LiveMarketIpoItem = {
           ...item,
@@ -158,8 +148,8 @@ export default function LiveMarketPage() {
           const existing = uniqueList[dupIdx];
           const isMergedListed = Boolean(existing.isListed || item.isListed || existing.status === 'Listed' || item.status === 'Listed');
           const chosenSeries = (existing.series === 'SME' || sanitizedItem.series === 'SME') ? 'SME' : (existing.series === 'DEBT' || sanitizedItem.series === 'DEBT' ? 'DEBT' : 'EQ');
-          const chosenLot = chosenSeries === 'DEBT' ? 1 : chosenSeries === 'SME' ? (existing.lotSize >= 600 ? existing.lotSize : (sanitizedItem.lotSize >= 600 ? sanitizedItem.lotSize : 1200)) : (existing.lotSize > 0 ? existing.lotSize : sanitizedItem.lotSize);
-          const chosenMinInv = chosenSeries === 'DEBT' ? (existing.priceHigh * chosenLot) : chosenSeries === 'SME' ? Math.max(90000, existing.priceHigh * chosenLot) : Math.max(10000, existing.priceHigh * chosenLot);
+          const chosenLot = chosenSeries === 'DEBT' ? 1 : (existing.lotSize > 0 ? existing.lotSize : sanitizedItem.lotSize);
+          const chosenMinInv = existing.minInvestment || sanitizedItem.minInvestment || existing.priceHigh * chosenLot;
 
           uniqueList[dupIdx] = {
             ...existing,
@@ -181,11 +171,11 @@ export default function LiveMarketPage() {
       // Guaranteed ML GMP prediction for open and upcoming IPOs
       for (const ipo of uniqueList) {
         const eff = getEffectiveIpoStatus(ipo);
-        if (eff !== 'listed' && ipo.series !== 'DEBT' && (!ipo.gmp || ipo.gmp <= 0)) {
+        if (eff !== 'listed' && ipo.series !== 'DEBT' && !ipo.hasGmpData && !ipo.isAiPredictedGmp && (!ipo.gmp || ipo.gmp <= 0) && ipo.priceHigh > 0) {
           const ml = predictGmpForIpo({
             symbol: ipo.symbol,
             companyName: ipo.companyName,
-            price: ipo.priceHigh || ipo.priceLow || 100,
+            price: ipo.priceHigh,
             series: ipo.series,
             currentSubscription: ipo.currentSubscription || 0,
             qibSubscription: ipo.qibSubscription || 0,

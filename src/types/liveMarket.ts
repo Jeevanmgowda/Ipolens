@@ -51,6 +51,25 @@ export interface LiveMarketIpoItem {
   volume?: number;
   marketStatus?: 'OPEN' | 'CLOSED';
   isWatchlisted?: boolean;
+
+  // Provenance (Supabase read path). When a has…Data flag is false the matching numbers are
+  // placeholders (0) and the UI must show "—" instead.
+  hasGmpData?: boolean;
+  hasSubscriptionData?: boolean;
+  gmpSource?: string;
+  gmpUpdatedAt?: string;
+  subscriptionUpdatedAt?: string;
+  quoteUpdatedAt?: string;
+  dataSource?: string;
+  registrarSlug?: string;
+  rhpUrl?: string;
+  drhpUrl?: string;
+  freshIssueCr?: number;
+  ofsCr?: number;
+  ofsPercent?: number;
+  sector?: string;
+  peRatio?: number;
+  listingGainPct?: number;
 }
 
 export interface IpoSubscriptionDetails {
