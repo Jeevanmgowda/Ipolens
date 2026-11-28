@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useLiveIpoQuotes } from '@/hooks/useLiveIpoQuotes';
 import { LiveIpoSummary } from '@/types/ipo';
 import { isFalseOrDemoSymbol, isSameIpo } from '@/lib/utils/ipoDeduplication';
 import {
@@ -39,6 +40,8 @@ export const LiveIpoRadar: React.FC<LiveIpoRadarProps> = ({
   const [overviewData, setOverviewData] = useState<LiveMarketOverviewResponse | null>(null);
   const [ipos, setIpos] = useState<LiveMarketIpoItem[]>([]);
   const [watchlist, setWatchlist] = useState<string[]>([]);
+  // Live prices for listed IPOs: refresh cards in place.
+  useLiveIpoQuotes(ipos, setIpos, watchlist);
   const [alerts, setAlerts] = useState<MarketAlertItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);

@@ -501,68 +501,12 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
         setCandles(ohlcJson.data);
         fetchAiPrediction(ohlcJson.data);
       } else {
-        const base = quoteJson.data?.ltp || initialPrice || 100;
-        const count = 30;
-        const stepMs = tf === '1m' ? 60000 : 86400000;
-        const now = Date.now();
-        const synthesized: MarketOhlcCandle[] = [];
-        let curr = base * 0.985;
-        for (let i = count - 1; i >= 0; i--) {
-          const t = now - i * stepMs;
-          const d = new Date(t);
-          const open = Number(curr.toFixed(2));
-          const delta = (Math.random() - 0.48) * (base * 0.015);
-          const close = Number(Math.max(1, open + delta).toFixed(2));
-          const high = Number(Math.max(open, close, open + Math.random() * (base * 0.01)).toFixed(2));
-          const low = Number(Math.min(open, close, open - Math.random() * (base * 0.01)).toFixed(2));
-          const timeLabel = ['1m', '5m', '15m', '30m', '1H'].includes(tf)
-            ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-            : d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-          synthesized.push({
-            time: timeLabel,
-            timestamp: t,
-            open,
-            high,
-            low,
-            close,
-            volume: Math.floor(25000 + Math.random() * 50000),
-          });
-          curr = close;
-        }
-        setCandles(synthesized);
-        fetchAiPrediction(synthesized);
+        // No exchange candles for this symbol/timeframe: show the empty state, never invented data.
+        setCandles([]);
       }
     } catch (err) {
       console.error('Error fetching stock price chart data:', err);
-      const base = initialPrice || 100;
-      const count = 30;
-      const stepMs = tf === '1m' ? 60000 : 86400000;
-      const now = Date.now();
-      const synthesized: MarketOhlcCandle[] = [];
-      let curr = base * 0.985;
-      for (let i = count - 1; i >= 0; i--) {
-        const t = now - i * stepMs;
-        const d = new Date(t);
-        const open = Number(curr.toFixed(2));
-        const delta = (Math.random() - 0.48) * (base * 0.015);
-        const close = Number(Math.max(1, open + delta).toFixed(2));
-        const high = Number(Math.max(open, close, open + Math.random() * (base * 0.01)).toFixed(2));
-        const low = Number(Math.min(open, close, open - Math.random() * (base * 0.01)).toFixed(2));
-        const timeLabel = ['1m', '5m', '15m', '30m', '1H'].includes(tf)
-          ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-          : d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-        synthesized.push({
-          time: timeLabel,
-          timestamp: t,
-          open,
-          high,
-          low,
-          close,
-          volume: Math.floor(25000 + Math.random() * 50000),
-        });
-        curr = close;
-      }
-      setCandles(synthesized);
+      setCandles([]);
     } finally {
       setLoading(false);
     }
@@ -571,6 +515,29 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
   useEffect(() => {
     fetchMarketData(cleanSymbol, timeframe);
   }, [cleanSymbol, timeframe]);
+
+  // Keep the headline price current while the chart is open (delayed exchange quote, every 30s).
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/market/${encodeURIComponent(cleanSymbol)}/quote`);
+        const json = await res.json();
+        if (json.success && json.data) {
+          setQuote(json.data);
+          setLastTickTime(new Date().toLocaleTimeString('en-IN'));
+          const ltp = Number(json.data.ltp);
+          setCandles((prev) => {
+            if (!prev.length || !Number.isFinite(ltp)) return prev;
+            const last = prev[prev.length - 1];
+            return [...prev.slice(0, -1), { ...last, close: ltp, high: Math.max(last.high, ltp), low: Math.min(last.low, ltp) }];
+          });
+        }
+      } catch {
+        // next tick retries
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [cleanSymbol]);
 
   // 2. Real-Time WebSocket / SSE Streaming
   useEffect(() => {
@@ -844,7 +811,7 @@ export const LiveStockPriceChart: React.FC<LiveStockPriceChartProps> = ({
         ) : loading && candles.length === 0 ? (
           <div className="h-96 flex flex-col items-center justify-center gap-2.5">
             <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
-            <span className="text-xs text-slate-400 font-mono">Fetching live Upstox NSE exchange candles...</span>
+            <span className="text-xs text-slate-400 font-mono">Fetching exchange candles...</span>
           </div>
         ) : candles.length === 0 ? (
           <div className="h-96 flex flex-col items-center justify-center gap-3 text-center p-6">

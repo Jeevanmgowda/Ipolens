@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLiveIpoQuotes } from '@/hooks/useLiveIpoQuotes';
 import { Navbar } from '@/components/Navbar';
 import { LiveMarketHeader } from '@/components/live-market/LiveMarketHeader';
 import { IpoMarketOverview } from '@/components/live-market/IpoMarketOverview';
@@ -231,6 +232,9 @@ export default function LiveMarketPage() {
 
     return () => clearInterval(interval);
   }, [fetchMarketData]);
+
+  // Live prices for listed IPOs: refresh cards in place.
+  useLiveIpoQuotes(ipos, setIpos, watchlist);
 
   // Watchlist Toggle
   const handleToggleWatchlist = async (symbol: string) => {

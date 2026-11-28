@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { MarketService } from '@/services/marketService';
+import { MarketDataUnavailableError } from '@/services/marketDataProvider';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,9 @@ export async function GET(
       data: quote,
     });
   } catch (error: any) {
+    if (error instanceof MarketDataUnavailableError) {
+      return NextResponse.json({ success: false, error: 'No live market data for this symbol yet.' }, { status: 404 });
+    }
     console.error('API Error in /api/market/[symbol]/quote:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch live market quote', message: error.message },

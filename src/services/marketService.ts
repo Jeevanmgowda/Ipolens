@@ -1,7 +1,5 @@
 import { MarketQuoteData, MarketOhlcCandle, MarketStatus } from '@/types/liveMarket';
 import { MarketDataProvider, UpstoxProvider, MockMarketProvider } from './marketDataProvider';
-import { LISTED_IPOS_REGISTRY } from './listedIpoService';
-import { findMarketMetadata } from './nseIpoService';
 import { redis } from '@/lib/redis';
 
 export class MarketService {
@@ -91,56 +89,12 @@ export class MarketService {
       }
 
       return quote;
-    } catch (err: any) {
+    } catch (err) {
       if (this.isMockMode()) {
         return this.mockProvider.getQuote(clean);
       }
-      const registered = LISTED_IPOS_REGISTRY.find((l) => l.symbol.toUpperCase() === clean);
-      if (registered) {
-        const ltp = registered.listingPrice;
-        const prevClose = registered.issuePrice;
-        const change = Number((ltp - prevClose).toFixed(2));
-        const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
-        const fallback: MarketQuoteData = {
-          symbol: clean,
-          ltp,
-          open: ltp,
-          high: Math.max(ltp, prevClose),
-          low: Math.min(ltp, prevClose),
-          previousClose: prevClose,
-          volume: 0,
-          change,
-          changePercent,
-          timestamp: new Date().toISOString(),
-          isMock: false,
-        };
-        this.quoteMemoryCache.set(clean, { data: fallback, expiry: Date.now() + 30000 });
-        return fallback;
-      }
-      const meta = findMarketMetadata(clean);
-      if (meta) {
-        const ltp = meta.priceHigh || 100;
-        const prevClose = meta.priceLow || ltp;
-        const change = Number((ltp - prevClose).toFixed(2));
-        const changePercent = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0;
-        const fallback: MarketQuoteData = {
-          symbol: clean,
-          ltp,
-          open: prevClose,
-          high: ltp,
-          low: prevClose,
-          previousClose: prevClose,
-          volume: 0,
-          change,
-          changePercent,
-          timestamp: new Date().toISOString(),
-          isMock: false,
-        };
-        this.quoteMemoryCache.set(clean, { data: fallback, expiry: Date.now() + 30000 });
-        return fallback;
-      }
-      console.warn(`[MarketService] Provider error for ${clean}:`, err.message);
-      return this.mockProvider.getQuote(clean);
+      // No exchange data: report it rather than inventing a price.
+      throw err;
     }
   }
 
@@ -150,13 +104,11 @@ export class MarketService {
   static async getOhlc(symbol: string, timeframe: string = '1D'): Promise<MarketOhlcCandle[]> {
     const clean = symbol.toUpperCase().replace(/\.NS$/, '').replace(/^NSE:/, '').trim();
 
+    if (this.isMockMode()) return this.mockProvider.getOhlc(clean, timeframe);
     try {
-      const provider = this.getProvider();
-      const candles = await provider.getOhlc(clean, timeframe);
-      if (candles && candles.length > 0) return candles;
-      return await this.mockProvider.getOhlc(clean, timeframe);
+      return (await this.getProvider().getOhlc(clean, timeframe)) ?? [];
     } catch {
-      return await this.mockProvider.getOhlc(clean, timeframe);
+      return [];
     }
   }
 }

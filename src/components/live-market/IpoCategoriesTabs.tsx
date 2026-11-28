@@ -582,8 +582,11 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                     <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5">
                       <span className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
                         <span>{isListed ? 'Current Price (LTP)' : 'Price Band'}</span>
-                        {isListed && (
-                          <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
+                        {isListed && typeof ipo.currentPrice === 'number' && (
+                          <span
+                            className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold"
+                            title={ipo.quoteUpdatedAt ? `Exchange price as of ${new Date(ipo.quoteUpdatedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} IST (delayed up to 15 min)` : 'Delayed up to 15 min'}
+                          >
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                             LIVE
                           </span>
@@ -594,9 +597,9 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           ipo.currentPrice !== undefined && ipo.currentPrice !== null ? (
                             `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           ) : ipo.listingPrice ? (
-                            `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            `Listed ₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           ) : (
-                            ipo.priceBand || '—'
+                            '—'
                           )
                         ) : (
                           ipo.priceBand || '—'
@@ -624,12 +627,12 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                           </span>
                           {isListed ? (
                             (() => {
-                              const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
-                              const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
-                              const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
-                                ? ipo.dayChange
-                                : Number((cur - prev).toFixed(2));
-                              const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
+                              if (typeof ipo.currentPrice !== 'number' || typeof ipo.previousClose !== 'number') {
+                                return <span className="font-mono text-xs text-slate-500 mt-0.5 block">— (no quote yet)</span>;
+                              }
+                              const prev = ipo.previousClose;
+                              const diff = typeof ipo.dayChange === 'number' ? ipo.dayChange : Number((ipo.currentPrice - prev).toFixed(2));
+                              const pct = typeof ipo.dayChangePercent === 'number'
                                 ? ipo.dayChangePercent
                                 : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
 
@@ -689,11 +692,7 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <div>
                           <span className="text-slate-400 block text-[10px]">Listing Price</span>
                           <span className="font-mono font-bold text-slate-200">
-                            {ipo.listingPrice
-                              ? `₹${ipo.listingPrice.toLocaleString('en-IN')}`
-                              : ipo.currentPrice
-                              ? `₹${ipo.currentPrice.toLocaleString('en-IN')}`
-                              : '—'}
+                            {ipo.listingPrice ? `₹${ipo.listingPrice.toLocaleString('en-IN')}` : '—'}
                           </span>
                         </div>
                       </div>
@@ -932,24 +931,26 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
                         <>
                           <td className="py-3.5 px-4 font-mono font-extrabold text-emerald-400 text-sm">
                             <div className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                              {typeof ipo.currentPrice === 'number' && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                              )}
                               <span>
                                 {ipo.currentPrice !== undefined && ipo.currentPrice !== null
                                   ? `₹${ipo.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : ipo.listingPrice
-                                  ? `₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  ? `Listed ₹${ipo.listingPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : '—'}
                               </span>
                             </div>
                           </td>
                           <td className="py-3.5 px-4">
                             {(() => {
-                              const cur = ipo.currentPrice ?? ipo.listingPrice ?? ipo.issuePrice ?? 100;
-                              const prev = ipo.previousClose ?? ipo.issuePrice ?? ipo.listingPrice ?? cur;
-                              const diff = ipo.dayChange !== undefined && ipo.dayChange !== null && ipo.dayChange !== 0
-                                ? ipo.dayChange
-                                : Number((cur - prev).toFixed(2));
-                              const pct = ipo.dayChangePercent !== undefined && ipo.dayChangePercent !== null && ipo.dayChangePercent !== 0
+                              if (typeof ipo.currentPrice !== 'number' || typeof ipo.previousClose !== 'number') {
+                                return <span className="font-mono text-xs text-slate-500 mt-0.5 block">— (no quote yet)</span>;
+                              }
+                              const prev = ipo.previousClose;
+                              const diff = typeof ipo.dayChange === 'number' ? ipo.dayChange : Number((ipo.currentPrice - prev).toFixed(2));
+                              const pct = typeof ipo.dayChangePercent === 'number'
                                 ? ipo.dayChangePercent
                                 : (prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0);
 
