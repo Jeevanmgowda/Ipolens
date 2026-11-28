@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
-import { IpoStatus, IssueType } from '@/types/ipo';
+import { IpoLiveService } from '@/lib/services/ipo-live.service';
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
@@ -8,32 +7,31 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const rawStatus = searchParams.get('status') || 'open';
-    const rawType = searchParams.get('type') as IssueType | null;
+    const rawStatus = (searchParams.get('status') || 'ALL').toUpperCase();
+    const refresh = searchParams.get('refresh') === 'true';
 
-    const validStatuses: IpoStatus[] = ['upcoming', 'open', 'closed', 'listed'];
-    const status: IpoStatus = validStatuses.includes(rawStatus as IpoStatus)
-      ? (rawStatus as IpoStatus)
-      : 'open';
+    const validStatuses = ['ALL', 'OPEN', 'UPCOMING', 'CLOSED', 'LISTED'] as const;
+    const status = (validStatuses.includes(rawStatus as (typeof validStatuses)[number])
+      ? rawStatus
+      : 'ALL') as (typeof validStatuses)[number];
 
-    const issueType: IssueType | undefined =
-      rawType === 'regular' || rawType === 'sme' ? rawType : undefined;
-
-    const data = await IpoAggregatorService.getUnifiedIpos(status, issueType);
+    const result = await IpoLiveService.getIpos({ status, refresh });
 
     return NextResponse.json({
       success: true,
       status,
-      issueType: issueType || 'all',
-      count: data.length,
-      data,
+      stale: result.stale,
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      count: result.items.length,
+      data: result.items,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API Error in GET /api/ipos:', error);
     return NextResponse.json(
       {
         success: false,
-        error: 'Failed to fetch unified IPO pipeline',
+        error: 'Failed to fetch live IPO pipeline',
         ...errorDetail(error),
       },
       { status: 500 }

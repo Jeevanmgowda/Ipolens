@@ -7,6 +7,7 @@ import { LiveBiddingChart } from './LiveBiddingChart';
 import { CategorySubscriptionChart } from './CategorySubscriptionChart';
 import { LiveGmpTrendChart } from '@/components/live-market/LiveGmpTrendChart';
 import { LiveStockPriceChart } from '@/components/live-market/LiveStockPriceChart';
+import { LightweightIpoChart } from '@/components/charts/LightweightIpoChart';
 import {
   X,
   ExternalLink,
@@ -990,10 +991,16 @@ export const IpoDetailModal: React.FC<IpoDetailModalProps> = ({
           {/* TAB 3: LIVE STOCK PRICE CHART */}
           {!loading && activeSubTab === 'chart' && (
             <div className="space-y-4">
-              <LiveStockPriceChart
+              <LightweightIpoChart
                 symbol={symbol}
                 companyName={companyName}
-                initialPrice={detail?.listingPrice ? Number(detail.listingPrice) : (cutoffPrice + currentGmp)}
+                isPreListing={!isListed}
+                gmp={currentGmp}
+                gmpPercent={detail?.expectedListingGainPct}
+                subscriptionMultiple={detail?.noOfTimesIssueSubscribed ? Number(detail.noOfTimesIssueSubscribed) : undefined}
+                openDate={detail?.issueStartDate}
+                closeDate={detail?.issueEndDate}
+                listingDate={detail?.biddingDetails?.['Listing Date'] || undefined}
               />
             </div>
           )}

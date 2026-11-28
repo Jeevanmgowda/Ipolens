@@ -5,6 +5,7 @@ import { LiveIpoDetail } from '@/types/ipo';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { isDatabaseConfigured } from '@/db';
 import { toLiveIpoDetail } from '@/services/supabaseIpoProvider';
+import { MarketDataService } from '@/lib/services/market-data.service';
 import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
@@ -27,9 +28,29 @@ export async function GET(
       if (!ipo) {
         return NextResponse.json({ success: false, error: `IPO "${symbol}" was not found.` }, { status: 404 });
       }
+      let liveQuote = null;
+      if (ipo.isListed || ipo.status === 'Listed') {
+        const qRes = await MarketDataService.getQuotes([ipo.symbol]).catch(() => null);
+        liveQuote = qRes?.quotes?.[ipo.symbol] ?? null;
+      }
       return NextResponse.json({
         success: true,
-        data: { ...toLiveIpoDetail(ipo), rhpUrl: ipo.rhpUrl, drhpUrl: ipo.drhpUrl, dataSource: ipo.dataSource, lastUpdated: ipo.lastUpdated },
+        data: {
+          ...toLiveIpoDetail(ipo),
+          ...(liveQuote
+            ? {
+                currentPrice: liveQuote.ltp,
+                previousClose: liveQuote.previousClose,
+                dayChange: liveQuote.change,
+                dayChangePercent: liveQuote.changePercent,
+                volume: liveQuote.volume,
+              }
+            : {}),
+          rhpUrl: ipo.rhpUrl,
+          drhpUrl: ipo.drhpUrl,
+          dataSource: ipo.dataSource,
+          lastUpdated: ipo.lastUpdated,
+        },
         source: ipo.dataSource || 'Supabase',
       });
     }
