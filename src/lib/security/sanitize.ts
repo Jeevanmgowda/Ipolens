@@ -4,8 +4,10 @@
  * and escapes dangerous characters from untrusted user inputs.
  */
 
-const DANGEROUS_TAGS_REGEX = /<\s*\/?\s*(script|iframe|object|embed|applet|meta|link|style|base|svg|math|form)[^>]*>/gi;
-const DANGEROUS_ATTRS_REGEX = /\s*(on[a-z]+|data-\w*|formaction)\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi;
+// Linear-time patterns (audit H5): [^<>]* stops at the next tag start, and the attribute
+// pattern anchors on a word boundary instead of a leading \s* that backtracked quadratically.
+const DANGEROUS_TAGS_REGEX = /<\s*\/?\s*(script|iframe|object|embed|applet|meta|link|style|base|svg|math|form)[^<>]*>/gi;
+const DANGEROUS_ATTRS_REGEX = /\b(on[a-z]+|data-\w*|formaction)\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi;
 const DANGEROUS_PROTOCOLS_REGEX = /(?:javascript|vbscript|data\s*:\s*text\/html)\s*:[^'"]*/gi;
 
 /**
@@ -86,6 +88,8 @@ export function isValidPan(pan?: string | null): boolean {
  */
 export function isValidEmail(email?: string | null): boolean {
   if (!email) return false;
+  // Length cap first: bounds the work for any input (RFC 5321 limit).
+  if (email.length > 254) return false;
   return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(
     email.trim()
   );

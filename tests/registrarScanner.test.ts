@@ -68,6 +68,7 @@ describe('Automated 1-Click Multi-PAN Registrar Allotment Scanner', () => {
         lotSize: 214,
         pans: mockFamilyPans,
         autoSyncDatabase: false,
+        userId: 'scanner_test_user',
       });
 
       expect(summary.symbol).toBe('BAJAJHFL');
@@ -148,6 +149,7 @@ describe('Automated 1-Click Multi-PAN Registrar Allotment Scanner', () => {
       const testAppId = `test_app_${Date.now()}`;
       const seedApp: IpoApplication = {
         id: testAppId,
+        userId: 'scanner_test_user',
         ipoSymbol: 'NSE',
         companyName: 'National Stock Exchange of India Ltd',
         panId: 'pan-user-1',
@@ -184,6 +186,7 @@ describe('Automated 1-Click Multi-PAN Registrar Allotment Scanner', () => {
         lotSize: 14,
         pans: [mockFamilyPans[0]],
         autoSyncDatabase: true,
+        userId: 'scanner_test_user',
       });
 
       expect(summary.items.length).toBe(1);

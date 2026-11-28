@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { UpstoxChartService } from '@/lib/services/upstox-chart.service';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
       {
         success: false,
         error: 'Failed to fetch historical candlestick feed',
-        message: error.message,
+        ...errorDetail(error),
       },
       { status: 500 }
     );

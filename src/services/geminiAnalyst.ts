@@ -1,9 +1,28 @@
 import { DrhpAnalysisResult, AnalystVerdict, LiveIpoTelemetry, RetrievedChunk } from '@/types/ai';
 import { GoogleGenAI } from '@google/genai';
+import { z } from 'zod';
+import { MAX_PROMPT_DOCUMENT_CHARS, UNTRUSTED_DATA_RULE, wrapUntrusted } from '@/lib/security/promptSafety';
 import { drhpRagService } from '@/lib/services/drhp-rag.service';
 import { findMarketMetadata, fetchLiveNseIpos, resolveIpoLifecycleStatus, getRegistrarInfo } from './nseIpoService';
 import { LISTED_IPOS_REGISTRY } from './listedIpoService';
 import { IpoService } from './ipoService';
+
+const GeminiVerdictSchema = z.object({
+  verdict: z.enum(['Subscribe', 'Avoid', 'Neutral']),
+  verdictReason: z.string().min(1).max(1200),
+  confidenceScore: z.number().min(0).max(100),
+  topStrengths: z.array(z.string().max(400)).max(10),
+  topRisks: z.array(z.string().max(400)).max(10),
+  financials: z.object({
+    revenueCagr: z.string().max(40),
+    ebitdaMargin: z.string().max(40),
+    patMargin: z.string().max(40),
+    debtToEquity: z.string().max(40),
+    peRatio: z.string().max(40),
+    industryPe: z.string().max(40),
+  }),
+  businessMoat: z.string().max(1200),
+});
 
 const withTimeout = <T>(promise: Promise<T>, ms: number = 7000): Promise<T> => {
   return new Promise<T>((resolve, reject) => {
@@ -786,7 +805,8 @@ export function buildLiveTelemetry(symbol: string, companyName?: string): LiveIp
 export async function analyzeDrhpFiling(
   symbol: string,
   companyName?: string,
-  customDrhpText?: string
+  customDrhpText?: string,
+  userId?: string
 ): Promise<DrhpAnalysisResult> {
   const rawSym = (symbol || '').trim().toUpperCase();
   // Map common aliases (e.g. JPL -> JIOPLAT)
@@ -844,18 +864,22 @@ export async function analyzeDrhpFiling(
 
   // 1. If custom DRHP text or file was provided, prioritize real text processing
   if (customDrhpText && customDrhpText.trim().length > 30) {
-    // Index document immediately into institutional RAG vector store
-    drhpRagService.indexDocument(resolvedSymbol, customDrhpText, `SEBI_${resolvedSymbol}_DRHP_Filing.pdf`);
+    // User-supplied text is indexed into the caller's private slot only; it never
+    // replaces the shared document other users see (audit H3).
+    const ragKey = userId
+      ? drhpRagService.indexUserDocument(resolvedSymbol, userId, customDrhpText, `SEBI_${resolvedSymbol}_DRHP_Filing.pdf`, resolvedName)
+      : resolvedSymbol;
 
     if (isKeyValid && rawKey) {
       try {
         const ai = new GoogleGenAI({ apiKey: rawKey });
-        const prompt = `You are a Senior SEBI-registered Investment Research Analyst at IPOLENS.
+        const prompt = `You are the IPOLENS IPO prospectus analysis assistant (educational use, not investment advice).
 Evaluate the primary market offering for Indian IPO "${resolvedName}" (NSE Ticker: ${resolvedSymbol}).
+${UNTRUSTED_DATA_RULE}
 Here is the uploaded Draft Red Herring Prospectus (DRHP) text:
-${customDrhpText.slice(0, 30000)}
+${wrapUntrusted('untrusted_document', customDrhpText, MAX_PROMPT_DOCUMENT_CHARS)}
 
-Produce a structured institutional research verdict strictly conforming to the requested schema.`;
+Produce a structured research summary strictly conforming to the requested schema.`;
 
         const response = await withTimeout(
           ai.models.generateContent({
@@ -892,12 +916,13 @@ Produce a structured institutional research verdict strictly conforming to the r
           7000
         );
 
-        const parsed = JSON.parse(response.text || '{}');
-        if (parsed.verdict && parsed.verdictReason) {
-          const res = formatAnalysisResult(resolvedSymbol, resolvedName, parsed, 'Google Gemini 3.8 Flash AI Engine');
+        // Model output is untrusted too: accept it only if it matches the schema exactly.
+        const validated = GeminiVerdictSchema.safeParse(JSON.parse(response.text || '{}'));
+        if (validated.success) {
+          const res = formatAnalysisResult(resolvedSymbol, resolvedName, validated.data, 'Google Gemini 3.8 Flash AI Engine', ragKey);
           res.liveTelemetry = liveTelemetry;
-          res.sections = drhpRagService.getDrhpSections(resolvedSymbol);
-          res.forensicRiskMatrix = drhpRagService.getForensicRiskMatrix(resolvedSymbol);
+          res.sections = drhpRagService.getDrhpSections(ragKey);
+          res.forensicRiskMatrix = drhpRagService.getForensicRiskMatrix(ragKey);
           res.ragIndexReady = true;
           return res;
         }
@@ -906,10 +931,10 @@ Produce a structured institutional research verdict strictly conforming to the r
       }
     }
 
-    const res = extractFromCustomDrhpText(resolvedSymbol, resolvedName, customDrhpText);
+    const res = extractFromCustomDrhpText(resolvedSymbol, resolvedName, customDrhpText, ragKey);
     res.liveTelemetry = liveTelemetry;
-    res.sections = drhpRagService.getDrhpSections(resolvedSymbol);
-    res.forensicRiskMatrix = drhpRagService.getForensicRiskMatrix(resolvedSymbol);
+    res.sections = drhpRagService.getDrhpSections(ragKey);
+    res.forensicRiskMatrix = drhpRagService.getForensicRiskMatrix(ragKey);
     res.ragIndexReady = true;
     return res;
   }
@@ -1101,7 +1126,7 @@ Produce a structured institutional research verdict strictly conforming to the r
   };
 }
 
-function formatAnalysisResult(symbol: string, companyName: string, parsed: any, source: string): DrhpAnalysisResult {
+function formatAnalysisResult(symbol: string, companyName: string, parsed: any, source: string, ragKey: string = symbol): DrhpAnalysisResult {
   let verdict: AnalystVerdict = 'Neutral';
   if (parsed.verdict === 'Subscribe' || parsed.verdict === 'Avoid') {
     verdict = parsed.verdict;
@@ -1137,11 +1162,11 @@ function formatAnalysisResult(symbol: string, companyName: string, parsed: any, 
       'DISCLAIMER: This analysis is generated for educational and informational purposes only. IPOLENS is not a SEBI-registered investment advisor. Investments in securities are subject to market risks. Please read the Draft Red Herring Prospectus (DRHP) thoroughly before making any investment decisions.',
     generatedAt: new Date().toISOString(),
     source,
-    citations: drhpRagService.getGroundedCitations(symbol, 3),
+    citations: drhpRagService.getGroundedCitations(ragKey, 3),
   };
 }
 
-function extractFromCustomDrhpText(symbol: string, companyName: string, text: string): DrhpAnalysisResult {
+function extractFromCustomDrhpText(symbol: string, companyName: string, text: string, ragKey: string = symbol): DrhpAnalysisResult {
   const lower = text.toLowerCase();
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
@@ -1240,7 +1265,7 @@ function extractFromCustomDrhpText(symbol: string, companyName: string, text: st
     documentName: `${symbol}_Uploaded_Prospectus.pdf`,
     pageCount: Math.max(1, Math.ceil(text.length / 1500)),
     extractionQuality: text.length > 500 ? 'HIGH' : 'MEDIUM',
-    citations: drhpRagService.getGroundedCitations(symbol, 3),
+    citations: drhpRagService.getGroundedCitations(ragKey, 3),
   };
 }
 
@@ -1251,7 +1276,8 @@ function extractFromCustomDrhpText(symbol: string, companyName: string, text: st
 export async function answerDrhpQuestion(
   symbol: string,
   question: string,
-  drhpText?: string
+  drhpText?: string,
+  userId?: string
 ): Promise<{
   question: string;
   answer: string;
@@ -1260,7 +1286,7 @@ export async function answerDrhpQuestion(
   notFound: boolean;
 }> {
   const sym = (symbol || '').trim().toUpperCase();
-  const ragResult = await drhpRagService.queryRag(sym, question, drhpText);
+  const ragResult = await drhpRagService.queryRag(sym, question, drhpText, userId);
 
   return {
     question: ragResult.question,

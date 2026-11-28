@@ -5,6 +5,10 @@
  * 
  * Features:
  *   1. Automated Headless Mode (Zero human interaction):
+ *      SECURITY (audit M10): UPSTOX_PIN and UPSTOX_TOTP_KEY are full broker login factors.
+ *      Keep them out of synced or backed-up folders, prefer a secret manager / OS keychain
+ *      that injects them as environment variables, and check Upstox's terms before
+ *      automating sign-in.
  *      When UPSTOX_MOBILE, UPSTOX_PIN, and UPSTOX_TOTP_KEY are present:
  *      - Computes standard RFC 6238 HMAC-SHA1 6-digit TOTP in milliseconds.
  *      - Runs an invisible background Puppeteer session to authorize and capture token in <5s.
@@ -32,7 +36,7 @@ import os from 'os';
 import readline from 'readline';
 import crypto from 'crypto';
 import http from 'http';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const envPath = path.resolve(process.cwd(), '.env.local');
@@ -317,7 +321,9 @@ export async function runHeadlessPuppeteer(config) {
   console.log('⚡ Zero-Human-Interaction Mode: Detected mobile, PIN, and TOTP key.');
   console.log('🤖 Launching invisible headless browser worker...');
 
-  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(cfg.clientId)}&redirect_uri=${encodeURIComponent(cfg.redirectUri)}`;
+  // Random OAuth state: the local callback server accepts only a redirect carrying it (audit M10).
+  const oauthState = crypto.randomBytes(24).toString('hex');
+  const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(cfg.clientId)}&redirect_uri=${encodeURIComponent(cfg.redirectUri)}&state=${oauthState}`;
 
   let browser;
   let callbackServer = null;
@@ -331,7 +337,7 @@ export async function runHeadlessPuppeteer(config) {
         authCode = code;
         console.log('   Captured OAuth Authorization Code via local callback server on port 3000!');
       }
-    }, cfg.redirectUri);
+    }, cfg.redirectUri, oauthState);
   } catch {}
 
   try {
@@ -340,7 +346,13 @@ export async function runHeadlessPuppeteer(config) {
       userDataDir: uniqueProfileDir,
       headless: 'new',
       timeout: 20000,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      // The Chromium sandbox stays on (audit M10). Set UPSTOX_PUPPETEER_NO_SANDBOX=true only
+      // inside containers that cannot provide it.
+      args: [
+        ...(process.env.UPSTOX_PUPPETEER_NO_SANDBOX === 'true' ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ],
     });
 
     const page = await browser.newPage();
@@ -584,7 +596,7 @@ export async function runHeadlessPuppeteer(config) {
  * Listens on the redirect port so clicking the auth link in browser completes
  * the token exchange in <200ms without copying and pasting codes.
  */
-export function startLocalCallbackServer(onCodeReceived, customRedirectUri) {
+export function startLocalCallbackServer(onCodeReceived, customRedirectUri, expectedState) {
   try {
     const redirectUrl = customRedirectUri || 'http://localhost:3000/api/auth/callback/upstox';
     const parsedRedirect = new URL(redirectUrl);
@@ -595,6 +607,13 @@ export function startLocalCallbackServer(onCodeReceived, customRedirectUri) {
       try {
         const reqUrl = new URL(req.url, `http://${req.headers.host}`);
         const code = reqUrl.searchParams.get('code');
+        // When a state was issued, ignore redirects that do not carry it (another site or
+        // device on the network cannot inject its own authorization code).
+        if (expectedState && reqUrl.searchParams.get('state') !== expectedState) {
+          res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('OAuth state mismatch.');
+          return;
+        }
         
         // Match either exact pathname or any upstox callback request with code
         if (code && (reqUrl.pathname === pathName || reqUrl.pathname.includes('callback') || reqUrl.pathname.includes('upstox'))) {
@@ -632,7 +651,8 @@ export function startLocalCallbackServer(onCodeReceived, customRedirectUri) {
       // Port in use (e.g. Next.js server already running), fall back cleanly
     });
 
-    server.listen(port);
+    // Loopback only: never expose the callback listener to the local network (audit M10).
+    server.listen(port, '127.0.0.1');
     return server;
   } catch (e) {
     return null;
@@ -646,7 +666,8 @@ export function runInteractiveMode(config) {
   const cfg = config || readEnvConfig();
 
   return new Promise((resolve, reject) => {
-    const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(cfg.clientId)}&redirect_uri=${encodeURIComponent(cfg.redirectUri)}`;
+    const oauthState = crypto.randomBytes(24).toString('hex');
+    const authUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${encodeURIComponent(cfg.clientId)}&redirect_uri=${encodeURIComponent(cfg.redirectUri)}&state=${oauthState}`;
 
     console.log('1. Opening Upstox authorization in your default browser...\n');
     console.log(`\x1b[36m${authUrl}\x1b[0m\n`);
@@ -655,12 +676,12 @@ export function runInteractiveMode(config) {
     console.log(`   ${cfg.redirectUri}?code=YOUR_CODE_HERE\n`);
 
     try {
-      const startCmd = process.platform === 'win32'
-        ? `start "" "${authUrl}"`
-        : process.platform === 'darwin'
-        ? `open "${authUrl}"`
-        : `xdg-open "${authUrl}"`;
-      exec(startCmd, () => {});
+      // execFile with an argument array: the URL is never parsed by a shell (audit M10).
+      if (process.platform === 'win32') {
+        execFile('rundll32', ['url.dll,FileProtocolHandler', authUrl], () => {});
+      } else {
+        execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [authUrl], () => {});
+      }
     } catch (e) {}
 
     let codeHandled = false;
@@ -676,7 +697,7 @@ export function runInteractiveMode(config) {
         console.error('❌ Request failed:', err.message);
         reject(err);
       }
-    }, cfg.redirectUri);
+    }, cfg.redirectUri, oauthState);
 
     const rl = readline.createInterface({
       input: process.stdin,

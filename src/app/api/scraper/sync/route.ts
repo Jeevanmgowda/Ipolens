@@ -1,11 +1,21 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import crypto from 'crypto';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { getAuthenticatedUser } from '@/lib/security/session';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+/** Constant-time comparison of the Authorization header with `Bearer <CRON_SECRET>` (audit L2). */
+function isValidCronAuth(authHeader: string, cronSecret: string | undefined): boolean {
+  if (!cronSecret) return false;
+  const given = crypto.createHash('sha256').update(authHeader).digest();
+  const expected = crypto.createHash('sha256').update(`Bearer ${cronSecret}`).digest();
+  return crypto.timingSafeEqual(given, expected);
+}
 
 const ROOT_DATA_FILE = path.resolve(process.cwd(), 'data', 'ipos.json');
 const SCRIPTS_DATA_FILE = path.resolve(process.cwd(), 'scripts', 'data', 'ipos.json');
@@ -62,7 +72,7 @@ export async function GET() {
     });
   } catch (error: any) {
     return NextResponse.json(
-      { exists: false, error: error.message || 'Failed to inspect scraper feed status' },
+      { exists: false, error: publicErrorMessage(error, 'Failed to inspect scraper feed status') },
       { status: 500 }
     );
   }
@@ -73,7 +83,7 @@ export async function POST(req: Request) {
     // 1. Enforce RBAC or CRON_SECRET authentication
     const authHeader = req.headers.get('authorization') || '';
     const cronSecret = process.env.CRON_SECRET;
-    const isCronAuthorized = cronSecret && authHeader === `Bearer ${cronSecret}`;
+    const isCronAuthorized = isValidCronAuth(authHeader, cronSecret);
 
     const user = await getAuthenticatedUser(req);
     const isAdminUser = user && user.role === 'admin';
@@ -102,8 +112,8 @@ export async function POST(req: Request) {
     }
 
     // Execute python scripts/scraper/merge.py safely
-    const cmd = `python "${scriptPath}" --months ${monthsBack}`;
-    const { stdout, stderr } = await execAsync(cmd, {
+    // execFile with an argument array: no shell, so nothing can be injected (audit L2).
+    const { stdout, stderr } = await execFileAsync('python', [scriptPath, '--months', String(monthsBack)], {
       timeout: 45000,
       env: { ...process.env, PYTHONUNBUFFERED: '1' },
     });

@@ -5,19 +5,26 @@ import crypto from 'crypto';
  * Compliant with SEBI privacy guidelines & Indian Digital Personal Data Protection (DPDP) Act.
  */
 
-// Secret encryption key derived from environment
-const RAW_KEY =
-  process.env.PAN_ENCRYPTION_KEY ||
-  process.env.NEXTAUTH_SECRET ||
-  (process.env.NODE_ENV === 'production'
-    ? (() => {
-      console.warn('[SECURITY WARNING] PAN_ENCRYPTION_KEY not set in production. Using derived deployment secret.');
-      return process.env.UPSTOX_API_KEY || process.env.DATABASE_URL || 'ipolens_internal_derived_prod_key_fallback';
-    })()
-    : 'ipolens_dev_safe_encryption_key_2025');
+// Secret encryption key derived from environment.
+// Resolved lazily so `next build` (which runs with NODE_ENV=production) does not
+// fail when secrets are only present at runtime.
+const DEV_ONLY_KEY = 'ipolens_dev_safe_encryption_key_2025';
+let cachedKey: Buffer | null = null;
 
-// Derive 32-byte key using sha256
-const ENCRYPTION_KEY = crypto.createHash('sha256').update(RAW_KEY).digest();
+function getEncryptionKey(): Buffer {
+  if (cachedKey) return cachedKey;
+  const rawKey = process.env.PAN_ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET;
+  if (!rawKey) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('PAN_ENCRYPTION_KEY must be set in production to encrypt PAN data.');
+    }
+    return crypto.createHash('sha256').update(DEV_ONLY_KEY).digest();
+  }
+  // Derive 32-byte key using sha256
+  cachedKey = crypto.createHash('sha256').update(rawKey).digest();
+  return cachedKey;
+}
+
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
 
@@ -28,7 +35,7 @@ const IV_LENGTH = 12;
 export function encryptPan(pan: string): string {
   const cleanPan = pan.trim().toUpperCase();
   const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
+  const cipher = crypto.createCipheriv(ALGORITHM, getEncryptionKey(), iv);
 
   let encrypted = cipher.update(cleanPan, 'utf8', 'hex');
   encrypted += cipher.final('hex');
@@ -56,7 +63,7 @@ export function decryptPan(encryptedPanPayload: string): string {
     const [ivHex, authTagHex, cipherTextHex] = parts;
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(authTagHex, 'hex');
-    const decipher = crypto.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
+    const decipher = crypto.createDecipheriv(ALGORITHM, getEncryptionKey(), iv);
     decipher.setAuthTag(authTag);
 
     let decrypted = decipher.update(cipherTextHex, 'hex', 'utf8');
@@ -94,4 +101,21 @@ export function maskPan(pan: string, style: 'sebi' | 'income_tax' = 'sebi'): str
 export function isValidPan(pan: string): boolean {
   if (!pan) return false;
   return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.trim().toUpperCase());
+}
+
+/**
+ * Keyed hash of a PAN for ownership look-ups (allotment checks) without storing
+ * the PAN in plain text. HMAC-SHA256 with a key derived from the PAN encryption
+ * secret (domain-separated), so a leaked hash cannot be brute-forced over the
+ * ~10^10 PAN space without the server secret (docs/security/AUDIT_2026-11-27.md, M1/M8).
+ */
+export function hashPanForLookup(pan: string): string {
+  const clean = (pan || '').trim().toUpperCase();
+  const lookupKey = crypto.createHash('sha256').update('ipolens-pan-lookup:').update(getEncryptionKey()).digest();
+  return crypto.createHmac('sha256', lookupKey).update(clean).digest('hex');
+}
+
+/** True when the value is a full, unmasked PAN. */
+export function isRawPan(value?: string | null): boolean {
+  return Boolean(value && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value.trim().toUpperCase()));
 }

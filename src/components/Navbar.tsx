@@ -170,7 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          loginWithDemo('institutional');
+                          loginWithDemo('institutional').catch((err) => console.warn('[Auth] Demo login failed:', err));
                           setIsDropdownOpen(false);
                         }}
                         className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5 transition text-left cursor-pointer"
@@ -185,7 +185,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          loginWithDemo('retail');
+                          loginWithDemo('retail').catch((err) => console.warn('[Auth] Demo login failed:', err));
                           setIsDropdownOpen(false);
                         }}
                         className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5 transition text-left cursor-pointer"

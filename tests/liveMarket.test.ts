@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IpoService } from '../src/services/ipoService';
 import { MarketService } from '../src/services/marketService';
 import { GmpService } from '../src/services/gmpService';
 import { SubscriptionService } from '../src/services/subscriptionService';
 import { MockMarketProvider, UpstoxProvider } from '../src/services/marketDataProvider';
 import { MockIPOProvider, NSEIPOProvider } from '../src/services/ipoDataProvider';
+import type { LiveMarketIpoItem } from '../src/types/liveMarket';
 import {
   iposTable,
   ipoSubscriptionsTable,
@@ -23,6 +24,7 @@ describe('Live Market Feature Test Suite', () => {
 
   afterEach(() => {
     process.env.USE_MOCK_MARKET_DATA = originalEnv;
+    vi.restoreAllMocks();
   });
 
   describe('Database Schema Extensions', () => {
@@ -247,8 +249,32 @@ describe('Live Market Feature Test Suite', () => {
 
   describe('Bidding Cutoff & Closed / Past Tab Routing Enforcement', () => {
     it('should route any IPO whose bidding has closed into Closed/Past tab and never Upcoming/Open', async () => {
-      process.env.USE_MOCK_MARKET_DATA = 'false';
       const nseProvider = new NSEIPOProvider();
+      const closedHdfp: LiveMarketIpoItem = {
+        id: 'hdfp',
+        symbol: 'HDFP',
+        companyName: 'HD Fire Protect Limited',
+        status: 'Closed',
+        series: 'EQ',
+        priceBand: '₹258 – ₹271',
+        priceLow: 258,
+        priceHigh: 271,
+        lotSize: 55,
+        issueSize: '₹285 Cr',
+        openDate: '13-Oct-2026',
+        closeDate: '15-Oct-2026',
+        allotmentDate: '16-Oct-2026',
+        listingDate: 'TBD',
+        registrar: 'Link Intime India Pvt Ltd',
+        gmp: 60,
+        gmpPercent: 22.14,
+        currentSubscription: 0,
+        retailSubscription: 0,
+        niiSubscription: 0,
+        qibSubscription: 0,
+        remainingTime: 'Bidding Closed',
+      };
+      vi.spyOn(nseProvider, 'getAllIpos').mockResolvedValue([closedHdfp]);
       const all = await nseProvider.getAllIpos();
 
       const hdfp = all.find((i) => i.symbol === 'HDFP');

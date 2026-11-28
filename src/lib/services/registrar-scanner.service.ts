@@ -16,6 +16,8 @@ export interface MultiPanScanOptions {
   lotSize?: number;
   pans: FamilyPanProfile[];
   autoSyncDatabase?: boolean;
+  /** Owner of the PAN profiles; only this user's applications are matched or updated. */
+  userId: string;
 }
 
 export interface LiveRegistrarQueryResult {
@@ -275,14 +277,15 @@ export class RegistrarScannerService {
       lotSize?: number;
       companyName?: string;
       autoSyncDatabase?: boolean;
+      userId: string;
     }
   ): Promise<MultiPanScanResultItem> {
     const cleanSymbol = symbol.toUpperCase().trim();
     const cleanPan = profile.pan.toUpperCase().trim();
     const registrar = this.getRegistrar(cleanSymbol);
-    const applications = getApplicationsStore();
+    const applications = getApplicationsStore().filter((a) => a.userId === options.userId);
 
-    // Match existing application in database
+    // Match existing application in database (caller's own applications only)
     const app = applications.find(
       (a) =>
         a.ipoSymbol.toUpperCase() === cleanSymbol &&
@@ -331,7 +334,7 @@ export class RegistrarScannerService {
     // 2. Auto-sync database record if application exists and status is conclusive
     if (app && options.autoSyncDatabase !== false) {
       if (status === 'Allotted' || status === 'Not Allotted') {
-        updateApplicationStatus(app.id, status, sharesAllotted);
+        updateApplicationStatus(app.id, status, sharesAllotted, options.userId);
         syncedToDatabase = true;
       }
     }
@@ -386,6 +389,7 @@ export class RegistrarScannerService {
       lotSize = 14,
       pans,
       autoSyncDatabase = true,
+      userId,
     } = options;
     const cleanSymbol = symbol.toUpperCase().trim();
     const registrar = this.getRegistrar(cleanSymbol);
@@ -397,6 +401,7 @@ export class RegistrarScannerService {
         lotSize,
         companyName,
         autoSyncDatabase,
+        userId,
       })
     );
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { MarketService } from '@/services/marketService';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,7 @@ export async function GET(
   } catch (error: any) {
     console.error('API Error in /api/market/[symbol]/ohlc:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch OHLC candles', message: error.message },
+      { success: false, error: 'Failed to fetch OHLC candles', ...errorDetail(error) },
       { status: 500 }
     );
   }

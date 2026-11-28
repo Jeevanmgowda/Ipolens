@@ -52,20 +52,20 @@ describe('PostgreSQL Database Persistence Layer with Drizzle ORM', () => {
       };
 
       // Save
-      await DbRepositoryService.savePan(testPan);
+      await DbRepositoryService.savePan(testPan, 'db_test_user');
 
       // Retrieve
-      const pans = await DbRepositoryService.getPans();
+      const pans = await DbRepositoryService.getPans('db_test_user');
       const found = pans.find((p) => p.id === testPan.id);
       expect(found).toBeDefined();
       expect(found?.name).toBe('Database Test User');
       expect(found?.pan).toBe('DBTST****F');
 
       // Delete
-      const deleted = await DbRepositoryService.deletePan(testPan.id);
+      const deleted = await DbRepositoryService.deletePan(testPan.id, 'db_test_user');
       expect(deleted).toBe(true);
 
-      const afterDelete = await DbRepositoryService.getPans();
+      const afterDelete = await DbRepositoryService.getPans('db_test_user');
       expect(afterDelete.find((p) => p.id === testPan.id)).toBeUndefined();
     });
 
@@ -89,20 +89,20 @@ describe('PostgreSQL Database Persistence Layer with Drizzle ORM', () => {
       };
 
       // Save Application
-      await DbRepositoryService.saveApplication(testApp);
+      await DbRepositoryService.saveApplication(testApp, 'db_test_user');
 
       // Verify retrieval
-      const apps = await DbRepositoryService.getApplications('BAJAJHFL');
+      const apps = await DbRepositoryService.getApplications('BAJAJHFL', 'db_test_user');
       const found = apps.find((a) => a.id === testAppId);
       expect(found).toBeDefined();
       expect(found?.status).toBe('Applied');
       expect(found?.blockedAmount).toBe(14980);
 
       // Update Application Status (e.g. from Registrar Scanner)
-      const updated = await DbRepositoryService.updateApplicationStatus(testAppId, 'Allotted', 214);
+      const updated = await DbRepositoryService.updateApplicationStatus(testAppId, 'db_test_user', 'Allotted', 214);
       expect(updated).toBe(true);
 
-      const appsAfter = await DbRepositoryService.getApplications('BAJAJHFL');
+      const appsAfter = await DbRepositoryService.getApplications('BAJAJHFL', 'db_test_user');
       const updatedApp = appsAfter.find((a) => a.id === testAppId);
       expect(updatedApp?.status).toBe('Allotted');
       expect(updatedApp?.allottedShares).toBe(214);
