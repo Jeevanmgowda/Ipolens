@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { validateAndRegisterUser } from '@/services/authStore';
 import { createSession } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function POST(request: Request) {
   try {
@@ -21,12 +22,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { token, expiresAt } = await createSession(result.user.id, true);
+    const { token, expiresAt } = await createSession(result.user.id, false); // 1-day default; 30 days only via sign-in "remember me" (audit L4)
 
     const response = NextResponse.json({
       success: true,
       user: result.user,
-      token,
       message: 'Account created successfully',
     });
 
@@ -40,18 +40,12 @@ export async function POST(request: Request) {
       maxAge: maxAgeSeconds,
     });
 
-    response.cookies.set('ipolens_token', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
 
     return response;
   } catch (err: any) {
+    console.error('[API] /api/auth/signup:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
+      { success: false, error: publicErrorMessage(err, 'Internal server error') },
       { status: 500 }
     );
   }

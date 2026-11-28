@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { AllotmentService } from '@/lib/services/allotment/allotment.service';
 import { TrustedIpoRegistry } from '@/lib/services/allotment/trustedIpoRegistry';
 import { getClientIp } from '@/lib/security/rateLimiter';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
+import { hashPanForLookup, isRawPan } from '@/lib/security/panEncryption';
+import { getPrimaryPanHash } from '@/services/authStore';
+import { DbRepositoryService } from '@/lib/services/db-repository.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +41,11 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
+    // 0. Signed-in users only, and only for PANs on their own account
+    //    (docs/security/AUDIT_2026-11-27.md, M1): no looking up other people's allotments.
+    const user = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
+
     // 1. Guard against payload abuse
     const contentLength = request.headers.get('content-length');
     if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
@@ -83,11 +92,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const normalizedPan = pan.trim().toUpperCase();
+    if (!isRawPan(normalizedPan)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid PAN format. PAN must be 10 characters (e.g. ABCDE1234F).' },
+        { status: 400 }
+      );
+    }
+    const ownsPan =
+      getPrimaryPanHash(user.id) === hashPanForLookup(normalizedPan) ||
+      (await DbRepositoryService.userOwnsFamilyPan(user.id, normalizedPan));
+    if (!ownsPan) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'You can only check allotment for your own PAN or a family PAN saved in the Family PAN Manager.',
+        },
+        { status: 403 }
+      );
+    }
+
     // Call secure allotment service (PAN is validated and scoped strictly in-memory)
     const result = await AllotmentService.checkAllotment({
       symbol: targetSymbol,
-      pan,
+      pan: normalizedPan,
       clientIp,
+      userId: user.id,
       applicationNo,
       dpClientId,
       price: price ? Number(price) : undefined,

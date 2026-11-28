@@ -1,10 +1,11 @@
+import crypto from 'crypto';
 import { db, isPostgresConfigured, isDatabaseActive, reportDatabaseFailure, schema } from '@/db';
 import { eq, desc, and } from 'drizzle-orm';
 import { FamilyPanProfile, IpoApplication } from '@/types/pan';
 import { HoldingItem } from '@/types/portfolio';
 import { getUserPansStore } from '@/app/api/pans/route';
 import { getApplicationsStore, updateApplicationStatus as updateMemoryAppStatus } from '@/app/api/applications/route';
-import { encryptPan, maskPan } from '@/lib/security/panEncryption';
+import { decryptPan, encryptPan, hashPanForLookup, isRawPan, maskPan } from '@/lib/security/panEncryption';
 
 /**
  * Unified Database Repository Service
@@ -59,7 +60,32 @@ export class DbRepositoryService {
       }
     }
 
-    return getUserPansStore().filter((p) => p.userId === userId);
+    // Strip server-only fields before profiles leave the repository.
+    return getUserPansStore()
+      .filter((p) => p.userId === userId)
+      .map(({ panHash: _hash, userId: _owner, ...publicProfile }) => publicProfile);
+  }
+
+  /**
+   * True when `rawPan` is one of this user's saved family PANs. In-memory profiles
+   * carry a keyed hash; database rows are checked by decrypting pan_encrypted
+   * (no hash column yet; see getPrimaryPanHash in authStore).
+   */
+  static async userOwnsFamilyPan(userId: string, rawPan: string): Promise<boolean> {
+    const clean = rawPan.trim().toUpperCase();
+    const wanted = hashPanForLookup(clean);
+    if (this.isDatabaseActive() && db) {
+      try {
+        const rows = await db
+          .select({ panEncrypted: schema.familyPansTable.panEncrypted })
+          .from(schema.familyPansTable)
+          .where(eq(schema.familyPansTable.userId, userId));
+        if (rows.some((r) => r.panEncrypted && decryptPan(r.panEncrypted) === clean)) return true;
+      } catch (err) {
+        handleDbError('checking family_pans ownership', err);
+      }
+    }
+    return getUserPansStore().some((p) => p.userId === userId && p.panHash === wanted);
   }
 
   static async savePan(
@@ -97,7 +123,8 @@ export class DbRepositoryService {
 
     // Always keep memory store synchronized
     const memoryStore = getUserPansStore();
-    const ownedProfile = { ...secureProfile, userId };
+    const panHash = rawToEncrypt && isRawPan(rawToEncrypt) ? hashPanForLookup(rawToEncrypt) : undefined;
+    const ownedProfile = { ...secureProfile, userId, panHash };
     const existingIdx = memoryStore.findIndex((p) => p.id === secureProfile.id);
     if (existingIdx === -1) {
       memoryStore.push(ownedProfile);
@@ -640,7 +667,7 @@ export class DbRepositoryService {
           return { watchlisted: false, symbol: sym };
         } else {
           await db.insert(schema.marketWatchlistTable).values({
-            id: `watch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            id: `watch_${crypto.randomUUID()}`,
             userId,
             symbol: sym,
             companyName: companyName || sym,
@@ -662,7 +689,7 @@ export class DbRepositoryService {
       return { watchlisted: false, symbol: sym };
     } else {
       list.push({
-        id: `watch_${Date.now()}`,
+        id: `watch_${crypto.randomUUID()}`,
         symbol: sym,
         companyName: companyName || sym,
         addedAt: new Date().toISOString(),
@@ -733,7 +760,7 @@ export class DbRepositoryService {
     metadata?: any
   ) {
     const notif = {
-      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `notif_${crypto.randomUUID()}`,
       userId,
       type,
       title,

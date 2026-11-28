@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 /**
  * DPDP Compliance: Right to Erasure / Data Purge Endpoint
@@ -19,6 +20,6 @@ export async function DELETE(request: Request) {
       message: 'All personal data, PAN profiles, and application ledgers have been purged in compliance with DPDP guidelines.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }

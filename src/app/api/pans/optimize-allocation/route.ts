@@ -8,6 +8,8 @@ import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { FamilyPanProfile } from '@/types/pan';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { OptimizeAllocationSchema, firstIssue } from '@/lib/security/schemas';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +18,11 @@ export async function POST(request: Request) {
     const user = await getAuthenticatedUser(request);
     if (!user) return unauthorizedResponse();
 
-    const body = await request.json();
+    const parsedBody = OptimizeAllocationSchema.safeParse(await request.json().catch(() => null));
+    if (!parsedBody.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsedBody.error) }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const cleanPrice = Number(body.price) || 500;
     const defaultLot = Math.max(1, Math.floor(15000 / cleanPrice));
     const cleanLotSize = Number(body.lotSize) > 0 ? Number(body.lotSize) : defaultLot;
@@ -41,7 +47,7 @@ export async function POST(request: Request) {
     const requestedIds: string[] = Array.isArray(selectedPanIds) && selectedPanIds.length > 0
       ? selectedPanIds
       : Array.isArray(clientPans)
-        ? clientPans.map((p: { id?: unknown }) => p?.id).filter((id: unknown): id is string => typeof id === 'string')
+        ? clientPans.map((p) => p.id)
         : [];
     if (requestedIds.length > 0) {
       profiles = profiles.filter((p) => requestedIds.includes(p.id));
@@ -70,7 +76,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to optimize multi-PAN allocation',
+        error: publicErrorMessage(error, 'Failed to optimize multi-PAN allocation'),
       },
       { status: 500 }
     );

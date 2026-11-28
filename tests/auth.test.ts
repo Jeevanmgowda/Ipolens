@@ -131,7 +131,7 @@ describe('Auth Service & Validation', () => {
       expect(result.user?.name).toBe('Vikram Seth');
       expect(result.user?.email).toBe(uniqueEmail.toLowerCase());
       expect(result.user?.role).toBe('hni');
-      expect(result.user?.primaryPan).toBe('ABCDE1234F'); // Uppercased
+      expect(result.user?.primaryPan).toBe('ABCDE****F'); // uppercased, stored and returned masked (audit M8)
       expect(result.user?.panCount).toBe(1);
 
       // Now verify that registering again with the same email fails
@@ -173,7 +173,7 @@ describe('Auth Service & Validation', () => {
       expect(res.user?.email).toBe(gEmail.toLowerCase());
       expect(res.user?.name).toBe('Jeevan Gowda');
       expect(res.user?.role).toBe('retail');
-      expect(res.user?.primaryPan).toBe('ABCDE1234F');
+      expect(res.user?.primaryPan).toBe('ABCDE****F'); // returned masked (audit M8)
       expect(res.user?.panCount).toBe(1);
     });
 

@@ -3,11 +3,53 @@ import { User, SignInCredentials, SignUpCredentials, GoogleAuthPayload } from '.
 import { isValidEmail } from '../lib/security/sanitize';
 import { isValidPan } from './duplicateEnforcer';
 import { hashPassword, verifyPassword } from '../lib/security/passwordHash';
+import { hashPanForLookup, isRawPan, maskPan } from '../lib/security/panEncryption';
 import { db, isPostgresConfigured, schema } from '../db';
 
 export interface RegisteredUserRecord extends User {
   passwordHash: string;
   passwordSalt?: string;
+  /** Server-only HMAC of the primary PAN; `primaryPan` itself is stored masked. */
+  primaryPanHash?: string;
+}
+
+/** Masks a raw PAN and computes its lookup hash (docs/security/AUDIT_2026-11-27.md, M8). */
+function securePrimaryPan(raw?: string): { primaryPan?: string; primaryPanHash?: string } {
+  if (!raw) return { primaryPan: undefined, primaryPanHash: undefined };
+  const clean = raw.trim().toUpperCase();
+  if (isRawPan(clean)) return { primaryPan: maskPan(clean), primaryPanHash: hashPanForLookup(clean) };
+  return { primaryPan: clean, primaryPanHash: undefined };
+}
+
+/**
+ * The only shape of a user that may leave the server: an explicit allowlist, so
+ * password hashes, salts and PAN hashes can never be returned by accident (L5).
+ * A raw primary PAN (e.g. a legacy DB row) is masked on the way out (M8).
+ */
+export function toPublicUser(record: User & Partial<RegisteredUserRecord>): User {
+  const primaryPan = record.primaryPan && isRawPan(record.primaryPan) ? maskPan(record.primaryPan) : record.primaryPan;
+  return {
+    id: record.id,
+    name: record.name,
+    email: record.email,
+    avatarUrl: record.avatarUrl,
+    role: record.role,
+    investorCategory: record.investorCategory,
+    primaryPan,
+    panCount: record.panCount,
+    dematCount: record.dematCount,
+    createdAt: record.createdAt,
+  };
+}
+
+/**
+ * HMAC of the user's primary PAN. Only in-memory accounts carry it: the users
+ * table has no hash column yet (schema changes are pending on the Supabase
+ * branch), so database-only accounts must add their own PAN as a "Self" family
+ * profile to use the allotment check.
+ */
+export function getPrimaryPanHash(userId: string): string | undefined {
+  return registeredUsersStore.find((u) => u.id === userId)?.primaryPanHash;
 }
 
 /**
@@ -60,7 +102,9 @@ const DEMO_USER_RECORDS: RegisteredUserRecord[] = [
 ];
 
 // In-memory user store, seeded with the demo accounts only outside production.
-export const registeredUsersStore: RegisteredUserRecord[] = isDemoAccountsEnabled() ? [...DEMO_USER_RECORDS] : [];
+export const registeredUsersStore: RegisteredUserRecord[] = isDemoAccountsEnabled()
+  ? DEMO_USER_RECORDS.map((u) => ({ ...u, ...securePrimaryPan(u.primaryPan) }))
+  : [];
 
 // One message for unknown email and wrong password, so sign-in does not reveal
 // which emails have accounts (docs/security/AUDIT_2026-11-27.md, M2).
@@ -94,6 +138,13 @@ export function passwordPolicyError(password: string, email?: string): string | 
   return null;
 }
 
+const INVESTOR_CATEGORIES: ReadonlySet<string> = new Set(['Retail', 'sNII', 'bNII', 'Institutional']);
+
+/** Client-chosen category, restricted to known values (audit M5); unknown values become Retail. */
+function normalizeInvestorCategory(value: unknown): User['investorCategory'] {
+  return typeof value === 'string' && INVESTOR_CATEGORIES.has(value) ? (value as User['investorCategory']) : 'Retail';
+}
+
 export function validateSignInCredentials(creds: SignInCredentials): { valid: boolean; error?: string; user?: User } {
   const { email, password } = creds;
   if (!email || !email.trim()) {
@@ -125,12 +176,12 @@ export function validateSignInCredentials(creds: SignInCredentials): { valid: bo
   }
 
   // Strip passwordHash and passwordSalt before returning
-  const { passwordHash: _, passwordSalt: __, ...safeUser } = existingUser;
-  return { valid: true, user: safeUser };
+  return { valid: true, user: toPublicUser(existingUser) };
 }
 
 export function validateAndRegisterUser(creds: SignUpCredentials): { valid: boolean; error?: string; user?: User } {
-  const { name, email, password, investorCategory, primaryPan, termsAccepted } = creds;
+  const { name, email, password, primaryPan, termsAccepted } = creds;
+  const investorCategory = normalizeInvestorCategory(creds.investorCategory);
 
   if (!name || name.trim().length < 2) {
     return { valid: false, error: 'Full name must be at least 2 characters.' };
@@ -171,14 +222,14 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
   const { hash, salt } = hashPassword(password);
 
   const newUser: RegisteredUserRecord = {
-    id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: `usr_${crypto.randomUUID()}`,
     name: name.trim(),
     email: normalizedEmail,
     passwordHash: hash,
     passwordSalt: salt,
     role,
     investorCategory: investorCategory || 'Retail',
-    primaryPan: primaryPan ? primaryPan.trim().toUpperCase() : undefined,
+    ...securePrimaryPan(primaryPan),
     panCount: primaryPan ? 1 : 0,
     dematCount: 0,
     createdAt: new Date().toISOString(),
@@ -205,8 +256,7 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
     }
   }
 
-  const { passwordHash: _, passwordSalt: __, ...safeUser } = newUser;
-  return { valid: true, user: safeUser };
+  return { valid: true, user: toPublicUser(newUser) };
 }
 
 export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { valid: boolean; error?: string; user?: User } {
@@ -223,8 +273,7 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
     if (avatarUrl && !existingUser.avatarUrl) {
       existingUser.avatarUrl = avatarUrl;
     }
-    const { passwordHash: _, passwordSalt: __, ...safeUser } = existingUser;
-    return { valid: true, user: safeUser };
+    return { valid: true, user: toPublicUser(existingUser) };
   }
 
   if (primaryPan && primaryPan.trim()) {
@@ -233,7 +282,7 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
     }
   }
 
-  const category = investorCategory || 'Retail';
+  const category = normalizeInvestorCategory(investorCategory);
   const role =
     category === 'Institutional'
       ? 'institutional'
@@ -241,10 +290,10 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
       ? 'hni'
       : 'retail';
 
-  const { hash, salt } = hashPassword(`google_oauth_${Date.now()}_${Math.random()}`);
+  const { hash, salt } = hashPassword(crypto.randomBytes(32).toString('hex'));
 
   const newUser: RegisteredUserRecord = {
-    id: `usr_g_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: `usr_g_${crypto.randomUUID()}`,
     name: name?.trim() || email.split('@')[0],
     email: normalizedEmail,
     avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name || email)}`,
@@ -252,13 +301,12 @@ export function registerOrLoginWithGoogle(googleData: GoogleAuthPayload): { vali
     passwordSalt: salt,
     role,
     investorCategory: category,
-    primaryPan: primaryPan ? primaryPan.trim().toUpperCase() : undefined,
+    ...securePrimaryPan(primaryPan),
     panCount: primaryPan ? 1 : 0,
     dematCount: 0,
     createdAt: new Date().toISOString(),
   };
 
   registeredUsersStore.push(newUser);
-  const { passwordHash: _, passwordSalt: __, ...safeUser } = newUser;
-  return { valid: true, user: safeUser };
+  return { valid: true, user: toPublicUser(newUser) };
 }

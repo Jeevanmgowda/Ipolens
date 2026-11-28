@@ -21,6 +21,7 @@ export interface GoogleIdTokenClaims {
   iss: string;
   exp: number;
   iat?: number;
+  nonce?: string;
 }
 
 type Jwk = crypto.JsonWebKey & { kid?: string };
@@ -59,7 +60,13 @@ function decodeSegment<T>(segment: string): T {
  */
 export async function verifyGoogleIdToken(
   idToken: string,
-  options: { clientId?: string; getKeys?: (forceRefresh: boolean) => Promise<Jwk[]>; nowSeconds?: number } = {}
+  options: {
+    clientId?: string;
+    getKeys?: (forceRefresh: boolean) => Promise<Jwk[]>;
+    nowSeconds?: number;
+    /** When set, the token's nonce claim must match (replay protection). */
+    expectedNonce?: string;
+  } = {}
 ): Promise<GoogleIdTokenClaims> {
   const clientId = options.clientId ?? getGoogleClientId();
   if (!clientId) {
@@ -118,6 +125,13 @@ export async function verifyGoogleIdToken(
   }
   if (!claims.email || claims.email_verified !== true) {
     throw new Error('Google account email is not verified.');
+  }
+  if (options.expectedNonce !== undefined) {
+    const given = Buffer.from(String(claims.nonce || ''));
+    const expected = Buffer.from(options.expectedNonce);
+    if (!options.expectedNonce || given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+      throw new Error('Google ID token nonce mismatch.');
+    }
   }
 
   return claims;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { IpoAggregatorService } from '@/lib/services/ipo-aggregator.service';
 import { IpoStatus, IssueType } from '@/types/ipo';
+import { errorDetail } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
       {
         success: false,
         error: 'Failed to fetch unified IPO pipeline',
-        message: error.message,
+        ...errorDetail(error),
       },
       { status: 500 }
     );

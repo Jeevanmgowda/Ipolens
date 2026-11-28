@@ -4,6 +4,7 @@ import { INVALID_CREDENTIALS_MESSAGE, validateSignInCredentials } from '@/servic
 import { applyRateLimitHeaders, checkRateLimitDistributed } from '@/lib/security/rateLimiter';
 import { createSession } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function POST(request: Request) {
   try {
@@ -41,7 +42,6 @@ export async function POST(request: Request) {
     const response = NextResponse.json({
       success: true,
       user: result.user,
-      token,
       message: 'Signed in successfully',
     });
 
@@ -56,18 +56,12 @@ export async function POST(request: Request) {
       maxAge: maxAgeSeconds,
     });
 
-    response.cookies.set('ipolens_token', token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: maxAgeSeconds,
-    });
 
     return response;
   } catch (err: any) {
+    console.error('[API] /api/auth/signin:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Internal server error' },
+      { success: false, error: publicErrorMessage(err, 'Internal server error') },
       { status: 500 }
     );
   }

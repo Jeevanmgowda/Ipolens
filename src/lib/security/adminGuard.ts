@@ -17,3 +17,18 @@ export async function requireAdminInProduction(request: Request): Promise<NextRe
   }
   return null;
 }
+
+/**
+ * Default-deny admin check for admin pages and routes in every environment
+ * (audit L3). Returns a response to send, or null to proceed.
+ */
+export async function requireAdmin(request: Request): Promise<NextResponse | null> {
+  const user = await getAuthenticatedUser(request);
+  if (!user) {
+    return NextResponse.json({ success: false, error: 'Authentication required. Please sign in.' }, { status: 401 });
+  }
+  if (user.role !== 'admin') {
+    return NextResponse.json({ success: false, error: 'Administrator access required.' }, { status: 403 });
+  }
+  return null;
+}

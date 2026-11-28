@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
+import { API_CSP } from "./src/lib/security/csp";
 
-const isDev = process.env.NODE_ENV !== 'production';
 
 const securityHeaders = [
   {
@@ -27,27 +27,6 @@ const securityHeaders = [
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=(), payment=()',
   },
-  {
-    key: 'Content-Security-Policy',
-    value: [
-      "default-src 'self'",
-      // React & Turbopack require 'unsafe-eval' in dev for hot reloading & callstack reconstruction
-      isDev
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client"
-        : "script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
-      "font-src 'self' https://fonts.gstatic.com data:",
-      "img-src 'self' data: https: blob:",
-      isDev
-        ? "connect-src 'self' http://localhost:* ws://localhost:* https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io https://accounts.google.com/gsi/ wss: ws:"
-        : "connect-src 'self' https://api.upstox.com https://generativelanguage.googleapis.com https://*.upstash.io https://accounts.google.com/gsi/ wss: ws:",
-      "frame-src 'self' https://accounts.google.com/gsi/",
-      "frame-ancestors 'none'",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-    ].join('; '),
-  },
 ];
 
 const nextConfig: NextConfig = {
@@ -64,6 +43,12 @@ const nextConfig: NextConfig = {
         // Apply security headers to all routes
         source: '/(.*)',
         headers: securityHeaders,
+      },
+      {
+        // Pages get a per-request nonce CSP from src/proxy.ts (src/lib/security/csp.ts).
+        // API responses get a deny-all CSP here.
+        source: '/api/:path*',
+        headers: [{ key: 'Content-Security-Policy', value: API_CSP }],
       },
     ];
   },

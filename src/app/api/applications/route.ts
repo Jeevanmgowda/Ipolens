@@ -1,9 +1,12 @@
+import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { IpoApplication } from '@/types/pan';
 import { checkDuplicatePanBid, maskPan } from '@/services/duplicateEnforcer';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { ApplicationCreateSchema, ApplicationPatchSchema, firstIssue } from '@/lib/security/schemas';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 // Server-side store for applications (clean slate)
 let applicationsStore: IpoApplication[] = [];
@@ -52,27 +55,21 @@ export async function POST(request: Request) {
     if (!user) return unauthorizedResponse();
     const userId = user.id;
 
-    const body = await request.json();
-    const {
-      ipoSymbol,
-      companyName,
-      panId,
-      panNumber,
-      holderName,
-      relationship,
-      category,
-      lots,
-      shares,
-      bidPrice,
-      blockedAmount,
-    } = body;
-
-    if (!ipoSymbol || !panId || !lots || !bidPrice) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required application fields.' },
-        { status: 400 }
-      );
+    const parsed = ApplicationCreateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const { ipoSymbol, companyName, panId, category, lots, shares, bidPrice, blockedAmount } = parsed.data;
+
+    // The PAN profile must belong to the caller; holder name, masked PAN and
+    // relationship come from that stored profile, never from the request (audit M5).
+    const panProfile = (await DbRepositoryService.getPans(userId)).find((p) => p.id === panId);
+    if (!panProfile) {
+      return NextResponse.json({ success: false, error: 'PAN profile not found.' }, { status: 404 });
+    }
+    const panNumber = panProfile.pan;
+    const holderName = panProfile.name;
+    const relationship = panProfile.relationship;
 
     // Retrieve existing user applications for duplicate check
     const existingApps = await DbRepositoryService.getApplications(ipoSymbol, userId);
@@ -98,21 +95,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const cleanSymbol = sanitizeString(ipoSymbol).toUpperCase().slice(0, 20);
-    const numPrice = Number(bidPrice) || 100;
-    const numLots = Math.max(1, Number(lots) || 1);
-    const computedShares = Number(shares) || Math.max(1, Math.floor(15000 / numPrice)) * numLots;
-    const computedBlocked = Number(blockedAmount) || (computedShares * numPrice);
+    // All numbers are schema-validated positive values (no negative shares or amounts).
+    const cleanSymbol = ipoSymbol;
+    const numPrice = bidPrice;
+    const numLots = lots;
+    const computedShares = shares ?? Math.max(1, Math.floor(15000 / numPrice)) * numLots;
+    const computedBlocked = blockedAmount ?? computedShares * numPrice;
 
     const newApp: IpoApplication = {
-      id: `app_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `app_${crypto.randomUUID()}`,
       ipoSymbol: cleanSymbol,
       companyName: sanitizeString(companyName || ipoSymbol).slice(0, 150),
-      panId: sanitizeString(panId).slice(0, 50),
-      panNumber: maskPan(panNumber || 'ABCDE1234F'),
-      holderName: sanitizeString(holderName || 'Family Member').slice(0, 100),
-      relationship: (sanitizeString(relationship || 'Self').slice(0, 50) as any),
-      category: (sanitizeString(category || 'Retail').slice(0, 50) as any),
+      panId,
+      panNumber: maskPan(panNumber),
+      holderName,
+      relationship,
+      category: category || 'Retail',
       lots: numLots,
       shares: computedShares,
       bidPrice: numPrice,
@@ -129,7 +127,7 @@ export async function POST(request: Request) {
       message: `Application recorded successfully for ${newApp.holderName} (${newApp.panNumber}). Total blocked amount: ₹${newApp.blockedAmount.toLocaleString('en-IN')}.`,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -138,12 +136,11 @@ export async function PATCH(request: Request) {
     const user = await getAuthenticatedUser(request);
     if (!user) return unauthorizedResponse();
 
-    const body = await request.json();
-    const { id, status, allottedShares } = body;
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'Application ID is required' }, { status: 400 });
+    const parsed = ApplicationPatchSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const { id, status, allottedShares } = parsed.data;
 
     const owned = (await DbRepositoryService.getApplications(undefined, user.id)).some((a) => a.id === id);
     if (!owned) {
@@ -169,7 +166,7 @@ export async function PATCH(request: Request) {
       message: 'Application status updated successfully.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -192,6 +189,6 @@ export async function DELETE(request: Request) {
       message: 'Application record removed.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }

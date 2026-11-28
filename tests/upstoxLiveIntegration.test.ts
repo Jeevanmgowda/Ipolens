@@ -184,7 +184,7 @@ describe('Live IPO Data Integration & Dual-Source Reconciliation', () => {
     });
 
     it('should report valid when a production-length bearer token is provided', () => {
-      const validMockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJ1cHN0b3hfcHJvIn0.valid_signature_token_string';
+      const validMockToken = 'test-fixture-upstox-bearer-token-not-a-real-credential-0000';
       const status = UpstoxReconciliationService.checkTokenHealth(validMockToken);
       expect(status.isConfigured).toBe(true);
       expect(status.tokenStatus).toBe('VALID');

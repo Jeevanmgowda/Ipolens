@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { FamilyPanProfile } from '@/types/pan';
-import { isValidPan, maskPan } from '@/services/duplicateEnforcer';
+import crypto from 'crypto';
+import { maskPan } from '@/services/duplicateEnforcer';
+import { PanProfileCreateSchema, firstIssue } from '@/lib/security/schemas';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
 import { sanitizeString } from '@/lib/security/sanitize';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 // In-memory store for server-side persistence (clean slate, zero mock dummy data)
 let userPansStore: FamilyPanProfile[] = [];
@@ -32,38 +35,26 @@ export async function POST(request: Request) {
     if (!user) return unauthorizedResponse();
     const userId = user.id;
 
-    const body = await request.json();
-    const { name, relationship, pan, broker, dematId, bankUpi } = body;
-
-    if (!name || !pan || !relationship) {
-      return NextResponse.json(
-        { success: false, error: 'Name, PAN number, and Relationship are required.' },
-        { status: 400 }
-      );
+    const parsed = PanProfileCreateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const { name, relationship, pan: cleanPan, broker, dematId, bankUpi } = parsed.data;
 
-    if (!isValidPan(pan)) {
+    // Exact duplicate check against the caller's own PANs (keyed hash / decryption),
+    // instead of the old masked-prefix comparison that could miss real duplicates
+    // and flag different PANs.
+    if (await DbRepositoryService.userOwnsFamilyPan(userId, cleanPan)) {
       return NextResponse.json(
-        { success: false, error: 'Invalid PAN format. PAN must be 10 characters (e.g. ABCDE1234F).' },
-        { status: 400 }
-      );
-    }
-
-    // Check if PAN is already added in user's family profiles
-    const cleanPan = pan.trim().toUpperCase();
-    const allPans = await DbRepositoryService.getPans(userId);
-    const existing = allPans.find((p) => p.pan.toUpperCase() === cleanPan || p.pan.toUpperCase() === maskPan(cleanPan));
-    if (existing) {
-      return NextResponse.json(
-        { success: false, error: `This PAN is already registered under profile "${existing.name}".` },
+        { success: false, error: 'This PAN is already registered in your family profiles.' },
         { status: 400 }
       );
     }
 
     const newProfile: FamilyPanProfile = {
-      id: `pan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `pan_${crypto.randomUUID()}`,
       name: sanitizeString(name).slice(0, 100),
-      relationship: (sanitizeString(relationship).slice(0, 50) as any),
+      relationship,
       pan: cleanPan,
       broker: sanitizeString(broker || 'Zerodha').slice(0, 50),
       dematId: dematId ? sanitizeString(dematId).slice(0, 30) : undefined,
@@ -79,7 +70,7 @@ export async function POST(request: Request) {
       message: `Successfully registered encrypted PAN profile for ${saved.name} (${maskPan(cleanPan)}).`,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -103,6 +94,6 @@ export async function DELETE(request: Request) {
       message: 'PAN profile deleted successfully.',
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }

@@ -4,6 +4,8 @@ export interface FamilyPanProfile {
   id: string;
   /** Owning user (set server-side; used by the in-memory fallback store). */
   userId?: string;
+  /** Server-only HMAC of the PAN (never sent to clients). */
+  panHash?: string;
   name: string;
   relationship: PanRelationship;
   pan: string; // Stored securely, masked on display e.g. "ABCDE****F"

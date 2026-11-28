@@ -12,6 +12,8 @@ export interface CheckAllotmentRequest {
   dpClientId?: string;
   price?: number;
   lotSize?: number;
+  /** Signed-in user; only their own recorded applications are consulted. */
+  userId?: string;
 }
 
 export class AllotmentService {
@@ -95,11 +97,13 @@ export class AllotmentService {
     const adapter = RegistrarAdapterFactory.getAdapter(ipoInfo.registrarSlug);
 
     // 5. Check if user has an existing recorded demat application
-    const recordedApplications = getApplicationsStore();
+    //    Only the caller's own applications are considered (never another user's), matched by masked PAN.
+    const maskedInput = normalizedPan.slice(0, 5) + '****' + normalizedPan.slice(9);
+    const recordedApplications = request.userId
+      ? getApplicationsStore().filter((a) => a.userId === request.userId)
+      : [];
     const existingApp = recordedApplications.find(
-      (a) =>
-        a.ipoSymbol.toUpperCase() === ipoInfo.symbol &&
-        (a.panNumber.replace(/\*/g, '') === normalizedPan || a.panNumber === normalizedPan)
+      (a) => a.ipoSymbol.toUpperCase() === ipoInfo.symbol && (a.panNumber === maskedInput || a.panNumber === normalizedPan)
     );
 
     const issuePrice = price || ipoInfo.priceHigh || existingApp?.bidPrice || 100;

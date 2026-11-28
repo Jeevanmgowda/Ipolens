@@ -1,13 +1,14 @@
 import crypto from 'crypto';
 import { db, isDatabaseActive, reportDatabaseFailure, schema } from '@/db';
 import { eq, and, gt } from 'drizzle-orm';
-import { registeredUsersStore } from '@/services/authStore';
+import { registeredUsersStore, toPublicUser } from '@/services/authStore';
 import { User } from '@/types/auth';
 
 /**
  * Enterprise Session & Route Security Service
  * Issues cryptographically random session tokens stored in DB / memory,
- * with validation against HttpOnly cookies or Bearer headers.
+ * validated from the HttpOnly `ipolens_session` cookie only (audit M9: no Bearer
+ * sessions and no token in response bodies, so scripts can never hold one).
  */
 
 export interface ActiveSession {
@@ -15,7 +16,13 @@ export interface ActiveSession {
   userId: string;
   expiresAt: Date;
   createdAt: Date;
+  /** When this cache entry was last confirmed against the database. */
+  checkedAt?: number;
 }
+
+/** In database mode, cached sessions are re-checked this often, so a sign-out on
+ *  another instance takes effect within a minute (audit L4). */
+const SESSION_RECHECK_MS = 60 * 1000;
 
 // In-memory sessions store fallback
 const inMemorySessions = new Map<string, ActiveSession>();
@@ -28,7 +35,7 @@ const SESSION_DURATION_REMEMBER_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  */
 export async function createSession(
   userId: string,
-  rememberMe: boolean = true
+  rememberMe: boolean = false
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = `sess_${crypto.randomBytes(32).toString('hex')}`;
   const duration = rememberMe ? SESSION_DURATION_REMEMBER_MS : SESSION_DURATION_STANDARD_MS;
@@ -55,6 +62,7 @@ export async function createSession(
     userId,
     expiresAt,
     createdAt,
+    checkedAt: Date.now(),
   });
 
   return { token, expiresAt };
@@ -69,11 +77,13 @@ export async function validateSession(token: string): Promise<string | null> {
   // Check in-memory cache first
   const cached = inMemorySessions.get(token);
   if (cached) {
-    if (cached.expiresAt.getTime() > Date.now()) {
-      return cached.userId;
-    } else {
+    if (cached.expiresAt.getTime() <= Date.now()) {
       inMemorySessions.delete(token);
       return null;
+    }
+    const fresh = !cached.checkedAt || Date.now() - cached.checkedAt < SESSION_RECHECK_MS;
+    if (fresh || !isDatabaseActive() || !db) {
+      return cached.userId;
     }
   }
 
@@ -99,9 +109,13 @@ export async function validateSession(token: string): Promise<string | null> {
           userId: row.userId,
           expiresAt: row.expiresAt,
           createdAt: row.createdAt,
+          checkedAt: Date.now(),
         });
         return row.userId;
       }
+      // Revoked or expired in the database (e.g. signed out on another instance).
+      inMemorySessions.delete(token);
+      return null;
     } catch (err) {
       reportDatabaseFailure('querying session from DB', err);
     }
@@ -128,22 +142,18 @@ export async function destroySession(token: string): Promise<boolean> {
 }
 
 /**
- * Extract token from standard Next.js request (cookies or Authorization header)
+ * Extract the session token from the HttpOnly session cookie.
  */
 export function extractTokenFromRequest(request: Request): string | null {
-  // 1. Check cookies (ipolens_session or ipolens_token)
   const cookieHeader = request.headers.get('cookie') || '';
-  const match = cookieHeader.match(/(?:^|;\s*)(?:ipolens_session|ipolens_token)=([^;]+)/);
+  const match = cookieHeader.match(/(?:^|;\s*)ipolens_session=([^;]+)/);
   if (match && match[1]) {
-    return decodeURIComponent(match[1]);
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return null;
+    }
   }
-
-  // 2. Check Authorization Bearer header
-  const authHeader = request.headers.get('authorization') || '';
-  if (authHeader.startsWith('Bearer ')) {
-    return authHeader.slice(7).trim();
-  }
-
   return null;
 }
 
@@ -172,8 +182,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
   // Find user in registeredUsersStore or DB
   const user = registeredUsersStore.find((u) => u.id === userId);
   if (user) {
-    const { passwordHash: _, ...safeUser } = user as any;
-    return safeUser as User;
+    return toPublicUser(user);
   }
 
   if (isDatabaseActive() && db) {
@@ -186,7 +195,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
 
       if (rows.length > 0) {
         const r = rows[0];
-        return {
+        return toPublicUser({
           id: r.id,
           name: r.name,
           email: r.email,
@@ -195,7 +204,7 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
           primaryPan: r.primaryPan || undefined,
           avatarUrl: r.avatarUrl || undefined,
           createdAt: r.createdAt.toISOString(),
-        };
+        });
       }
     } catch (err) {
       reportDatabaseFailure('querying user profile from DB', err);

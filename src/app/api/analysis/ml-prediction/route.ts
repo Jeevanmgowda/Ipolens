@@ -11,6 +11,7 @@ import {
 import { IpoService } from '@/services/ipoService';
 import { LiveMarketIpoItem } from '@/types/liveMarket';
 import { isIpoListed } from '@/services/ipoDataProvider';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,7 +127,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -199,6 +200,6 @@ export async function POST(request: Request) {
       data: prediction,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }

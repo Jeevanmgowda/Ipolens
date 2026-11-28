@@ -52,6 +52,8 @@ class InMemoryRedisEmitter extends EventEmitter {
 
 // Global in-memory singleton fallback
 const globalMemoryFallback = new InMemoryRedisEmitter();
+// One 'message' listener per open SSE stream (capped at 500 in the stream route).
+globalMemoryFallback.setMaxListeners(0);
 
 let singletonClient: any = null;
 let isRedisCircuitOpen = false;
@@ -156,6 +158,28 @@ export function getRedisClient(): any {
     singletonClient = globalMemoryFallback;
     return globalMemoryFallback;
   }
+}
+
+let subscriberClient: any = null;
+
+/**
+ * Dedicated connection for Pub/Sub. An ioredis connection in subscriber mode
+ * rejects normal commands, so subscribing on the shared client would break
+ * caching and rate limiting for the whole app.
+ */
+export function getRedisSubscriber(): any {
+  const base = getRedisClient();
+  if (base === globalMemoryFallback || typeof base?.duplicate !== 'function') {
+    return globalMemoryFallback;
+  }
+  if (!subscriberClient) {
+    subscriberClient = base.duplicate();
+    subscriberClient.setMaxListeners?.(0);
+    subscriberClient.on('error', () => {
+      // The shared client's handler logs connection problems; avoid crashing here.
+    });
+  }
+  return subscriberClient;
 }
 
 export const redis = getRedisClient();

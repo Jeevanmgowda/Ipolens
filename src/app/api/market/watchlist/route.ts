@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
+import { WatchlistBodySchema, firstIssue } from '@/lib/security/schemas';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,12 +27,11 @@ export async function POST(request: Request) {
     if (!user) return unauthorizedResponse();
     const userId = user.id;
 
-    const body = await request.json();
-    const { symbol, companyName } = body;
-
-    if (!symbol) {
-      return NextResponse.json({ success: false, error: 'Symbol is required' }, { status: 400 });
+    const parsed = WatchlistBodySchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const { symbol, companyName } = parsed.data;
 
     const result = await DbRepositoryService.toggleWatchlist(userId, symbol, companyName);
 
@@ -41,6 +42,6 @@ export async function POST(request: Request) {
       watchlisted: result.watchlisted,
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(error) }, { status: 500 });
   }
 }

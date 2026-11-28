@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { parseBrokerCsv } from '@/services/brokerParser';
 import { DbRepositoryService } from '@/lib/services/db-repository.service';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/security/session';
+import { publicErrorMessage } from '@/lib/security/apiError';
 
 export async function POST(request: Request) {
   try {
@@ -51,6 +52,6 @@ export async function POST(request: Request) {
     });
   } catch (err: any) {
     console.error('Error in /api/portfolio/upload:', err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: publicErrorMessage(err) }, { status: 500 });
   }
 }

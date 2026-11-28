@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { connection } from 'next/server';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 
@@ -12,11 +13,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Render per request so Next.js can apply the CSP nonce from src/proxy.ts
+  // (static pages cannot carry a per-request nonce).
+  await connection();
   return (
     <html
       lang="en"

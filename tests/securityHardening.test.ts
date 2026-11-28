@@ -93,7 +93,10 @@ describe('Security Hardening Suite', () => {
   describe('CORS Origin Filtering', () => {
     it('should allow trusted origins and reject untrusted third parties', () => {
       expect(isAllowedOrigin('http://localhost:3000')).toBe(true);
-      expect(isAllowedOrigin('https://app.ipolens.in')).toBe(true);
+      // Subdomains are no longer trusted by wildcard (audit L1); list them in CORS_ALLOWED_ORIGINS.
+      expect(isAllowedOrigin('https://app.ipolens.in')).toBe(false);
+      // Same-origin requests are allowed: the page's Origin host equals the request host.
+      expect(isAllowedOrigin('https://app.ipolens.in', 'app.ipolens.in')).toBe(true);
       expect(isAllowedOrigin('https://malicious-attacker.com')).toBe(false);
       expect(isAllowedOrigin(null)).toBe(true); // Server-to-server / non-browser requests
     });
