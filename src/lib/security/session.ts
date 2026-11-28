@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { db, isDatabaseActive, reportDatabaseFailure, schema } from '@/db';
 import { eq, and, gt } from 'drizzle-orm';
-import { registeredUsersStore, toPublicUser } from '@/services/authStore';
+import { registeredUsersStore, secureLegacyPrimaryPan, toPublicUser } from '@/services/authStore';
 import { User } from '@/types/auth';
 
 /**
@@ -16,13 +16,23 @@ export interface ActiveSession {
   userId: string;
   expiresAt: Date;
   createdAt: Date;
+  /** Last request made with this session (idle timeout). */
+  lastSeenAt: Date;
   /** When this cache entry was last confirmed against the database. */
   checkedAt?: number;
+  /** When last_seen_at was last written to the database. */
+  lastSeenPersistedAt?: number;
 }
 
 /** In database mode, cached sessions are re-checked this often, so a sign-out on
  *  another instance takes effect within a minute (audit L4). */
 const SESSION_RECHECK_MS = 60 * 1000;
+
+/** Sessions unused for this long are revoked, whatever their absolute expiry (audit L4). */
+export const SESSION_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
+/** last_seen_at is written at most this often per session, to keep request overhead low. */
+const LAST_SEEN_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 
 // In-memory sessions store fallback
 const inMemorySessions = new Map<string, ActiveSession>();
@@ -50,6 +60,7 @@ export async function createSession(
         userId,
         expiresAt,
         createdAt,
+        lastSeenAt: createdAt,
       });
     } catch (err) {
       reportDatabaseFailure('saving session to DB', err);
@@ -62,27 +73,48 @@ export async function createSession(
     userId,
     expiresAt,
     createdAt,
+    lastSeenAt: createdAt,
     checkedAt: Date.now(),
+    lastSeenPersistedAt: Date.now(),
   });
 
   return { token, expiresAt };
 }
 
+function isIdle(lastSeenAt: Date, now: number): boolean {
+  return now - lastSeenAt.getTime() > SESSION_IDLE_TIMEOUT_MS;
+}
+
+/** Records activity in memory and, at most every few minutes, in the database. */
+function touchSession(session: ActiveSession, now: number): void {
+  session.lastSeenAt = new Date(now);
+  if (!isDatabaseActive() || !db) return;
+  if (session.lastSeenPersistedAt && now - session.lastSeenPersistedAt < LAST_SEEN_WRITE_INTERVAL_MS) return;
+  session.lastSeenPersistedAt = now;
+  db.update(schema.sessionsTable)
+    .set({ lastSeenAt: session.lastSeenAt })
+    .where(eq(schema.sessionsTable.id, session.token))
+    .catch((err: unknown) => reportDatabaseFailure('updating session last_seen_at', err));
+}
+
 /**
- * Validate a session token and return the associated userId
+ * Validate a session token and return the associated userId.
+ * Rejects expired sessions and sessions idle for longer than SESSION_IDLE_TIMEOUT_MS.
  */
 export async function validateSession(token: string): Promise<string | null> {
   if (!token) return null;
+  const now = Date.now();
 
   // Check in-memory cache first
   const cached = inMemorySessions.get(token);
   if (cached) {
-    if (cached.expiresAt.getTime() <= Date.now()) {
-      inMemorySessions.delete(token);
+    if (cached.expiresAt.getTime() <= now || isIdle(cached.lastSeenAt, now)) {
+      await destroySession(token);
       return null;
     }
-    const fresh = !cached.checkedAt || Date.now() - cached.checkedAt < SESSION_RECHECK_MS;
+    const fresh = !cached.checkedAt || now - cached.checkedAt < SESSION_RECHECK_MS;
     if (fresh || !isDatabaseActive() || !db) {
+      touchSession(cached, now);
       return cached.userId;
     }
   }
@@ -96,21 +128,31 @@ export async function validateSession(token: string): Promise<string | null> {
         .where(
           and(
             eq(schema.sessionsTable.id, token),
-            gt(schema.sessionsTable.expiresAt, new Date())
+            gt(schema.sessionsTable.expiresAt, new Date(now))
           )
         )
         .limit(1);
 
       if (rows.length > 0) {
         const row = rows[0];
-        // Cache in memory
-        inMemorySessions.set(token, {
+        // Another instance may have seen more recent activity than this cache.
+        const lastSeenAt =
+          cached && cached.lastSeenAt.getTime() > row.lastSeenAt.getTime() ? cached.lastSeenAt : row.lastSeenAt;
+        if (isIdle(lastSeenAt, now)) {
+          await destroySession(token);
+          return null;
+        }
+        const session: ActiveSession = {
           token: row.id,
           userId: row.userId,
           expiresAt: row.expiresAt,
           createdAt: row.createdAt,
-          checkedAt: Date.now(),
-        });
+          lastSeenAt,
+          checkedAt: now,
+          lastSeenPersistedAt: cached?.lastSeenPersistedAt ?? row.lastSeenAt.getTime(),
+        };
+        inMemorySessions.set(token, session);
+        touchSession(session, now);
         return row.userId;
       }
       // Revoked or expired in the database (e.g. signed out on another instance).
@@ -118,6 +160,11 @@ export async function validateSession(token: string): Promise<string | null> {
       return null;
     } catch (err) {
       reportDatabaseFailure('querying session from DB', err);
+      // Database unreachable: keep honouring a still-valid cached session.
+      if (cached) {
+        touchSession(cached, now);
+        return cached.userId;
+      }
     }
   }
 
@@ -195,13 +242,16 @@ export async function getAuthenticatedUser(request: Request): Promise<User | nul
 
       if (rows.length > 0) {
         const r = rows[0];
+        const { primaryPan } = r.primaryPanHash
+          ? { primaryPan: r.primaryPan || undefined }
+          : await secureLegacyPrimaryPan(r.id, r.primaryPan);
         return toPublicUser({
           id: r.id,
           name: r.name,
           email: r.email,
           role: r.role as any,
           investorCategory: r.investorCategory as any,
-          primaryPan: r.primaryPan || undefined,
+          primaryPan,
           avatarUrl: r.avatarUrl || undefined,
           createdAt: r.createdAt.toISOString(),
         });

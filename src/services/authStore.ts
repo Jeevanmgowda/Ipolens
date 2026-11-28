@@ -4,7 +4,8 @@ import { isValidEmail } from '../lib/security/sanitize';
 import { isValidPan } from './duplicateEnforcer';
 import { hashPassword, verifyPassword } from '../lib/security/passwordHash';
 import { hashPanForLookup, isRawPan, maskPan } from '../lib/security/panEncryption';
-import { db, isPostgresConfigured, schema } from '../db';
+import { eq } from 'drizzle-orm';
+import { db, isDatabaseActive, isPostgresConfigured, reportDatabaseFailure, schema } from '../db';
 
 export interface RegisteredUserRecord extends User {
   passwordHash: string;
@@ -43,13 +44,46 @@ export function toPublicUser(record: User & Partial<RegisteredUserRecord>): User
 }
 
 /**
- * HMAC of the user's primary PAN. Only in-memory accounts carry it: the users
- * table has no hash column yet (schema changes are pending on the Supabase
- * branch), so database-only accounts must add their own PAN as a "Self" family
- * profile to use the allotment check.
+ * Lazy migration for users rows saved before primary_pan_hash existed (audit M8):
+ * a plain-text primary_pan is replaced by its masked form plus the keyed hash.
+ * Returns the secured values; the database write is best effort.
  */
-export function getPrimaryPanHash(userId: string): string | undefined {
-  return registeredUsersStore.find((u) => u.id === userId)?.primaryPanHash;
+export async function secureLegacyPrimaryPan(
+  userId: string,
+  storedPan: string | null | undefined
+): Promise<{ primaryPan?: string; primaryPanHash?: string }> {
+  const secured = securePrimaryPan(storedPan || undefined);
+  if (!storedPan || !isRawPan(storedPan) || !isDatabaseActive() || !db) return secured;
+  try {
+    await db
+      .update(schema.usersTable)
+      .set({ primaryPan: secured.primaryPan ?? null, primaryPanHash: secured.primaryPanHash ?? null })
+      .where(eq(schema.usersTable.id, userId));
+  } catch (err) {
+    reportDatabaseFailure('masking legacy primary_pan', err);
+  }
+  return secured;
+}
+
+/** HMAC of the user's primary PAN, from memory or users.primary_pan_hash. */
+export async function getPrimaryPanHash(userId: string): Promise<string | undefined> {
+  const cached = registeredUsersStore.find((u) => u.id === userId);
+  if (cached?.primaryPanHash) return cached.primaryPanHash;
+  if (!isDatabaseActive() || !db) return undefined;
+  try {
+    const rows = await db
+      .select({ primaryPan: schema.usersTable.primaryPan, primaryPanHash: schema.usersTable.primaryPanHash })
+      .from(schema.usersTable)
+      .where(eq(schema.usersTable.id, userId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return undefined;
+    if (row.primaryPanHash) return row.primaryPanHash;
+    return (await secureLegacyPrimaryPan(userId, row.primaryPan)).primaryPanHash;
+  } catch (err) {
+    reportDatabaseFailure('reading primary_pan_hash', err);
+    return undefined;
+  }
 }
 
 /**
@@ -249,6 +283,7 @@ export function validateAndRegisterUser(creds: SignUpCredentials): { valid: bool
         role: newUser.role,
         investorCategory: newUser.investorCategory || 'Retail',
         primaryPan: newUser.primaryPan,
+        primaryPanHash: newUser.primaryPanHash,
         createdAt: new Date(newUser.createdAt),
       }).then(() => {}).catch((e: any) => console.warn('[AuthStore] Error syncing user to DB:', e));
     } catch (e) {

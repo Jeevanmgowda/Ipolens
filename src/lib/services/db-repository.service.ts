@@ -67,9 +67,9 @@ export class DbRepositoryService {
   }
 
   /**
-   * True when `rawPan` is one of this user's saved family PANs. In-memory profiles
-   * carry a keyed hash; database rows are checked by decrypting pan_encrypted
-   * (no hash column yet; see getPrimaryPanHash in authStore).
+   * True when `rawPan` is one of this user's saved family PANs, compared by keyed
+   * hash (family_pans.pan_hash). Rows saved before the hash column existed are
+   * checked by decrypting pan_encrypted and get their hash backfilled on a match.
    */
   static async userOwnsFamilyPan(userId: string, rawPan: string): Promise<boolean> {
     const clean = rawPan.trim().toUpperCase();
@@ -77,10 +77,22 @@ export class DbRepositoryService {
     if (this.isDatabaseActive() && db) {
       try {
         const rows = await db
-          .select({ panEncrypted: schema.familyPansTable.panEncrypted })
+          .select({
+            id: schema.familyPansTable.id,
+            panHash: schema.familyPansTable.panHash,
+            panEncrypted: schema.familyPansTable.panEncrypted,
+          })
           .from(schema.familyPansTable)
           .where(eq(schema.familyPansTable.userId, userId));
-        if (rows.some((r) => r.panEncrypted && decryptPan(r.panEncrypted) === clean)) return true;
+        if (rows.some((r) => r.panHash === wanted)) return true;
+        const legacy = rows.find((r) => !r.panHash && r.panEncrypted && decryptPan(r.panEncrypted) === clean);
+        if (legacy) {
+          await db
+            .update(schema.familyPansTable)
+            .set({ panHash: wanted })
+            .where(and(eq(schema.familyPansTable.id, legacy.id), eq(schema.familyPansTable.userId, userId)));
+          return true;
+        }
       } catch (err) {
         handleDbError('checking family_pans ownership', err);
       }
@@ -101,6 +113,7 @@ export class DbRepositoryService {
       ...profile,
       pan: masked,
     };
+    const panHash = rawToEncrypt && isRawPan(rawToEncrypt) ? hashPanForLookup(rawToEncrypt) : undefined;
 
     if (this.isDatabaseActive() && db) {
       try {
@@ -111,6 +124,7 @@ export class DbRepositoryService {
           relationship: secureProfile.relationship,
           pan: secureProfile.pan,
           panEncrypted: encrypted,
+          panHash: panHash || null,
           broker: secureProfile.broker,
           dematId: secureProfile.dematId,
           bankUpi: secureProfile.bankUpi,
@@ -123,7 +137,6 @@ export class DbRepositoryService {
 
     // Always keep memory store synchronized
     const memoryStore = getUserPansStore();
-    const panHash = rawToEncrypt && isRawPan(rawToEncrypt) ? hashPanForLookup(rawToEncrypt) : undefined;
     const ownedProfile = { ...secureProfile, userId, panHash };
     const existingIdx = memoryStore.findIndex((p) => p.id === secureProfile.id);
     if (existingIdx === -1) {

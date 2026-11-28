@@ -16,6 +16,7 @@ export const familyPansTable = pgTable('family_pans', {
   relationship: varchar('relationship', { length: 32 }).notNull(), // 'Self' | 'Spouse' | 'Parent' | 'Child' | 'HUF' | 'Other'
   pan: varchar('pan', { length: 16 }).notNull(),                   // Masked/Secure PAN (e.g. ABCDE****F)
   panEncrypted: text('pan_encrypted'),                            // AES-256-GCM Encrypted PAN string
+  panHash: varchar('pan_hash', { length: 64 }),                    // HMAC-SHA256 of the PAN for ownership checks (server key)
   broker: varchar('broker', { length: 64 }).notNull(),             // 'Zerodha' | 'Groww' | 'AngelOne' | 'Upstox'
   dematId: varchar('demat_id', { length: 64 }),                    // DP Client ID
   bankUpi: varchar('bank_upi', { length: 64 }),                    // UPI ID for ASBA mandate
@@ -191,7 +192,8 @@ export const usersTable = pgTable('users', {
   salt: varchar('salt', { length: 64 }).notNull(),
   role: varchar('role', { length: 32 }).notNull().default('retail'), // 'retail' | 'hni' | 'institutional' | 'admin'
   investorCategory: varchar('investor_category', { length: 32 }).notNull().default('Retail'), // 'Retail' | 'sNII' | 'bNII' | 'Institutional'
-  primaryPan: varchar('primary_pan', { length: 32 }),
+  primaryPan: varchar('primary_pan', { length: 32 }),                // Masked PAN only (e.g. ABCDE****F)
+  primaryPanHash: varchar('primary_pan_hash', { length: 64 }),      // HMAC-SHA256 of the primary PAN for ownership checks
   avatarUrl: text('avatar_url'),
   termsAccepted: boolean('terms_accepted').default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -206,6 +208,7 @@ export const sessionsTable = pgTable('user_sessions', {
   userId: varchar('user_id', { length: 64 }).notNull(),
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),    // Idle timeout: sessions unused for 24 h are revoked
 });
 
 // 13. In-App & Multi-Channel Notifications Table

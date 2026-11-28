@@ -100,7 +100,7 @@ export async function POST(request: Request) {
       );
     }
     const ownsPan =
-      getPrimaryPanHash(user.id) === hashPanForLookup(normalizedPan) ||
+      (await getPrimaryPanHash(user.id)) === hashPanForLookup(normalizedPan) ||
       (await DbRepositoryService.userOwnsFamilyPan(user.id, normalizedPan));
     if (!ownsPan) {
       return NextResponse.json(

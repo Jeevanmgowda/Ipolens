@@ -29,6 +29,13 @@
       "when": 1795785183774,
       "tag": "0003_lock_down_public_api",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795841482724,
+      "tag": "0004_pan_hashes_session_idle",
+      "breakpoints": true
     }
   ]
 }
