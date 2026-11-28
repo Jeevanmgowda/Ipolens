@@ -98,14 +98,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Database is not configured (DATABASE_URL).' }, { status: 503 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const rawBody = await req.json().catch(() => ({}));
+  if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+    return NextResponse.json({ success: false, error: 'Request body must be a JSON object.' }, { status: 400 });
+  }
+  const body = rawBody as Record<string, unknown>;
   const mode = typeof body.mode === 'string' ? body.mode : 'live';
   const startedAt = new Date().toISOString();
+  const routeDeadlineMs = Date.now() + 295_000;
 
   try {
     if (mode === 'live') {
       const ingestion = await runIpoIngestion();
-      const quotes = await refreshListedQuotes().catch((err) => ({ error: (err as Error).message }));
+      const quotes = await refreshListedQuotes({ deadlineMs: routeDeadlineMs }).catch((err) => ({
+        error: (err as Error).message,
+      }));
       const report = { ...ingestion, quotes };
       const ok = ingestion.upserted > 0 || ingestion.errors.length === 0;
       await recordSyncRun({ mode, startedAt, ok, summary: report });

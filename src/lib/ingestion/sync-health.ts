@@ -8,6 +8,8 @@ import { getDb, schema } from '@/db';
 
 const SYMBOL = '__SYNC__';
 const TYPE = 'SYNC_RUN';
+const LAST_SUCCESS_TYPE = 'SYNC_LAST_SUCCESS';
+const BACKFILL_CHECKPOINT_TYPE = 'BACKFILL_CHECKPOINT';
 
 export interface SyncRun {
   mode: string;
@@ -24,11 +26,39 @@ export interface SyncHealth {
 
 export async function recordSyncRun(run: SyncRun): Promise<void> {
   const db = getDb();
+  const finishedAt = run.finishedAt ?? new Date().toISOString();
+  const entry = { ...run, finishedAt };
   await db.insert(schema.exchangeSnapshotsTable).values({
     symbol: SYMBOL,
     snapshotType: TYPE,
-    data: { ...run, finishedAt: run.finishedAt ?? new Date().toISOString() },
+    data: entry,
   });
+
+  if (run.ok && run.mode === 'live') {
+    await db
+      .delete(schema.exchangeSnapshotsTable)
+      .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, LAST_SUCCESS_TYPE)));
+    await db.insert(schema.exchangeSnapshotsTable).values({
+      symbol: SYMBOL,
+      snapshotType: LAST_SUCCESS_TYPE,
+      data: { lastSuccessAt: finishedAt },
+    });
+  }
+
+  if (run.mode === 'backfill' && run.ok) {
+    const s = run.summary as { done?: boolean; nextId?: number } | null;
+    await db
+      .delete(schema.exchangeSnapshotsTable)
+      .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, BACKFILL_CHECKPOINT_TYPE)));
+    if (s && !s.done && typeof s.nextId === 'number' && s.nextId > 0) {
+      await db.insert(schema.exchangeSnapshotsTable).values({
+        symbol: SYMBOL,
+        snapshotType: BACKFILL_CHECKPOINT_TYPE,
+        data: { nextId: s.nextId },
+      });
+    }
+  }
+
   // Keep the log small.
   await db.execute(sql`
     delete from exchange_snapshots
@@ -41,23 +71,43 @@ export async function recordSyncRun(run: SyncRun): Promise<void> {
 }
 
 export async function readSyncHealth(): Promise<SyncHealth> {
-  const rows = await getDb()
-    .select({ data: schema.exchangeSnapshotsTable.data })
-    .from(schema.exchangeSnapshotsTable)
-    .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, TYPE)))
-    .orderBy(desc(schema.exchangeSnapshotsTable.createdAt))
-    .limit(50);
+  const db = getDb();
+  const [rows, successRows] = await Promise.all([
+    db
+      .select({ data: schema.exchangeSnapshotsTable.data })
+      .from(schema.exchangeSnapshotsTable)
+      .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, TYPE)))
+      .orderBy(desc(schema.exchangeSnapshotsTable.createdAt))
+      .limit(50),
+    db
+      .select({ data: schema.exchangeSnapshotsTable.data })
+      .from(schema.exchangeSnapshotsTable)
+      .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, LAST_SUCCESS_TYPE)))
+      .orderBy(desc(schema.exchangeSnapshotsTable.createdAt))
+      .limit(1),
+  ]);
   const runs = rows.map((r) => r.data as SyncRun);
+  const storedSuccess = (successRows[0]?.data as { lastSuccessAt?: string } | undefined)?.lastSuccessAt ?? null;
   const lastSuccess = runs.find((r) => r.ok && r.mode === 'live');
   return {
     lastRun: runs[0] ?? null,
-    lastSuccessAt: lastSuccess ? (lastSuccess.finishedAt ?? lastSuccess.startedAt) : null,
+    lastSuccessAt: storedSuccess ?? (lastSuccess ? (lastSuccess.finishedAt ?? lastSuccess.startedAt) : null),
   };
 }
 
 /** Where an unfinished backfill stopped (the `nextId` of the latest backfill run), if any. */
 export async function lastBackfillCursor(): Promise<number | null> {
-  const rows = await getDb()
+  const db = getDb();
+  const checkpointRows = await db
+    .select({ data: schema.exchangeSnapshotsTable.data })
+    .from(schema.exchangeSnapshotsTable)
+    .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, BACKFILL_CHECKPOINT_TYPE)))
+    .orderBy(desc(schema.exchangeSnapshotsTable.createdAt))
+    .limit(1);
+  const cp = (checkpointRows[0]?.data as { nextId?: number } | undefined)?.nextId;
+  if (typeof cp === 'number' && cp > 0) return cp;
+
+  const rows = await db
     .select({ data: schema.exchangeSnapshotsTable.data })
     .from(schema.exchangeSnapshotsTable)
     .where(and(eq(schema.exchangeSnapshotsTable.symbol, SYMBOL), eq(schema.exchangeSnapshotsTable.snapshotType, TYPE)))

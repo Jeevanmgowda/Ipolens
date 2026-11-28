@@ -119,6 +119,19 @@ describe('Ingestion into Postgres (PGlite)', () => {
     expect(view.rhpUrl).toBe(detail.rhpUrl);
   });
 
+  it('reconciles the later live report GMP reading over the earlier detail reading for the same date', async () => {
+    const reportRows = JSON.parse(fx('investorgain-report.json')).reportTableData.map(parseReportRow).filter(Boolean);
+    const detail = parseDetailPayload(extractDetailPayload(fx('investorgain-detail-open.html'))!)!;
+    const row = reportRows.find((r: { igId: number }) => r.igId === detail.igId);
+    expect(row).toBeDefined();
+    expect(row.gmp).toBe(4);
+
+    await ingestIgDetail(detail, row);
+    const history = await IpoRepository.gmpHistory('FOODLINK');
+    const nov27 = history.find((h) => h.date === '2026-11-27');
+    expect(nov27?.gmp).toBe(4);
+  });
+
   it('moves applications when the symbol changes', async () => {
     const detail = parseDetailPayload(extractDetailPayload(fx('investorgain-detail-open.html'))!)!;
     const noSymbol = { ...detail, nseSymbol: null };

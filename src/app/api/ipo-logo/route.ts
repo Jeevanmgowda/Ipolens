@@ -93,6 +93,9 @@ function cleanCompanyQuery(name: string): string {
     .trim();
 }
 
+const MAX_LOGO_BYTES = 512 * 1024;
+const MIN_LOGO_BYTES = 100;
+
 async function fetchImageWithTimeout(url: string, timeoutMs = 2500): Promise<CachedLogo | null> {
   try {
     const res = await fetch(url, {
@@ -103,9 +106,37 @@ async function fetchImageWithTimeout(url: string, timeoutMs = 2500): Promise<Cac
     if (!res.ok) return null;
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.startsWith('image/')) return null;
-    const buffer = await res.arrayBuffer();
-    if (buffer.byteLength < 100 || buffer.byteLength > 512 * 1024) return null;
-    return { buffer, contentType };
+
+    if (!res.body) return null;
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || value.byteLength === 0) continue;
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_LOGO_BYTES) {
+          await reader.cancel().catch(() => {});
+          return null;
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (totalBytes < MIN_LOGO_BYTES) return null;
+
+    const combined = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { buffer: combined.buffer, contentType };
   } catch {
     return null;
   }

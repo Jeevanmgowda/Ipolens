@@ -188,7 +188,8 @@ export class IpoService {
     ipo: LiveMarketIpoItem,
     timeframe: '1D' | '7D' | '1M' | 'All'
   ): Promise<GmpTrendResponse> {
-    const all = await IpoRepository.gmpHistory(ipo.symbol);
+    const rawAll = await IpoRepository.gmpHistory(ipo.symbol);
+    const all = [...rawAll].sort((a, b) => a.date.localeCompare(b.date) || a.fetchedAt.localeCompare(b.fetchedAt));
     const days = timeframe === '1D' ? 1 : timeframe === '7D' ? 7 : timeframe === '1M' ? 31 : Infinity;
     const cutoff = Number.isFinite(days) ? Date.now() - days * 86_400_000 : -Infinity;
     // Keep at least the latest point so a quiet week still shows the last known GMP.

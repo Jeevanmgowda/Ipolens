@@ -29,7 +29,7 @@ export function deriveSymbol(detail: Pick<IgIpoDetail, 'nseSymbol' | 'bseCode' |
   return slug || `IG${detail.igId}`;
 }
 
-export function detailToUpsert(detail: IgIpoDetail, row?: IgReportRow): IpoUpsert {
+export function detailToUpsert(detail: IgIpoDetail, row?: Partial<IgReportRow>): IpoUpsert {
   const registrarSlug = resolveRegistrarSlug(detail.registrarName, detail.registrarEmail, detail.registrarWebsite);
   return {
     id: `ig_${detail.igId}`,
@@ -118,14 +118,48 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
   return results;
 }
 
-export async function ingestIgDetail(detail: IgIpoDetail, row?: IgReportRow): Promise<{ gmpPoints: number }> {
-  const rec = detailToUpsert(detail, row);
-  await IpoRepository.upsert(rec);
-  if (detail.bids) await IpoRepository.recordSubscription(rec.id, rec.symbol, detail.bids);
+const MONTH_INDEX: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+};
 
-  // Real daily GMP history from the detail payload, plus today's report value.
+function resolveReportGmpDate(updatedOn: string | null | undefined, referenceDate?: string | null): string {
+  if (updatedOn) {
+    const iso = updatedOn.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    if (iso) return iso[1];
+    const dmy = updatedOn.trim().match(/(\d{1,2})[- ]([A-Za-z]{3})(?:[- ](\d{4}|\d{2}(?!:)))?/);
+    if (dmy) {
+      const month = MONTH_INDEX[dmy[2].toLowerCase()];
+      if (month) {
+        const day = dmy[1].padStart(2, '0');
+        let year = dmy[3]
+          ? (dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3])
+          : (referenceDate?.slice(0, 4) || String(new Date().getUTCFullYear()));
+        return `${year}-${month}-${day}`;
+      }
+    }
+  }
+  return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+export async function ingestIgDetail(detail: IgIpoDetail, row?: Partial<IgReportRow>): Promise<{ gmpPoints: number }> {
+  const rec = detailToUpsert(detail, row);
+  const storedSymbol = await IpoRepository.upsert(rec);
+  if (detail.bids) await IpoRepository.recordSubscription(rec.id, storedSymbol, detail.bids);
+
+  // Real daily GMP history from the detail payload, reconciled with the live report reading.
   const points = [...detail.gmpHistory.map((g) => ({ date: g.date, gmp: g.gmp }))];
-  const gmpPoints = await IpoRepository.recordGmpPoints(rec.id, rec.symbol, rec.priceHigh, points, 'InvestorGain');
+  if (row && typeof row.gmp === 'number') {
+    const reportDate = resolveReportGmpDate(row.updatedOn, detail.gmpHistory[0]?.date ?? detail.openDate);
+    const existingIdx = points.findIndex((p) => p.date === reportDate);
+    if (existingIdx >= 0) {
+      points[existingIdx] = { date: reportDate, gmp: row.gmp };
+    } else {
+      points.push({ date: reportDate, gmp: row.gmp });
+    }
+  }
+  const gmpPoints = await IpoRepository.recordGmpPoints(rec.id, storedSymbol, rec.priceHigh, points, 'InvestorGain');
+  await IpoRepository.markIgDetailCompleted(rec.id);
   return { gmpPoints };
 }
 
@@ -164,15 +198,25 @@ export async function runIpoIngestion(options: { detailIds?: number[] } = {}): P
   let bseOnlyAdded = 0;
   try {
     bseIssues = await fetchBsePublicIssues();
+    const storedIpos = await IpoRepository.listAll();
     for (const b of bseIssues) {
       const key = normalizeCompanyName(b.name);
-      const covered = [...igNames].some((n) => n && (key.startsWith(n) || n.startsWith(key)));
-      if (!covered && b.status !== 'other') {
-        const existing = await IpoRepository.getById(`bse_${b.scripCode}`);
-        if (!existing || existing.source === 'BSE') {
-          await IpoRepository.upsert(bseToUpsert(b));
-          bseOnlyAdded++;
-        }
+      const coveredInRun = [...igNames].some((n) => n && (key.startsWith(n) || n.startsWith(key)));
+      if (coveredInRun || b.status === 'other') continue;
+
+      const matchedStored = storedIpos.find((r) => {
+        if (r.id === `bse_${b.scripCode}`) return true;
+        if (r.extra?.bseScripCode === b.scripCode) return true;
+        const rn = normalizeCompanyName(r.companyName);
+        return Boolean(rn && key && (key.startsWith(rn) || rn.startsWith(key)));
+      });
+
+      if (!matchedStored) {
+        await IpoRepository.upsert(bseToUpsert(b));
+        bseOnlyAdded++;
+      } else if (matchedStored.source === 'BSE' && matchedStored.id === `bse_${b.scripCode}`) {
+        await IpoRepository.upsert(bseToUpsert(b));
+        bseOnlyAdded++;
       }
     }
   } catch (err) {

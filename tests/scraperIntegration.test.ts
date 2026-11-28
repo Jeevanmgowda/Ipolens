@@ -102,8 +102,15 @@ describe('Python Scraper Integration Pipeline', () => {
   });
 
   it('reports sync status from Supabase (503 when no database is configured)', async () => {
-    const offline = await GET();
-    expect(offline.status).toBe(503);
+    const prevDbUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    try {
+      const offline = await GET();
+      expect(offline.status).toBe(503);
+    } finally {
+      if (prevDbUrl !== undefined) process.env.DATABASE_URL = prevDbUrl;
+      else delete process.env.DATABASE_URL;
+    }
 
     const { close } = await createTestDatabase();
     try {

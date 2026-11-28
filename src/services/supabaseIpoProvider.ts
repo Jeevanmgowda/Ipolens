@@ -249,8 +249,8 @@ export function toLiveIpoSummary(i: LiveMarketIpoItem): LiveIpoSummary {
     issueSize: i.issueSize,
     issueSizeCr: i.issueSizeCr,
     noOfTime: i.hasSubscriptionData ? i.currentSubscription.toFixed(2) : undefined,
-    gmpEstimate: i.hasGmpData || i.isAiPredictedGmp ? i.gmp : undefined,
-    gmpPercent: i.hasGmpData || i.isAiPredictedGmp ? i.gmpPercent : undefined,
+    gmpEstimate: i.hasGmpData ? i.gmp : undefined,
+    gmpPercent: i.hasGmpData ? i.gmpPercent : undefined,
     retailSubscription: i.hasSubscriptionData ? i.retailSubscription : undefined,
     niiSubscription: i.hasSubscriptionData ? i.niiSubscription : undefined,
     qibSubscription: i.hasSubscriptionData ? i.qibSubscription : undefined,
@@ -311,7 +311,7 @@ export function toLiveIpoDetail(i: LiveMarketIpoItem): LiveIpoDetail {
     dayChange: i.dayChange,
     dayChangePercent: i.dayChangePercent,
     volume: i.volume,
-    gmpEstimate: i.hasGmpData || i.isAiPredictedGmp ? i.gmp : undefined,
-    expectedListingGainPct: i.hasGmpData || i.isAiPredictedGmp ? i.gmpPercent : undefined,
+    gmpEstimate: i.hasGmpData ? i.gmp : undefined,
+    expectedListingGainPct: i.hasGmpData ? i.gmpPercent : undefined,
   };
 }

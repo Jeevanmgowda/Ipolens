@@ -116,7 +116,14 @@ export async function importSnapshot(file: SnapshotFile): Promise<JsonImportRepo
         report.matchedExisting++;
         target = { id: match.id, symbol: match.symbol, priceHigh: match.priceHigh };
       } else {
-        await IpoRepository.upsert(rec);
+        const toSave = match ? { ...rec, id: match.id, symbol: match.symbol } : rec;
+        await IpoRepository.upsert(toSave);
+        const saved = await IpoRepository.getById(toSave.id);
+        if (saved) {
+          byName.set(key, saved);
+          bySymbol.set(saved.symbol, saved);
+          target = { id: saved.id, symbol: saved.symbol, priceHigh: saved.priceHigh };
+        }
         report.inserted++;
       }
 

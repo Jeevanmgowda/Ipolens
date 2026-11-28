@@ -74,6 +74,7 @@ async function backfill() {
     }
     fromId = report.nextId;
   }
+  throw new Error(`Incomplete backfill: reached 200-batch limit without finishing (last nextId: ${fromId ?? 'unknown'})`);
 }
 
 async function importJson() {

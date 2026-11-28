@@ -103,6 +103,7 @@ export interface IpoExtra {
   leadManagers?: string[];
   registrarWebsite?: string | null;
   bseScripCode?: number | null;
+  igDetailCompleted?: boolean;
 }
 
 export interface IpoRecord {
@@ -220,7 +221,7 @@ function toRecord(r: typeof schema.iposTable.$inferSelect): IpoRecord {
 }
 
 export class IpoRepository {
-  static async upsert(rec: IpoUpsert): Promise<void> {
+  static async upsert(rec: IpoUpsert): Promise<string> {
     const db = getDb();
     const now = new Date();
     const values = {
@@ -251,44 +252,76 @@ export class IpoRepository {
       updatedAt: now,
     };
 
-    // Another row may already hold this symbol. A JSON-snapshot row for the same company is
-    // superseded by the richer record (its GMP points move across); any other clash keeps both
-    // rows by giving this one an id-suffixed symbol.
-    const holder = await db
-      .select({ id: schema.iposTable.id, source: schema.iposTable.source })
-      .from(schema.iposTable)
-      .where(eq(schema.iposTable.symbol, rec.symbol))
-      .limit(1);
-    if (holder[0] && holder[0].id !== rec.id) {
-      if (holder[0].source?.startsWith(SNAPSHOT_SOURCE_PREFIX)) {
-        await db
-          .update(schema.ipoGmpHistoryTable)
-          .set({ ipoId: rec.id })
-          .where(eq(schema.ipoGmpHistoryTable.ipoId, holder[0].id));
-        await db.delete(schema.iposTable).where(eq(schema.iposTable.id, holder[0].id));
-      } else {
-        values.symbol = `${rec.symbol.slice(0, 18)}_${rec.id}`.slice(0, 32).toUpperCase();
+    await db.transaction(async (tx) => {
+      // Another row may already hold this symbol. A JSON-snapshot row for the same company is
+      // superseded by the richer record (its GMP points move across); any other clash keeps both
+      // rows by giving this one an id-suffixed symbol.
+      const holder = await tx
+        .select({ id: schema.iposTable.id, source: schema.iposTable.source })
+        .from(schema.iposTable)
+        .where(eq(schema.iposTable.symbol, rec.symbol))
+        .limit(1);
+      if (holder[0] && holder[0].id !== rec.id) {
+        if (holder[0].source?.startsWith(SNAPSHOT_SOURCE_PREFIX)) {
+          await tx
+            .update(schema.ipoGmpHistoryTable)
+            .set({ ipoId: rec.id })
+            .where(eq(schema.ipoGmpHistoryTable.ipoId, holder[0].id));
+          await tx.delete(schema.iposTable).where(eq(schema.iposTable.id, holder[0].id));
+        } else {
+          values.symbol = `${rec.symbol.slice(0, 18)}_${rec.id}`.slice(0, 32).toUpperCase();
+        }
       }
-    }
 
-    // If the symbol changed (e.g. NSE symbol published after we first saw the issue), move
-    // the user's applications along with it so allotment checks keep working.
-    const existing = await db
-      .select({ symbol: schema.iposTable.symbol })
+      // If the symbol changed (e.g. NSE symbol published after we first saw the issue), move
+      // user applications and symbol-keyed observations along with it.
+      const existing = await tx
+        .select({ symbol: schema.iposTable.symbol })
+        .from(schema.iposTable)
+        .where(eq(schema.iposTable.id, rec.id))
+        .limit(1);
+      if (existing[0] && existing[0].symbol !== values.symbol) {
+        const oldSym = existing[0].symbol;
+        await tx
+          .update(schema.ipoApplicationsTable)
+          .set({ ipoSymbol: values.symbol })
+          .where(eq(schema.ipoApplicationsTable.ipoSymbol, oldSym));
+        await tx
+          .update(schema.ipoSubscriptionsTable)
+          .set({ symbol: values.symbol })
+          .where(eq(schema.ipoSubscriptionsTable.symbol, oldSym));
+        await tx
+          .update(schema.ipoGmpHistoryTable)
+          .set({ symbol: values.symbol })
+          .where(eq(schema.ipoGmpHistoryTable.symbol, oldSym));
+        await tx
+          .update(schema.gmpPredictionsTable)
+          .set({ symbol: values.symbol })
+          .where(eq(schema.gmpPredictionsTable.symbol, oldSym));
+      }
+
+      await tx
+        .insert(schema.iposTable)
+        .values(values)
+        .onConflictDoUpdate({ target: schema.iposTable.id, set: { ...values, createdAt: undefined } });
+    });
+
+    return values.symbol;
+  }
+
+  static async markIgDetailCompleted(id: string): Promise<void> {
+    const db = getDb();
+    const rows = await db
+      .select({ raw: schema.iposTable.raw })
       .from(schema.iposTable)
-      .where(eq(schema.iposTable.id, rec.id))
+      .where(eq(schema.iposTable.id, id))
       .limit(1);
-    if (existing[0] && existing[0].symbol !== values.symbol) {
-      await db
-        .update(schema.ipoApplicationsTable)
-        .set({ ipoSymbol: values.symbol })
-        .where(eq(schema.ipoApplicationsTable.ipoSymbol, existing[0].symbol));
-    }
-
+    if (!rows[0]) return;
+    const raw = (rows[0].raw as IpoExtra) || {};
     await db
-      .insert(schema.iposTable)
-      .values(values)
-      .onConflictDoUpdate({ target: schema.iposTable.id, set: { ...values, createdAt: undefined } });
+      .update(schema.iposTable)
+      .set({ raw: { ...raw, igDetailCompleted: true }, updatedAt: new Date() })
+      .where(eq(schema.iposTable.id, id));
   }
 
   static async getBySymbol(symbol: string): Promise<IpoRecord | null> {
@@ -324,14 +357,23 @@ export class IpoRepository {
       .where(eq(schema.ipoSubscriptionsTable.symbol, symbol))
       .orderBy(desc(schema.ipoSubscriptionsTable.recordedAt))
       .limit(1);
-    if (last[0] && Number(last[0].total) === s.total && Number(last[0].retail) === (s.retail ?? 0)) return;
+    if (
+      last[0] &&
+      num(last[0].total) === s.total &&
+      num(last[0].retail) === (s.retail ?? 0) &&
+      num(last[0].nii) === (s.nii ?? 0) &&
+      num(last[0].qib) === (s.qib ?? 0) &&
+      num(last[0].employee) === s.employee
+    ) {
+      return;
+    }
     await db.insert(schema.ipoSubscriptionsTable).values({
       ipoId,
       symbol,
       retail: (s.retail ?? 0).toFixed(2),
       nii: (s.nii ?? 0).toFixed(2),
       qib: (s.qib ?? 0).toFixed(2),
-      employee: (s.employee ?? 0).toFixed(2),
+      employee: dec(s.employee),
       total: s.total.toFixed(2),
     });
   }
@@ -347,7 +389,12 @@ export class IpoRepository {
     if (!points.length) return 0;
     const db = getDb();
     const existing = await db
-      .select({ id: schema.ipoGmpHistoryTable.id, recordedAt: schema.ipoGmpHistoryTable.recordedAt, gmp: schema.ipoGmpHistoryTable.gmp })
+      .select({
+        id: schema.ipoGmpHistoryTable.id,
+        recordedAt: schema.ipoGmpHistoryTable.recordedAt,
+        gmp: schema.ipoGmpHistoryTable.gmp,
+        gmpPercent: schema.ipoGmpHistoryTable.gmpPercent,
+      })
       .from(schema.ipoGmpHistoryTable)
       .where(and(eq(schema.ipoGmpHistoryTable.symbol, symbol), eq(schema.ipoGmpHistoryTable.source, source)));
     const istDate = (d: Date) => todayIst(d);
@@ -358,15 +405,18 @@ export class IpoRepository {
     const today = todayIst(fetchedAt);
     const todayPoint = points.find((p) => p.date === today);
     const todayRow = byDate.get(today);
-    if (todayPoint && todayRow && Number(todayRow.gmp) !== todayPoint.gmp) {
-      await db
-        .update(schema.ipoGmpHistoryTable)
-        .set({
-          gmp: todayPoint.gmp.toFixed(2),
-          gmpPercent: priceHigh ? ((todayPoint.gmp / priceHigh) * 100).toFixed(2) : null,
-          fetchedAt,
-        })
-        .where(eq(schema.ipoGmpHistoryTable.id, todayRow.id));
+    if (todayPoint && todayRow) {
+      const nextPct = priceHigh ? Number(((todayPoint.gmp / priceHigh) * 100).toFixed(2)) : null;
+      if (Number(todayRow.gmp) !== todayPoint.gmp || num(todayRow.gmpPercent) !== nextPct) {
+        await db
+          .update(schema.ipoGmpHistoryTable)
+          .set({
+            gmp: todayPoint.gmp.toFixed(2),
+            gmpPercent: nextPct !== null ? nextPct.toFixed(2) : null,
+            fetchedAt,
+          })
+          .where(eq(schema.ipoGmpHistoryTable.id, todayRow.id));
+      }
     }
 
     const fresh = points.filter((p) => !byDate.has(p.date));
@@ -476,7 +526,7 @@ function toView(
   pred?: typeof schema.gmpPredictionsTable.$inferSelect
 ): IpoDbView {
   const registrar = getRegistrar(r.registrarSlug);
-  const totalIssue = (r.freshIssueCr ?? 0) + (r.ofsCr ?? 0);
+  const totalIssue = r.freshIssueCr !== null && r.ofsCr !== null ? r.freshIssueCr + r.ofsCr : null;
   // For listed issues this is the final pre-listing GMP (useful to compare with the actual listing).
   const gmpValue = gmp ? Number(gmp.gmp) : null;
   const issuePrice = r.issuePrice ?? r.priceHigh;
@@ -500,7 +550,7 @@ function toView(
     issueSizeCr: r.issueSizeCr,
     freshIssueCr: r.freshIssueCr,
     ofsCr: r.ofsCr,
-    ofsPercent: totalIssue > 0 && r.ofsCr !== null ? Math.round(((r.ofsCr / totalIssue) * 100) * 10) / 10 : null,
+    ofsPercent: totalIssue !== null && totalIssue > 0 && r.ofsCr !== null ? Math.round(((r.ofsCr / totalIssue) * 100) * 10) / 10 : null,
     openDate: r.openDate,
     closeDate: r.closeDate,
     allotmentDate: r.allotmentDate,

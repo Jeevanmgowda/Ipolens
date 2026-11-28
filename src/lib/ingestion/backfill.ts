@@ -59,11 +59,13 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<Backfi
   const cutoffDate = cutoffFor(months);
 
   const stored = await IpoRepository.listAll();
-  const knownIds = new Set(
-    stored.map((r) => r.extra?.igId).filter((n): n is number => typeof n === 'number' && n > 0)
-  );
+  const knownById = new Map<number, (typeof stored)[number]>();
+  for (const r of stored) {
+    const igId = r.extra?.igId;
+    if (typeof igId === 'number' && igId > 0) knownById.set(igId, r);
+  }
   const resumeAt = options.fromId === undefined && !options.restart ? await lastBackfillCursor() : null;
-  const fromId = options.fromId ?? resumeAt ?? (knownIds.size ? Math.max(...knownIds) : 0);
+  const fromId = options.fromId ?? resumeAt ?? (knownById.size ? Math.max(...knownById.keys()) : 0);
   if (!fromId) {
     return {
       fromId: 0,
@@ -100,9 +102,22 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<Backfi
   let consecutiveMisses = 0;
   let id = fromId;
   while (id > 0 && report.requests < maxRequests) {
-    if (knownIds.has(id)) {
+    const known = knownById.get(id);
+    if (known && known.extra?.igDetailCompleted === true) {
       report.skippedKnown++;
+      consecutiveMisses = 0;
+      const opened = known.openDate ?? known.closeDate ?? known.listingDate;
+      if (opened && opened < cutoffDate) {
+        consecutiveOld++;
+      } else {
+        consecutiveOld = 0;
+      }
       id--;
+      if (consecutiveOld >= stopAfterOld) {
+        report.done = true;
+        report.doneReason = `Reached ${stopAfterOld} consecutive IPOs that opened before ${cutoffDate}.`;
+        break;
+      }
       continue;
     }
     report.requests++;

@@ -52,9 +52,10 @@ export function yahooTickers(r: { symbol: string; exchange: string | null; extra
   const sym = r.symbol;
   const ex = (r.exchange || '').toUpperCase();
   const code = r.extra?.bseScripCode ? `${r.extra.bseScripCode}.BO` : null;
+  const bseOnly = ex.includes('BSE') && !ex.includes('NSE');
   const list = ex.includes('NSE SME')
     ? [`${sym}-SM.NS`, `${sym}.NS`]
-    : ex.includes('BSE SME')
+    : ex.includes('BSE SME') || (bseOnly && code)
       ? [code, `${sym}.BO`]
       : [`${sym}.NS`, code, `${sym}.BO`];
   return [...new Set(list.filter((t): t is string => Boolean(t)))];
@@ -97,7 +98,11 @@ function isStale(fetchedAt: Date | undefined, now: Date): boolean {
   return fetchedAt < lastClose;
 }
 
-export async function refreshListedQuotes(options: { now?: Date; limit?: number } = {}): Promise<QuoteRefreshReport> {
+const lastAttemptAt = new Map<string, number>();
+
+export async function refreshListedQuotes(
+  options: { now?: Date; limit?: number; deadlineMs?: number } = {}
+): Promise<QuoteRefreshReport> {
   const now = options.now ?? new Date();
   const db = getDb();
   const yearAgo = new Date(now.getTime() - 365 * 86_400_000).toISOString().slice(0, 10);
@@ -111,7 +116,10 @@ export async function refreshListedQuotes(options: { now?: Date; limit?: number 
     .from(schema.marketQuotesTable)
     .where(inArray(schema.marketQuotesTable.symbol, listed.map((r) => r.symbol)));
   const fetchedAt = new Map(existing.map((e) => [e.symbol, e.fetchedAt]));
-  const stale = listed.filter((r) => isStale(fetchedAt.get(r.symbol), now)).slice(0, options.limit ?? 250);
+  const stale = listed
+    .filter((r) => isStale(fetchedAt.get(r.symbol), now))
+    .sort((a, b) => (lastAttemptAt.get(a.symbol) ?? 0) - (lastAttemptAt.get(b.symbol) ?? 0))
+    .slice(0, options.limit ?? 250);
 
   let refreshed = 0;
   let failed = 0;
@@ -119,14 +127,18 @@ export async function refreshListedQuotes(options: { now?: Date; limit?: number 
   await Promise.all(
     Array.from({ length: Math.min(4, stale.length) }, async () => {
       while (next < stale.length) {
+        if (options.deadlineMs && Date.now() >= options.deadlineMs) break;
         const rec = stale[next++];
+        lastAttemptAt.set(rec.symbol, now.getTime());
         try {
           let q: ReturnType<typeof parseYahooQuote> = null;
           for (const ticker of yahooTickers(rec)) {
+            if (options.deadlineMs && Date.now() >= options.deadlineMs) break;
+            const remaining = options.deadlineMs ? Math.max(500, options.deadlineMs - Date.now()) : 8000;
             const json = await fetchJson<YahooChart>(
               SOURCE,
               `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`,
-              { timeoutMs: 8000, retries: 1 }
+              { timeoutMs: Math.min(8000, remaining), retries: 1 }
             ).catch(() => null);
             q = json ? parseYahooQuote(json) : null;
             if (q) break;

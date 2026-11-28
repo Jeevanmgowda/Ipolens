@@ -16,12 +16,15 @@ export async function fetchText(
   init: RequestInit & { timeoutMs?: number; retries?: number } = {}
 ): Promise<string> {
   const { timeoutMs = 15000, retries = 2, headers, ...rest } = init;
+  const mergedHeaders = new Headers(headers);
+  if (!mergedHeaders.has('User-Agent')) mergedHeaders.set('User-Agent', BROWSER_UA);
+  if (!mergedHeaders.has('Accept-Language')) mergedHeaders.set('Accept-Language', 'en-US,en;q=0.9');
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, {
         ...rest,
-        headers: { 'User-Agent': BROWSER_UA, 'Accept-Language': 'en-US,en;q=0.9', ...headers },
+        headers: mergedHeaders,
         signal: AbortSignal.timeout(timeoutMs),
         cache: 'no-store',
       });
@@ -38,10 +41,17 @@ export async function fetchText(
 }
 
 export async function fetchJson<T>(source: string, url: string, init: Parameters<typeof fetchText>[2] = {}): Promise<T> {
-  const text = await fetchText(source, url, { ...init, headers: { Accept: 'application/json', ...init.headers } });
+  const mergedHeaders = new Headers(init.headers);
+  if (!mergedHeaders.has('Accept')) mergedHeaders.set('Accept', 'application/json');
+  const text = await fetchText(source, url, { ...init, headers: mergedHeaders });
   try {
-    return JSON.parse(text) as T;
-  } catch {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object') {
+      throw new UpstreamError(source, `Unexpected JSON root from ${url}`);
+    }
+    return parsed as T;
+  } catch (err) {
+    if (err instanceof UpstreamError) throw err;
     throw new UpstreamError(source, `Non-JSON response from ${url}`);
   }
 }

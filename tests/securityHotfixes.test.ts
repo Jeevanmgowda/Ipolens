@@ -49,6 +49,7 @@ describe('Hotfix: PAN-returning routes require sign-in and ignore client-supplie
         cookie
       )
     );
+    expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).not.toContain('ZZZZZ9999Z');
     expect(text).not.toContain('Victim');

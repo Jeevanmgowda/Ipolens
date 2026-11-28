@@ -66,7 +66,14 @@ export async function refreshActiveIpos(
         if (!job) {
           job = (async () => {
             try {
-              await ingestIgDetail(await fetchDetail(rec.extra.igId as number));
+              await ingestIgDetail(await fetchDetail(rec.extra.igId as number), {
+                openDate: rec.openDate,
+                closeDate: rec.closeDate,
+                allotmentDate: rec.allotmentDate,
+                listingDate: rec.listingDate,
+                listingPrice: rec.listingPrice,
+                peRatio: rec.extra?.peRatio ?? null,
+              });
               return true;
             } catch {
               return false;

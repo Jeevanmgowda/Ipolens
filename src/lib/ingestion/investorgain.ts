@@ -52,6 +52,7 @@ function fiscalYear(d: Date): string {
 }
 
 export function parseReportRow(r: IgRecord): IgReportRow | null {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
   const igId = toNumber(r['~id']);
   if (!igId) return null;
   const gmpMatch = /₹\s*<b>([^<]*)<\/b>\s*\(([^)]*)\)/i.exec(String(r.GMP || '').replace(/&#8377;/g, '₹'));
@@ -79,10 +80,13 @@ export function parseReportRow(r: IgRecord): IgReportRow | null {
 
 export async function fetchLiveReport(now = new Date()): Promise<IgReportRow[]> {
   const url = `${REPORT_URL}/${now.getMonth() + 1}/${now.getFullYear()}/${fiscalYear(now)}/0/all?search=`;
-  const data = await fetchJson<{ reportTableData?: IgRecord[] }>(SOURCE, url, {
+  const data = await fetchJson<{ reportTableData?: unknown }>(SOURCE, url, {
     headers: { Referer: REFERER, Origin: 'https://www.investorgain.com' },
   });
-  return (data.reportTableData || []).map(parseReportRow).filter((r): r is IgReportRow => r !== null);
+  if (!Array.isArray(data.reportTableData)) {
+    throw new UpstreamError(SOURCE, 'Unexpected reportTableData shape from live report');
+  }
+  return data.reportTableData.map((r) => parseReportRow(r as IgRecord)).filter((r): r is IgReportRow => r !== null);
 }
 
 // ---------------------------------------------------------------------------
@@ -97,17 +101,74 @@ export function extractDetailPayload(html: string): IgDetailPayload | null {
   const start = html.indexOf(marker);
   if (start === -1) return null;
 
+  // Decode the enclosing JS string literal first so escaped quotes inside JSON strings are handled cleanly.
+  const quoteStart = start > 0 && html[start - 1] === '"' ? start - 1 : -1;
+  let decoded: string | null = null;
+  if (quoteStart !== -1) {
+    let end = start;
+    for (; end < html.length; end++) {
+      const ch = html[end];
+      if (ch === BS) {
+        end++;
+        continue;
+      }
+      if (ch === '"') break;
+    }
+    if (end < html.length) {
+      try {
+        const parsed = JSON.parse(html.slice(quoteStart, end + 1));
+        if (typeof parsed === 'string') decoded = parsed;
+      } catch {
+        decoded = null;
+      }
+    }
+  }
+
+  if (!decoded) {
+    let depth = 0;
+    let inString = false;
+    let i = start;
+    for (; i < html.length; i++) {
+      const c = html[i];
+      if (c === BS) {
+        if (html[i + 1] === '"') inString = !inString;
+        i++;
+        continue;
+      }
+      if (inString) continue;
+      if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) {
+          i++;
+          break;
+        }
+      }
+    }
+    try {
+      return JSON.parse(JSON.parse(`"${html.slice(start, i)}"`));
+    } catch {
+      return null;
+    }
+  }
+
   let depth = 0;
   let inString = false;
-  let i = start;
-  for (; i < html.length; i++) {
-    const c = html[i];
-    if (c === BS) {
-      if (html[i + 1] === '"') inString = !inString;
-      i++;
+  let i = 0;
+  for (; i < decoded.length; i++) {
+    const c = decoded[i];
+    if (inString) {
+      if (c === BS) {
+        i++;
+        continue;
+      }
+      if (c === '"') inString = false;
       continue;
     }
-    if (inString) continue;
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
     if (c === '{') depth++;
     else if (c === '}') {
       depth--;
@@ -117,10 +178,8 @@ export function extractDetailPayload(html: string): IgDetailPayload | null {
       }
     }
   }
-  const escaped = html.slice(start, i);
   try {
-    // The payload is a JSON document stored inside a JS string literal: unescape, then parse.
-    return JSON.parse(JSON.parse(`"${escaped}"`));
+    return JSON.parse(decoded.slice(0, i));
   } catch {
     return null;
   }
@@ -184,8 +243,11 @@ export interface IgIpoDetail {
 
 const isoDate = (v: unknown): string | null => {
   if (!v || typeof v !== 'string') return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  const trimmed = v.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const d = new Date(trimmed);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 };
 
 /** "27-11-2026" -> "2026-11-27" */
@@ -213,7 +275,18 @@ export function parseDetailPayload(payload: IgDetailPayload): IgIpoDetail | null
   const registrar = payload.registrarInfo?.[0];
   const websiteMatch = /href="([^"]+)"/.exec(str(registrar?.registrar_basic_info) ?? '');
   const bidsRaw = payload.biddingData?.ipoBiddingData;
-  const lastBid = Array.isArray(bidsRaw) && bidsRaw.length ? bidsRaw[bidsRaw.length - 1] : null;
+  let lastBid: IgRecord | null = null;
+  if (Array.isArray(bidsRaw) && bidsRaw.length) {
+    lastBid = bidsRaw[bidsRaw.length - 1];
+    let latestMs = Number.NEGATIVE_INFINITY;
+    for (const row of bidsRaw) {
+      const ms = Date.parse(String(row?.bid_date || ''));
+      if (!Number.isNaN(ms) && ms >= latestMs) {
+        latestMs = ms;
+        lastBid = row;
+      }
+    }
+  }
 
   const positive = (n: number | null) => (n !== null && n > 0 ? n : null);
   const crore = (amt: unknown) => {
@@ -250,7 +323,7 @@ export function parseDetailPayload(payload: IgDetailPayload): IgIpoDetail | null
     refundDate: isoDate(d.timetable_refunds_dt),
     creditDate: isoDate(d.timetable_share_credit_dt),
     listingDate: ordinalToIso(d.timetable_listing_dt),
-    listingPrice: toNumber(d.listing_price),
+    listingPrice: positive(toNumber(d.listing_price)),
     registrarName: registrar?.registrar_name ? stripHtml(String(registrar.registrar_name)) : null,
     registrarWebsite: websiteMatch ? websiteMatch[1] : null,
     registrarEmail: str(d.registrar_email),

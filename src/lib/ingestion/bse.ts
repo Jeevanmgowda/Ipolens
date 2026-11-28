@@ -1,4 +1,4 @@
-import { fetchJson, toNumber } from './http';
+import { fetchJson, toNumber, UpstreamError } from './http';
 
 /** BSE public-issue list (official exchange data; MainBoard and SME, live + forthcoming). */
 
@@ -36,12 +36,17 @@ export function parseBseIssue(r: Record<string, unknown>): BseIssue {
 }
 
 export async function fetchBsePublicIssues(): Promise<BseIssue[]> {
-  const data = await fetchJson<{ Table?: Record<string, unknown>[] }>(
+  const data = await fetchJson<{ Table?: unknown }>(
     'BSE',
     'https://api.bseindia.com/BseIndiaAPI/api/GetPublicIssue_par_updated/w?flag=1&status=&exchange=&ir_flag=IPO',
     { headers: { Referer: 'https://www.bseindia.com/' } }
   );
-  return (data.Table || []).map(parseBseIssue);
+  if (!Array.isArray(data.Table)) {
+    throw new UpstreamError('BSE', 'Unexpected Table shape from BSE public issues API');
+  }
+  return data.Table
+    .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === 'object' && !Array.isArray(r) && Number.isFinite(Number((r as Record<string, unknown>).Scrip_cd)))
+    .map(parseBseIssue);
 }
 
 /** Normalises company names for cross-source matching ("Foodlink F&B Holdings (India) Ltd." -> "foodlink f b holdings india"). */

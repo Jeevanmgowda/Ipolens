@@ -62,4 +62,36 @@ describe('Active IPO refresh', () => {
     const history = await IpoRepository.gmpHistory(sym);
     expect(history.filter((h) => h.date === today).map((h) => h.gmp)).toEqual([14]);
   });
+
+  it('preserves existing listingDate and lifecycle status when fetchDetail returns null listingDate', async () => {
+    const today = todayIst();
+    const detail: IgIpoDetail = {
+      ...base(),
+      openDate: '2020-01-01',
+      closeDate: '2020-01-03',
+      listingDate: '2099-01-01',
+      listingPrice: null,
+      gmpHistory: [],
+    };
+    await ingestIgDetail(detail);
+    const storedBefore = (await IpoRepository.listAll())[0];
+    expect(storedBefore.status).toBe('Closed');
+    expect(storedBefore.listingDate).toBe('2099-01-01');
+
+    const later = new Date(Date.now() + 60 * 60_000);
+    const report = await refreshActiveIpos({
+      symbols: [storedBefore.symbol],
+      now: later,
+      fetchDetail: async () => ({
+        ...detail,
+        listingDate: null,
+        gmpHistory: [{ date: today, gmp: 25 } as IgIpoDetail['gmpHistory'][number]],
+      }),
+    });
+    expect(report.refreshed).toEqual([storedBefore.symbol]);
+
+    const storedAfter = (await IpoRepository.listAll())[0];
+    expect(storedAfter.listingDate).toBe('2099-01-01');
+    expect(storedAfter.status).toBe('Closed');
+  });
 });
