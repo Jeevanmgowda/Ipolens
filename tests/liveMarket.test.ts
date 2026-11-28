@@ -274,7 +274,7 @@ describe('Live Market Feature Test Suite', () => {
         qibSubscription: 0,
         remainingTime: 'Bidding Closed',
       };
-      vi.spyOn(nseProvider, 'getAllIpos').mockResolvedValue([closedHdfp]);
+      nseProvider.getAllIpos = async () => [closedHdfp];
       const all = await nseProvider.getAllIpos();
 
       const hdfp = all.find((i) => i.symbol === 'HDFP');
