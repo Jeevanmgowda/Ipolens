@@ -170,35 +170,40 @@ Drizzle ORM schema has been extended in `src/db/schema.ts` with:
 
 ---
 
-### 11. Multi-Exchange Python Scraper Pipeline
+### 11. IPO Data in Supabase (single store)
 
-The application includes an automated Python scraper pipeline under `scripts/scraper/` that merges primary market data from NSE India, BSE India, and InvestorGain GMP:
+Every IPO the app shows is read from Supabase. Nothing is read from `data/ipos.json` or the
+hardcoded registries at runtime. The sync (`src/lib/ingestion/`) writes:
 
-```text
-  scripts/scraper/
-  ├── nse.py              # NSE official session cookie handshake & issue fetcher
-  ├── bse.py              # BSE India API fetcher (Mainboard & SME issues)
-  ├── gmp.py              # InvestorGain unofficial live GMP and subscription fetcher
-  ├── common.py           # Retry with exponential backoff & name normalization
-  ├── merge.py            # Deduplicates and compiles feeds into data/ipos.json
-  └── requirements.txt    # Python dependencies (requests)
+| Table | What | Source |
+| --- | --- | --- |
+| `ipos` | issue calendar, price band, lot, issue size, fresh/OFS, registrar, RHP/DRHP links | InvestorGain detail pages, BSE public issues |
+| `ipo_subscription` | category-wise subscription snapshots | InvestorGain |
+| `ipo_gmp_history` | daily grey-market premium, with source and time | InvestorGain |
+| `market_quotes` | delayed price for IPOs listed in the last 12 months | Yahoo Finance |
+
+Unknown values stay empty and the UI shows "—". The AI GMP estimate is used only where there is
+no market GMP, and is always labelled "AI Predicted".
+
+#### Running the sync (needs `DATABASE_URL` and `CRON_SECRET` in `.env.local`, dev server running)
+
+```bash
+npm run ingest          # one live sync (open/upcoming/recent IPOs, GMP, subscription, quotes)
+npm run ingest:all      # first load: live sync, 12-month backfill, then data/ipos.json import
+npm run ingest:watch    # keep syncing: every 15 min in market hours (IST), hourly otherwise
+node scripts/ingest.mjs backfill [startId]   # resume or restart the 12-month backfill
 ```
 
-#### Running the Scraper:
-- Run the full pipeline:
-  ```bash
-  npm run scrape
-  ```
-- Run individual scrapers:
-  ```bash
-  npm run scrape:nse
-  npm run scrape:bse
-  npm run scrape:gmp
-  ```
+Set `IPOLENS_URL` if the dev server is not on `http://localhost:3000`.
 
-#### Scraper API Endpoints:
-- `GET /api/scraper/sync` — Inspect status, record count, lifecycle distribution, and feed freshness.
-- `POST /api/scraper/sync` — Execute scraper worker on demand to generate fresh `data/ipos.json`.
+#### Endpoints
+- `GET /api/scraper/sync` — counts per lifecycle stage from Supabase and the last sync run.
+  With `Authorization: Bearer $CRON_SECRET` (Vercel Cron, see `vercel.json`) it runs a live sync.
+- `POST /api/scraper/sync` `{ "mode": "live" | "backfill" | "import-json" }` — CRON_SECRET bearer or an admin session.
+
+> Do not run `npm run db:push`: the schema is managed by the migrations in `drizzle/`.
+
+The Python scripts in `scripts/scraper/` are kept for reference only; the app no longer runs them.
 
 ---
 
