@@ -70,6 +70,8 @@ export interface LiveMarketIpoItem {
   sector?: string;
   peRatio?: number;
   listingGainPct?: number;
+  /** When the card last received live data (client side). */
+  liveCheckedAt?: string;
 }
 
 export interface IpoSubscriptionDetails {

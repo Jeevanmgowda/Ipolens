@@ -347,13 +347,30 @@ export class IpoRepository {
     if (!points.length) return 0;
     const db = getDb();
     const existing = await db
-      .select({ recordedAt: schema.ipoGmpHistoryTable.recordedAt })
+      .select({ id: schema.ipoGmpHistoryTable.id, recordedAt: schema.ipoGmpHistoryTable.recordedAt, gmp: schema.ipoGmpHistoryTable.gmp })
       .from(schema.ipoGmpHistoryTable)
       .where(and(eq(schema.ipoGmpHistoryTable.symbol, symbol), eq(schema.ipoGmpHistoryTable.source, source)));
-    const seen = new Set(existing.map((e) => e.recordedAt.toISOString().slice(0, 10)));
-    const fresh = points.filter((p) => !seen.has(p.date));
-    if (!fresh.length) return 0;
+    const istDate = (d: Date) => todayIst(d);
+    const byDate = new Map(existing.map((e) => [istDate(e.recordedAt), e]));
     const fetchedAt = new Date();
+
+    // Today's GMP moves during the day: keep one point per day, updated in place.
+    const today = todayIst(fetchedAt);
+    const todayPoint = points.find((p) => p.date === today);
+    const todayRow = byDate.get(today);
+    if (todayPoint && todayRow && Number(todayRow.gmp) !== todayPoint.gmp) {
+      await db
+        .update(schema.ipoGmpHistoryTable)
+        .set({
+          gmp: todayPoint.gmp.toFixed(2),
+          gmpPercent: priceHigh ? ((todayPoint.gmp / priceHigh) * 100).toFixed(2) : null,
+          fetchedAt,
+        })
+        .where(eq(schema.ipoGmpHistoryTable.id, todayRow.id));
+    }
+
+    const fresh = points.filter((p) => !byDate.has(p.date));
+    if (!fresh.length) return 0;
     await db.insert(schema.ipoGmpHistoryTable).values(
       fresh.map((p) => ({
         ipoId,

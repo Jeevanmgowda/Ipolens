@@ -33,6 +33,34 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
+
+const istTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+
+/** Card footer: where the numbers come from and how fresh they are. */
+function freshnessFor(ipo: LiveMarketIpoItem): { label: string; title: string; live: boolean } {
+  const listed = ipo.status === 'Listed' || ipo.isListed;
+  if (listed) {
+    if (ipo.quoteUpdatedAt) {
+      return {
+        label: `NSE/BSE price · ${istTime(ipo.quoteUpdatedAt)}`,
+        title: 'Exchange price via Yahoo Finance, delayed up to 15 minutes',
+        live: Date.now() - new Date(ipo.quoteUpdatedAt).getTime() < 30 * 60_000,
+      };
+    }
+    return { label: 'Awaiting exchange price', title: 'No exchange quote received yet', live: false };
+  }
+  const stamps = [ipo.subscriptionUpdatedAt, ipo.gmpUpdatedAt, ipo.lastUpdated].filter((t): t is string => Boolean(t));
+  const latest = stamps.sort().pop();
+  const recentCheck = ipo.liveCheckedAt ? Date.now() - new Date(ipo.liveCheckedAt).getTime() < 6 * 60_000 : false;
+  if (!latest) return { label: ipo.dataSource || 'Source pending', title: 'No update time recorded', live: false };
+  return {
+    label: `${ipo.gmpSource || ipo.dataSource || 'InvestorGain'} · ${istTime(latest)}`,
+    title: `Subscription ${ipo.subscriptionUpdatedAt ? istTime(ipo.subscriptionUpdatedAt) : '—'}, GMP ${ipo.gmpUpdatedAt ? istTime(ipo.gmpUpdatedAt) : '—'} (IST)`,
+    live: recentCheck,
+  };
+}
+
 interface IpoCategoriesTabsProps {
   ipos: LiveMarketIpoItem[];
   watchlist: string[];
@@ -783,16 +811,15 @@ export const IpoCategoriesTabs: React.FC<IpoCategoriesTabsProps> = ({
 
                 {/* Data Source & Freshness Reconciliation Tag */}
                 <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-2 pt-2 border-t border-white/5">
-                  <span className="flex items-center gap-1.5 text-slate-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>
-                      {ipo.series === 'SME'
-                        ? 'NSE / BSE SME'
-                        : ipo.series === 'DEBT'
-                        ? 'NSE Debt'
-                        : 'NSE Exchange'} Verified
-                    </span>
-                  </span>
+                  {(() => {
+                    const fresh = freshnessFor(ipo);
+                    return (
+                      <span className="flex items-center gap-1.5 text-slate-400 min-w-0" title={fresh.title}>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${fresh.live ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                        <span className="truncate">{fresh.label}</span>
+                      </span>
+                    );
+                  })()}
                   <span className="text-slate-400">
                     {ipo.remainingTime || 'Live Feed'}
                   </span>

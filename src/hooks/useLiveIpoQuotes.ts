@@ -19,7 +19,10 @@ function nseOpenNow(): boolean {
 }
 
 /**
- * Refreshes the price fields of listed IPO cards in place from /api/ipos/quotes (exchange price,
+ * Live feed for the IPO cards. Active issues get subscription, GMP and calendar from
+ * /api/ipos/live-updates (every 60s while NSE is open, 5 min otherwise; the server re-reads stale
+ * issues from InvestorGain). Listed issues get their price:
+ * refreshes the price fields of listed IPO cards in place from /api/ipos/quotes (exchange price,
  * delayed up to ~15 min): every 30s while NSE is open, every 5 min otherwise. Watchlisted and
  * most recently listed IPOs first, at most 60 per request.
  */
@@ -74,4 +77,42 @@ export function useLiveIpoQuotes(
       clearTimeout(timer);
     };
   }, [key, setIpos]);
+
+  // Active issues (open, opening soon, closed awaiting listing): subscription, GMP, dates.
+  const activeKey = useMemo(
+    () =>
+      ipos
+        .filter((i) => i.status !== 'Listed' && !i.isListed)
+        .map((i) => i.symbol)
+        .slice(0, 60)
+        .join(','),
+    [ipos]
+  );
+
+  useEffect(() => {
+    if (!activeKey) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/ipos/live-updates?symbols=${encodeURIComponent(activeKey)}`);
+        const json = await res.json();
+        if (!cancelled && json.success && json.updates) {
+          const updates = json.updates as Record<string, Partial<LiveMarketIpoItem>>;
+          const syncedAt = json.fetchedAt as string;
+          setIpos((prev) =>
+            prev.map((i) => (updates[i.symbol] ? { ...i, ...updates[i.symbol], liveCheckedAt: syncedAt } : i))
+          );
+        }
+      } catch {
+        // Keep the last values; the next tick retries.
+      }
+      if (!cancelled) timer = setTimeout(tick, nseOpenNow() ? 60_000 : 5 * 60_000);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeKey, setIpos]);
 }
