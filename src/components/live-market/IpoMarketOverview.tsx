@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { LiveMarketIpoItem, LiveMarketOverviewResponse } from '@/types/liveMarket';
+import { IpoLogo } from '@/components/ui/IpoLogo';
 
 interface IpoMarketOverviewProps {
   overview?: {
@@ -135,22 +136,24 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
         {activeTopGainer && (
           <div
             onClick={() => onSelectIpo && onSelectIpo(activeTopGainer)}
-            className="p-3.5 rounded-xl glass-panel border border-emerald-500/25 bg-emerald-950/20 flex items-center justify-between cursor-pointer hover:border-emerald-500/50 transition"
+            className="p-3.5 rounded-xl glass-panel border border-emerald-500/25 bg-emerald-950/20 flex items-center justify-between gap-3 cursor-pointer hover:border-emerald-500/50 transition"
           >
-            <div className="space-y-0.5">
-              <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
-                <Award className="w-3.5 h-3.5 text-emerald-400" />
-                Top Secondary Market Performer
-              </span>
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono font-extrabold text-white text-base">{activeTopGainer.symbol}</span>
-                <span className={`font-mono font-bold text-xs ${(activeTopGainer.dayChangePercent || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <IpoLogo symbol={activeTopGainer.symbol} companyName={activeTopGainer.companyName} size="sm" />
+              <div className="space-y-0.5 min-w-0">
+                <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                  <Award className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  Top Secondary Market Performer
+                </span>
+                <p className="font-bold text-white text-sm truncate max-w-[210px]">
+                  {activeTopGainer.companyName || activeTopGainer.symbol}
+                </p>
+                <span className={`font-mono font-bold text-xs block ${(activeTopGainer.dayChangePercent || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                   {(activeTopGainer.dayChangePercent || 0) >= 0 ? '+' : ''}{activeTopGainer.dayChangePercent}% today
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{activeTopGainer.companyName}</p>
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span className="font-mono text-xs font-bold text-white block">
                 ₹{(activeTopGainer.currentPrice || activeTopGainer.listingPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
@@ -169,22 +172,24 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
         {activeTopSubscribed && (
           <div
             onClick={() => onSelectIpo && onSelectIpo(activeTopSubscribed)}
-            className="p-3.5 rounded-xl glass-panel border border-cyan-500/25 bg-cyan-950/20 flex items-center justify-between cursor-pointer hover:border-cyan-500/50 transition"
+            className="p-3.5 rounded-xl glass-panel border border-cyan-500/25 bg-cyan-950/20 flex items-center justify-between gap-3 cursor-pointer hover:border-cyan-500/50 transition"
           >
-            <div className="space-y-0.5">
-              <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
-                <BarChart2 className="w-3.5 h-3.5 text-cyan-400" />
-                Peak Subscription Multiple
-              </span>
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono font-extrabold text-white text-base">{activeTopSubscribed.symbol}</span>
-                <span className="font-mono font-bold text-xs text-cyan-300">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <IpoLogo symbol={activeTopSubscribed.symbol} companyName={activeTopSubscribed.companyName} size="sm" />
+              <div className="space-y-0.5 min-w-0">
+                <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                  <BarChart2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  Peak Subscription Multiple
+                </span>
+                <p className="font-bold text-white text-sm truncate max-w-[210px]">
+                  {activeTopSubscribed.companyName || activeTopSubscribed.symbol}
+                </p>
+                <span className="font-mono font-bold text-xs text-cyan-300 block">
                   {activeTopSubscribed.currentSubscription}x Subscribed
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{activeTopSubscribed.companyName}</p>
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                 {activeTopSubscribed.qibSubscription > 0
                   ? `QIB: ${activeTopSubscribed.qibSubscription}x`
@@ -199,27 +204,29 @@ export const IpoMarketOverview: React.FC<IpoMarketOverviewProps> = ({
         {activeTopGmp && (
           <div
             onClick={() => onSelectIpo && onSelectIpo(activeTopGmp)}
-            className="p-3.5 rounded-xl glass-panel border border-purple-500/25 bg-purple-950/20 flex items-center justify-between cursor-pointer hover:border-purple-500/50 transition"
+            className="p-3.5 rounded-xl glass-panel border border-purple-500/25 bg-purple-950/20 flex items-center justify-between gap-3 cursor-pointer hover:border-purple-500/50 transition"
           >
-            <div className="space-y-0.5">
-              <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
-                <Flame className="w-3.5 h-3.5 text-purple-400" />
-                <span>Highest Estimated GMP</span>
-                {activeTopGmp.isAiPredictedGmp && (
-                  <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                    AI ML
-                  </span>
-                )}
-              </span>
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono font-extrabold text-white text-base">{activeTopGmp.symbol}</span>
-                <span className="font-mono font-bold text-xs text-purple-300">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <IpoLogo symbol={activeTopGmp.symbol} companyName={activeTopGmp.companyName} size="sm" />
+              <div className="space-y-0.5 min-w-0">
+                <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>Highest Estimated GMP</span>
+                  {activeTopGmp.isAiPredictedGmp && (
+                    <span className="px-1 py-0.2 rounded text-[8px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      AI ML
+                    </span>
+                  )}
+                </span>
+                <p className="font-bold text-white text-sm truncate max-w-[210px]">
+                  {activeTopGmp.companyName || activeTopGmp.symbol}
+                </p>
+                <span className="font-mono font-bold text-xs text-purple-300 block">
                   +{activeTopGmp.gmpPercent}% Premium
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{activeTopGmp.companyName}</p>
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span className="font-mono text-xs font-bold text-purple-300 block">+₹{activeTopGmp.gmp}</span>
               <span className="text-[10px] text-slate-400 font-mono">
                 {activeTopGmp.isAiPredictedGmp ? 'AI Predicted' : 'Unofficial GMP'}

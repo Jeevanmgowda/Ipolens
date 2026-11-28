@@ -14,6 +14,7 @@ import { getEffectiveIpoStatus } from '@/components/live-market/IpoCategoriesTab
 import { LiveMarketIpoItem, IpoCategoryTab } from '@/types/liveMarket';
 import { isListingDatePast, isBiddingClosed, isBiddingStarted } from '@/lib/utils/ipoDateUtils';
 import { isSameIpo } from '@/lib/utils/ipoDeduplication';
+import { IpoLogo } from '@/components/ui/IpoLogo';
 import {
   Sparkles,
   TrendingUp,
@@ -669,9 +670,10 @@ export const AiResearchView: React.FC<AiResearchViewProps> = ({
                             ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border border-purple-400 shadow-md shadow-purple-600/40 ring-1 ring-purple-400'
                             : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-white/5 hover:border-purple-500/40'
                         }`}
-                        title={`${chip.companyName} (${chip.series || 'EQ'}) • Click to analyze DRHP`}
+                        title={`${chip.companyName || chip.symbol} (${chip.series || 'EQ'}) • Click to analyze DRHP`}
                       >
-                        <span>{chip.symbol}</span>
+                        <IpoLogo symbol={chip.symbol} companyName={chip.companyName} size="xs" />
+                        <span className="font-sans font-semibold max-w-[180px] truncate">{chip.companyName || chip.symbol}</span>
                         {chip.series === 'SME' && (
                           <span className="px-1 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30">
                             SME
